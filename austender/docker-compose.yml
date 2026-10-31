@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: austender-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: austender_loader
+      POSTGRES_PASSWORD: ${LOADER_PASSWORD:?set LOADER_PASSWORD in austender/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-austender}
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      # Postgres 18 images keep PGDATA under a versioned directory inside /var/lib/postgresql.
+      - austender_pgdata:/var/lib/postgresql
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "work_mem=64MB", "-c", "max_wal_size=4GB"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U austender_loader -d austender"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  austender_pgdata:
