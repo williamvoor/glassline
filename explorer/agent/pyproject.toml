@@ -7,13 +7,19 @@ requires-python = ">=3.13"
 dependencies = [
     "a2a-sdk[http-server]==0.3.26",
     "a2ui-a2a==0.1.0",
-    "a2ui-agent-sdk==0.9.0",
+    "a2ui-agent-sdk",
+    "a2ui-core",
     "litellm==1.106.6",
     "mcp>=2.3.0",
     "psycopg[binary]>=3.3.6",
     "python-dotenv>=1.2.4",
     "uvicorn>=0.54.0",
 ]
+
+# One A2UI pin shared with glimmer-tune (ADR 0006): move both together.
+[tool.uv.sources]
+a2ui-agent-sdk = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_agent" }
+a2ui-core = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_core" }
 
 [build-system]
 requires = ["uv_build>=0.9.28,<0.10"]

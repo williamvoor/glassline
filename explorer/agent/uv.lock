@@ -45,35 +45,26 @@ wheels = [
 
 [[package]]
 name = "a2ui-agent-sdk"
-version = "0.9.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.9.1.dev171"
+source = { git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_agent&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0#825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" }
 dependencies = [
     { name = "a2ui-core" },
     { name = "antlr4-python3-runtime" },
-    { name = "httpx" },
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/0c/d959c21d4320206b525cf931c60dbd89c799b3f9a972346de122888a0da2/a2ui_agent_sdk-0.9.0.tar.gz", hash = "sha256:3caa48ab0b2d9bc835e2d96976a3698256d6f4bba778ccc03a25a9c654ad6294", size = 305820, upload-time = "2026-10-17T01:03:34.863Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/0c/c9097e6b5eba90a0166020b0c3416fb573d51ca0b9afa6675bfd594a7ef2/a2ui_agent_sdk-0.9.0-py3-none-any.whl", hash = "sha256:d195025e3a88db32957c79295e9f1555a7a2a884ce3077f96722b31fab7f23d9", size = 251596, upload-time = "2026-10-17T01:03:32.367Z" },
-]
 
 [[package]]
 name = "a2ui-core"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.4.1.dev171"
+source = { git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_core&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0#825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" }
 dependencies = [
     { name = "babel" },
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "referencing" },
     { name = "regex" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/33/b4/bc9c54a5b19f2aa1548f1791f7f7e0f75888b93668b7c03ede4474c804d9/a2ui_core-0.4.0.tar.gz", hash = "sha256:840749f45c477a1a4958a64a9c521dca13192693d745cbf45caafb34902ed6fc", size = 278287, upload-time = "2026-10-17T01:03:33.709Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/30/07a774bccf1d3339c402877753329d3c2d727104fb41ea67e6415c48f0e0/a2ui_core-0.4.0-py3-none-any.whl", hash = "sha256:e9839f96003d731b44e40cf6e8ad251282ded398281067412f08b0bbcd16951d", size = 247823, upload-time = "2026-10-17T01:03:30.985Z" },
 ]
 
 [[package]]
@@ -601,6 +592,7 @@ dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "a2ui-a2a" },
     { name = "a2ui-agent-sdk" },
+    { name = "a2ui-core" },
     { name = "litellm" },
     { name = "mcp" },
     { name = "psycopg", extra = ["binary"] },
@@ -617,7 +609,8 @@ dev = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = "==0.3.26" },
     { name = "a2ui-a2a", specifier = "==0.1.0" },
-    { name = "a2ui-agent-sdk", specifier = "==0.9.0" },
+    { name = "a2ui-agent-sdk", git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_agent&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" },
+    { name = "a2ui-core", git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_core&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" },
     { name = "litellm", specifier = "==1.106.6" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
