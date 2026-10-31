@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Draft review</title>
+    <!-- The basic catalog's Icon renders Material Symbols ligatures; without the font they show as words. -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <style>
+      :root { --line: #e3e3e3; --muted: #666; --ok: #1e7f3c; --warn: #9a5b00; --warn-bg: #fff4e0; --accent: #1a56db; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fafafa; color: #202124; font-family: system-ui, sans-serif; font-size: 14px; }
+      review-app { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+      review-app aside { border-right: 1px solid var(--line); overflow-y: auto; background: white; }
+      review-app aside header { position: sticky; top: 0; background: white; padding: 12px; border-bottom: 1px solid var(--line); }
+      review-app aside header select { width: 100%; margin-top: 8px; }
+      review-app .progress { font-weight: 600; }
+      review-app .family { padding: 10px 12px 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+      review-app .item { display: flex; gap: 8px; padding: 6px 12px; cursor: pointer; border-left: 3px solid transparent; }
+      review-app .item:hover { background: #f3f6fd; }
+      review-app .item.current { background: #e8effd; border-left-color: var(--accent); }
+      review-app .item .mark { width: 14px; flex: none; color: var(--ok); }
+      review-app .item .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #333; }
+      review-app .item .dup { color: var(--warn); font-size: 11px; flex: none; }
+      review-app main { overflow-y: auto; padding: 20px 28px 80px; }
+      review-app .meta { color: var(--muted); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      review-app .badge { padding: 2px 8px; border-radius: 10px; background: #eee; font-size: 12px; }
+      review-app .badge.ok { background: #e3f4e8; color: var(--ok); }
+      review-app .badge.warn { background: var(--warn-bg); color: var(--warn); }
+      review-app textarea { width: 100%; min-height: 90px; font: inherit; font-size: 15px; line-height: 1.45; padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin-top: 10px; }
+      review-app .values { margin: 8px 0 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      review-app .chip { padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #eef1f4; color: #555; }
+      review-app .chip.missing { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+      review-app .actions { display: flex; gap: 8px; margin: 12px 0 20px; align-items: center; flex-wrap: wrap; }
+      review-app button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #ccc; background: white; cursor: pointer; }
+      review-app button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+      review-app .hint { color: var(--muted); font-size: 12px; }
+      review-app .canvas { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 20px; max-width: 720px; }
+      review-app .error { color: #b00020; white-space: pre-wrap; }
+      review-app details { margin-top: 16px; max-width: 720px; }
+      review-app pre { background: #f6f8fa; padding: 10px; overflow-x: auto; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <review-app></review-app>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

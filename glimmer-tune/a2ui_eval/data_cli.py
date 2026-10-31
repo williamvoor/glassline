@@ -58,12 +58,15 @@ def cmd_draft(args) -> None:
     print(f"wrote {n} draft cases to {path}; edit intents, then set reviewed: true")
 
 
-def build_eval(data: Path) -> dict[str, int]:
-    """Writes each split that has reviewed rows; a split with none is left alone, so test is never frozen empty."""
+def build_eval(data: Path, splits: tuple[str, ...] = ("dev", "test")) -> dict[str, int]:
+    """Writes each of `splits` that has reviewed rows; a split with none is left alone, so test is never frozen empty.
+
+    Pass `("dev",)` to build dev while leaving an approved test split unfrozen.
+    """
     rows = read_jsonl(data / DRAFT.name)
     reviewed = {
         split: [{k: v for k, v in r.items() if k != "reviewed"} for r in rows if r["split"] == split and r.get("reviewed")]
-        for split in ("dev", "test")
+        for split in splits
     }
     reviewed = {split: cases for split, cases in reviewed.items() if cases}
     if not reviewed:
@@ -75,7 +78,7 @@ def build_eval(data: Path) -> dict[str, int]:
 
 
 def cmd_build_eval(args) -> None:
-    print(build_eval(args.data))
+    print(build_eval(args.data, (args.split,) if args.split else ("dev", "test")))
 
 
 def load_tokenizer_counter(name: str = TOKENIZER):
@@ -122,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--force", action="store_true")
     d.set_defaults(fn=cmd_draft)
     b = sub.add_parser("build-eval")
+    b.add_argument("--split", choices=("dev", "test"), help="build only this split (default: both)")
     b.set_defaults(fn=cmd_build_eval)
     e = sub.add_parser("export")
     e.add_argument("--max-seq-len", type=int, default=8192)

@@ -46,6 +46,15 @@ def _dump(messages: Sequence[Any]) -> list[dict[str, Any]]:
     ]
 
 
+def write_basic_v0_9_catalog(path: Path) -> None:
+    """Writes the SDK's own v0.9.1 basic catalog, for rendering with `@a2ui/lit` (ADR 0005)."""
+    from a2ui.core.basic_catalog import BasicCatalog
+
+    doc = BasicCatalog("0.9.1").to_json()
+    doc["protocolVersion"] = "0.9"  # not declared in the SDK's copy; the loader requires it
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+
 class ExpressSDK:
     def __init__(self, catalog_path: str | Path, examples: Sequence[Sequence[dict]] | None = None):
         self.catalog_path = Path(catalog_path)

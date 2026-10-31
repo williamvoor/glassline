@@ -1,0 +1,20 @@
+{
+  "name": "glimmer-tune-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@a2ui/lit": "0.14.0",
+    "@a2ui/markdown-it": "0.2.2",
+    "@a2ui/web_core": "0.14.0",
+    "@lit/context": "1.1.6",
+    "lit": "3.3.3"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "vite": "6.4.5"
+  }
+}
