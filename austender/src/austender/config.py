@@ -44,7 +44,8 @@ class Settings:
             loader_password=e.get("LOADER_PASSWORD", ""),
             explorer_ro_password=e.get("EXPLORER_RO_PASSWORD", ""),
             user_agent=e.get("INGEST_USER_AGENT", "").strip(),
-            min_interval_s=int(e.get("INGEST_MIN_INTERVAL_MS", "1000")) / 1000,
+            # Requests stay at least 1000 ms apart (SPEC section 4); a lower setting is raised to that.
+            min_interval_s=max(int(e.get("INGEST_MIN_INTERVAL_MS", "1000")), 1000) / 1000,
         )
 
     def loader_connect_kwargs(self) -> dict[str, object]:
