@@ -10,6 +10,8 @@ from a2ui.parser import A2uiPart
 from explorer_agent.catalog import EXPLORER_CATALOG_ID, explorer_catalog
 from explorer_agent.macros import (
     MacroError,
+    column_label,
+    fill_prose,
     format_value,
     macro_context,
     macro_expander,
@@ -55,9 +57,9 @@ def to_transport(reply: str) -> list[dict]:
         (1234.567, "auto", "numeric", "1,234.57"),
         ("Acme", "auto", "text", "Acme"),
         (None, "auto", "numeric", "—"),
-        (3_441_812_603.4, "aud", "numeric", "$3,441,812,603"),
-        (-1500.0, "aud", "numeric", "-$1,500"),
-        (3_441_812_603.0, "aud_m", "numeric", "$3,441.8M"),
+        (3_441_812_603.4, "currency", "numeric", "$3,441,812,603"),
+        (-1500.0, "currency", "numeric", "-$1,500"),
+        (3_441_812_603.0, "currency_m", "numeric", "$3,441.8M"),
         (12.345, "pct", "numeric", "12.3%"),
         (0.1234, "fraction_pct", "numeric", "12.3%"),
         (1999.6, "int", "numeric", "2,000"),
@@ -68,16 +70,35 @@ def test_format_value(value, fmt, column_type, expected):
     assert format_value(value, fmt, column_type) == expected
 
 
+def test_currency_symbol_comes_from_the_caller_not_the_code():
+    assert format_value(3_441_812_603.0, "currency_m", "numeric", currency_symbol="€") == "€3,441.8M"
+    assert format_value(-1500.0, "currency", "numeric", currency_symbol="€") == "-€1,500"
+
+
+@pytest.mark.parametrize(
+    ("column", "label"),
+    [
+        ("value", "Value"),
+        ("total_value", "Total value"),
+        ("abn", "Abn"),
+        ("Value (AUD)", "Value (AUD)"),
+        ("fy2024", "Fy2024"),
+    ],
+)
+def test_column_label(column, label):
+    assert column_label(column) == label
+
+
 def test_numeric_format_on_text_is_an_error():
     with pytest.raises(MacroError, match="needs a number"):
-        format_value("Acme", "aud")
+        format_value("Acme", "currency")
 
 
 # --- shapes --------------------------------------------------------------------------------
 
 
 def test_bar_chart_shape_and_sorting(ctx):
-    comps = expand("BarChart", result_id="r1", x="supplier", y="value", title="Top", format="aud_m")
+    comps = expand("BarChart", result_id="r1", x="supplier", y="value", title="Top", format="currency_m")
     assert kinds(comps) == ["Column", "SqlDetails", "Text", "VegaChart"]
     assert root(comps)["component"] == "Column"
     title = by_type(comps, "Text")[0]
@@ -85,11 +106,21 @@ def test_bar_chart_shape_and_sorting(ctx):
     spec = by_type(comps, "VegaChart")[0]["spec"]
     assert spec["mark"] == {"type": "bar"}
     assert spec["encoding"]["x"]["sort"] == "-y"
-    assert spec["encoding"]["y"]["title"] == "value ($M)"
+    assert spec["encoding"]["y"]["title"] == "Value ($M)"
+    assert spec["encoding"]["x"]["title"] == "Supplier"
+    assert spec["encoding"]["y"]["axis"]["format"] == ",.1f"
     assert spec["data"]["values"][1] == {"supplier": "Acme_[x]", "value": pytest.approx(3441.812603)}
     assert "url" not in spec["data"]
     sql = by_type(comps, "SqlDetails")[0]
     assert (sql["sql"], sql["summary"]) == (SUPPLIERS_SQL, "top suppliers")
+
+
+def test_chart_currency_symbol_comes_from_the_context(store):
+    with macro_context(store, currency_symbol="€"):
+        spec = by_type(expand("BarChart", result_id="r1", x="supplier", y="value", title="T",
+                              format="currency"), "VegaChart")[0]["spec"]
+    assert spec["encoding"]["y"]["title"] == "Value (€)"
+    assert "$" not in str(spec["encoding"])
 
 
 def test_horizontal_bar_chart_puts_categories_on_y(ctx):
@@ -129,11 +160,11 @@ def test_color_keeps_top_groups_and_folds_the_rest_into_other():
 
 def test_data_table_columns_alignment_and_formats(ctx):
     comps = expand("DataTable", result_id="r1", title="Suppliers", columns="value, supplier",
-                   format="value:aud_m")
+                   format="value:currency_m")
     assert kinds(comps) == ["Column", "DataGrid", "SqlDetails", "Text"]
     grid = by_type(comps, "DataGrid")[0]
-    assert grid["columns"] == [{"key": "value", "label": "value", "align": "end"},
-                               {"key": "supplier", "label": "supplier"}]
+    assert grid["columns"] == [{"key": "value", "label": "Value", "align": "end"},
+                               {"key": "supplier", "label": "Supplier"}]
     assert grid["rows"][1] == ["$3,441.8M", "Acme_[x]"]
     assert "caption" not in grid
 
@@ -149,7 +180,7 @@ def test_data_table_row_cap_and_truncation_note():
 
 
 def test_metric_shape(ctx):
-    comps = expand("Metric", result_id="r1", column="value", label="Top supplier value", row=1, format="aud")
+    comps = expand("Metric", result_id="r1", column="value", label="Top supplier value", row=1, format="currency")
     assert kinds(comps) == ["Card", "Column", "SqlDetails", "Text", "Text"]
     assert root(comps)["component"] == "Card"
     texts = by_type(comps, "Text")
@@ -158,10 +189,47 @@ def test_metric_shape(ctx):
 
 
 def test_cite_fills_placeholders_and_escapes_markdown(ctx):
-    comps = expand("Cite", template="**{r1[1].supplier}** received {r1[1].value|aud_m} over {r1[1].contracts} contracts.")
+    comps = expand("Cite", template="**{r1[1].supplier}** received {r1[1].value|currency_m} over {r1[1].contracts} contracts.")
     assert comps == [{"id": "m", "component": "Text",
                       "text": r"**Acme\_\[x\]** received \$3,441\.8M over 1,234 contracts.",
                       "variant": "body"}]
+
+
+def test_metric_and_cite_use_the_context_currency(store):
+    with macro_context(store, currency_symbol="€"):
+        metric = by_type(expand("Metric", result_id="r1", column="value", label="L", row=1,
+                                format="currency_m"), "Text")[1]
+        cite = expand("Cite", template="{r1[1].value|currency_m}")[0]
+    assert metric["text"] == "€3,441.8M"
+    assert cite["text"] == r"€3,441\.8M"
+
+
+# --- prose ---------------------------------------------------------------------------------
+
+
+def test_prose_placeholders_are_filled_and_escaped(ctx):
+    filled = fill_prose("**{r1[1].supplier}** received {r1[1].value|currency_m}.")
+    assert filled.text == r"**Acme\_\[x\]** received \$3,441\.8M."
+    assert filled.bare_numbers == []
+    assert ctx.errors == []
+
+
+def test_bare_numbers_typed_in_prose_are_reported(ctx):
+    filled = fill_prose("In 2024, {r1[1].supplier} won 1,234 contracts worth $3.4B.")
+    assert filled.bare_numbers == ["2024", "1,234", "3.4"]
+
+
+def test_a_bad_prose_placeholder_goes_back_to_the_model(ctx):
+    filled = fill_prose("{r1[0].nope} and {r9[0].value}")
+    assert ctx.errors == [
+        "prose: r1 has no column 'nope'; its columns are: supplier, contracts, value",
+        "prose: unknown result_id 'r9'; valid IDs: r1",
+    ]
+    assert filled.text == "{r1[0].nope} and {r9[0].value}"
+
+
+def test_prose_without_placeholders_is_unchanged(ctx):
+    assert fill_prose("Nothing to cite here.").text == "Nothing to cite here."
 
 
 # --- errors --------------------------------------------------------------------------------
@@ -214,9 +282,9 @@ def test_express_reply_expands_to_transport_that_passes_strict_validation(ctx):
 surface("main")
 root = Column([lead, top, chart, table])
 lead = Cite("{r1[1].supplier} received the most.")
-top = Metric("r1", "value", "Top supplier", 1, "aud_m")
-chart = BarChart("r1", "supplier", "value", "Value by supplier", _, true, "aud_m")
-table = DataTable("r1", "Suppliers", "supplier,contracts,value", "value:aud")
+top = Metric("r1", "value", "Top supplier", 1, "currency_m")
+chart = BarChart("r1", "supplier", "value", "Value by supplier", _, true, "currency_m")
+table = DataTable("r1", "Suppliers", "supplier,contracts,value", "value:currency")
 </a2ui>"""
     transport = to_transport(reply)
     assert ctx.errors == []

@@ -25,7 +25,8 @@ from explorer_agent.results import INTEGER_TYPES, ResultStore, StoredResult
 PASSTHROUGH_COMPONENTS = ["Column", "Row", "Card", "Text", "Divider", "Tabs"]
 TABLE_ROW_CAP = 200
 MAX_COLOR_CATEGORIES = 8
-FORMATS = ("auto", "aud", "aud_m", "int", "decimal", "pct", "fraction_pct", "text", "date")
+FORMATS = ("auto", "currency", "currency_m", "int", "decimal", "pct", "fraction_pct", "text", "date")
+DEFAULT_CURRENCY_SYMBOL = "$"
 OTHER = "Other"
 
 
@@ -38,6 +39,7 @@ class MacroContext:
     store: ResultStore
     table_row_cap: int = TABLE_ROW_CAP
     max_color_categories: int = MAX_COLOR_CATEGORIES
+    currency_symbol: str = DEFAULT_CURRENCY_SYMBOL  # from the dataset's [currency] table
     errors: list[str] = field(default_factory=list)
 
 
@@ -45,8 +47,8 @@ _context: ContextVar[MacroContext | None] = ContextVar("explorer_macro_context",
 
 
 @contextlib.contextmanager
-def macro_context(store: ResultStore, **limits: int) -> Iterator[MacroContext]:
-    ctx = MacroContext(store, **limits)
+def macro_context(store: ResultStore, **settings: Any) -> Iterator[MacroContext]:
+    ctx = MacroContext(store, **settings)
     token = _context.set(ctx)
     try:
         yield ctx
@@ -110,6 +112,15 @@ def _format_name(fmt: str) -> str:
     return fmt
 
 
+def column_label(column: str) -> str:
+    """Readable label for a column: `total_value` → "Total value". SQL aliases with spaces or
+    capitals (`AS "Value (AUD)"`) are the model's own wording and are kept as they are."""
+    if column != column.lower() or " " in column:
+        return column
+    text = column.replace("_", " ").strip()
+    return text[:1].upper() + text[1:]
+
+
 def _sql_details(result: StoredResult) -> SqlDetails:
     return SqlDetails(sql=result.sql, summary=result.purpose)
 
@@ -123,8 +134,11 @@ def _number(value: Any, fmt: str) -> float | int:
     return value
 
 
-def format_value(value: Any, fmt: str = "auto", column_type: str = "") -> str:
+def format_value(
+    value: Any, fmt: str = "auto", column_type: str = "", currency_symbol: str = DEFAULT_CURRENCY_SYMBOL
+) -> str:
     """Formats one stored value as display text."""
+    sym = currency_symbol
     if value is None:
         return "—"
     match _format_name(fmt):
@@ -136,12 +150,12 @@ def format_value(value: Any, fmt: str = "auto", column_type: str = "") -> str:
             if isinstance(value, float):
                 return f"{value:,.2f}"
             return str(value)
-        case "aud":
+        case "currency":
             n = _number(value, fmt)
-            return f"-${-n:,.0f}" if n < 0 else f"${n:,.0f}"
-        case "aud_m":
+            return f"-{sym}{-n:,.0f}" if n < 0 else f"{sym}{n:,.0f}"
+        case "currency_m":
             n = _number(value, fmt) / 1e6
-            return f"-${-n:,.1f}M" if n < 0 else f"${n:,.1f}M"
+            return f"-{sym}{-n:,.1f}M" if n < 0 else f"{sym}{n:,.1f}M"
         case "int":
             return f"{round(_number(value, fmt)):,}"
         case "decimal":
@@ -156,16 +170,21 @@ def format_value(value: Any, fmt: str = "auto", column_type: str = "") -> str:
             return str(value)
 
 
+def _format(result: StoredResult, value: Any, column: str, fmt: str) -> str:
+    return format_value(value, fmt, result.column_type(column), _ctx().currency_symbol)
+
+
 def _cell(result: StoredResult, row: dict[str, Any], column: str, fmt: str) -> str:
-    return format_value(row.get(column), fmt, result.column_type(column))
+    return _format(result, row.get(column), column, fmt)
 
 
 # --- charts --------------------------------------------------------------------------------
 
-# Axis format (d3), scale applied to the values, and axis title suffix.
+# Axis format (d3), scale applied to the values, and axis title suffix. The currency symbol
+# goes in the title ("{sym}" is replaced), not the d3 format, whose "$" is locale-bound.
 _AXIS: dict[str, tuple[str, float, str]] = {
-    "aud": ("$,.0f", 1.0, ""),
-    "aud_m": ("$,.1f", 1e-6, " ($M)"),
+    "currency": (",.0f", 1.0, " ({sym})"),
+    "currency_m": (",.1f", 1e-6, " ({sym}M)"),
     "int": (",d", 1.0, ""),
     "decimal": (",.2f", 1.0, ""),
     "pct": (".1f", 1.0, " (%)"),
@@ -178,7 +197,8 @@ def _axis(result: StoredResult, y: str, fmt: str) -> tuple[str, float, str]:
         return (",d", 1.0, "") if result.column_type(y) in INTEGER_TYPES else (",.2~f", 1.0, "")
     if fmt not in _AXIS:
         raise MacroError(f"format {fmt!r} does not apply to a chart value; use one of: {', '.join(_AXIS)}")
-    return _AXIS[fmt]
+    axis_format, scale, suffix = _AXIS[fmt]
+    return axis_format, scale, suffix.replace("{sym}", _ctx().currency_symbol)
 
 
 def _chart_values(
@@ -233,20 +253,20 @@ def _chart(
     values, domain = _chart_values(result, x, y, color, scale)
 
     temporal = result.is_temporal(x)
-    x_enc: dict[str, Any] = {"field": x, "type": "temporal" if temporal else "ordinal", "title": x}
+    x_enc: dict[str, Any] = {"field": x, "type": "temporal" if temporal else "ordinal", "title": column_label(x)}
     if not temporal:
         x_enc["sort"] = "-y" if sort_by_value and not horizontal else ("-x" if sort_by_value else None)
     y_enc: dict[str, Any] = {
         "field": y,
         "type": "quantitative",
-        "title": y + suffix,
+        "title": column_label(y) + suffix,
         "axis": {"format": axis_format},
     }
     if mark == "bar" and not temporal:
         x_enc["type"] = "nominal"
     encoding: dict[str, Any] = {"y": x_enc, "x": y_enc} if horizontal else {"x": x_enc, "y": y_enc}
     if color:
-        encoding["color"] = {"field": color, "type": "nominal", "title": color, "sort": domain}
+        encoding["color"] = {"field": color, "type": "nominal", "title": column_label(color), "sort": domain}
     encoding["tooltip"] = [
         {"field": x, "type": x_enc["type"]},
         *([{"field": color, "type": "nominal"}] if color else []),
@@ -281,7 +301,7 @@ def BarChart(
         title: Chart title, plain text.
         color: Optional column to stack by; the top 8 groups are kept, the rest become "Other".
         horizontal: Draw bars horizontally (good for long category names).
-        format: Value format: auto, aud, aud_m, int, decimal, pct, fraction_pct.
+        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct.
     """
     return _chart(
         _result(result_id), mark="bar", x=x, y=y, title=title, color=color, fmt=format,
@@ -307,7 +327,7 @@ def LineChart(
         y: Numeric column for the vertical axis.
         title: Chart title, plain text.
         color: Optional column with one line per group; the top 8 are kept, the rest become "Other".
-        format: Value format: auto, aud, aud_m, int, decimal, pct, fraction_pct.
+        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct.
     """
     return _chart(
         _result(result_id), mark="line", x=x, y=y, title=title, color=color, fmt=format,
@@ -334,7 +354,7 @@ def DataTable(result_id: str, title: str, columns: str = "", format: str = "") -
         result_id: ID of a stored query result, e.g. "r1".
         title: Table title, plain text.
         columns: Optional comma-separated columns to show, in order (default: all).
-        format: Optional comma-separated column:format pairs, e.g. "value:aud_m,share:pct".
+        format: Optional comma-separated column:format pairs, e.g. "value:currency_m,share:pct".
     """
     result = _result(result_id)
     shown = [_column(result, c.strip()) for c in columns.split(",") if c.strip()] or result.columns
@@ -342,7 +362,8 @@ def DataTable(result_id: str, title: str, columns: str = "", format: str = "") -
     cap = _ctx().table_row_cap
     rows = result.rows[:cap]
     grid_columns = [
-        {"key": c, "label": c, **({"align": "end"} if result.is_numeric(c) else {})} for c in shown
+        {"key": c, "label": column_label(c), **({"align": "end"} if result.is_numeric(c) else {})}
+        for c in shown
     ]
     cells = [[_cell(result, r, c, formats.get(c, "auto")) for c in shown] for r in rows]
     notes = []
@@ -370,7 +391,7 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
         column: Column holding the value.
         label: Short label shown above the value, plain text.
         row: Row index (0 = first row).
-        format: Value format: auto, aud, aud_m, int, decimal, pct, fraction_pct, text, date.
+        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct, text, date.
     """
     result = _result(result_id)
     _column(result, column)
@@ -379,7 +400,7 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
         child=Column(
             children=[
                 Text(text=label, variant="caption"),
-                Text(text=format_value(value, format, result.column_type(column)), variant="h2"),
+                Text(text=_format(result, value, column, format), variant="h2"),
                 _sql_details(result),
             ]
         )
@@ -393,11 +414,29 @@ def _row(result: StoredResult, index: int) -> dict[str, Any]:
 
 
 _PLACEHOLDER = re.compile(r"\{(r\d+)\[(\d+)\]\.([A-Za-z_][A-Za-z0-9_]*)(?:\|([a-z_]+))?\}")
+# Anything placeholder-shaped, valid or not, so its digits are not counted as bare numbers.
+_PLACEHOLDER_SHAPE = re.compile(r"\{r\d+\[\d+\]\.[^}]*\}")
 _MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$])")
 
 
 def escape_markdown(text: str) -> str:
     return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
+
+
+def _fill(template: str, on_error: Callable[[Exception], None] | None = None) -> str:
+    def fill(m: re.Match[str]) -> str:
+        try:
+            result = _result(m.group(1))
+            column = _column(result, m.group(3))
+            value = _row(result, int(m.group(2)))[column]
+            return escape_markdown(_format(result, value, column, m.group(4) or "auto"))
+        except MacroError as e:
+            if on_error is None:
+                raise
+            on_error(e)
+            return m.group(0)
+
+    return _PLACEHOLDER.sub(fill, template)
 
 
 @macro
@@ -406,16 +445,30 @@ def Cite(template: str) -> Text:
     """A sentence with numbers filled in from stored results, so they are never retyped.
 
     Args:
-        template: Markdown text with placeholders like {r1[0].value|aud_m}: result ID, row index, column, optional format.
+        template: Markdown text with placeholders like {r1[0].value|currency_m}: result ID, row index, column, optional format.
     """
+    return Text(text=_fill(template))
 
-    def fill(m: re.Match[str]) -> str:
-        result = _result(m.group(1))
-        column = _column(result, m.group(3))
-        value = _row(result, int(m.group(2)))[column]
-        return escape_markdown(format_value(value, m.group(4) or "auto", result.column_type(column)))
 
-    return Text(text=_PLACEHOLDER.sub(fill, template))
+_BARE_NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
+
+
+@dataclass
+class FilledProse:
+    text: str
+    bare_numbers: list[str]  # numbers the model typed itself; logged, not rejected (ADR 0001)
+
+
+def fill_prose(prose: str) -> FilledProse:
+    """Fills `Cite` placeholders in the Turn's prose outside `<a2ui>`.
+
+    Placeholder errors are recorded in the context's error list, like macro errors, so they go
+    back to the model; the placeholder is left as written.
+    """
+    ctx = _ctx()
+    text = _fill(prose, on_error=lambda e: ctx.errors.append(f"prose: {e}"))
+    bare = _BARE_NUMBER.findall(_PLACEHOLDER_SHAPE.sub("", prose))
+    return FilledProse(text=text, bare_numbers=bare)
 
 
 MACROS = [BarChart, LineChart, DataTable, Metric, Cite]
