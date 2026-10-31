@@ -1,0 +1,16 @@
+{
+  "name": "client-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "vite", "build": "tsc --noEmit && vite build"},
+  "dependencies": {
+    "@a2ui/lit": "0.14.0",
+    "@a2ui/web_core": "0.14.0",
+    "lit": "^3.3.3",
+    "vega": "5.33.1",
+    "vega-embed": "6.29.0",
+    "vega-lite": "5.23.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {"typescript": "~5.8.3", "vite": "6.4.5"}
+}

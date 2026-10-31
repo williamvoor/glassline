@@ -1,0 +1,582 @@
+{
+  "q1": {
+    "sql": "SELECT display_name AS supplier, contracts, value FROM core.metric_top_suppliers(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10",
+    "columns": [
+      "supplier",
+      "contracts",
+      "value"
+    ],
+    "rows": [
+      {
+        "supplier": "VENTIA AUSTRALIA PTY LTD",
+        "contracts": 37,
+        "value": 3441812602.8
+      },
+      {
+        "supplier": "SECURE JOURNEYS PTY LTD",
+        "contracts": 1,
+        "value": 2343038544.0
+      },
+      {
+        "supplier": "FMS ACCOUNT RESERVE BANK OF AUSTRALIA",
+        "contracts": 29,
+        "value": 1524052924.03
+      },
+      {
+        "supplier": "CEA TECHNOLOGIES PTY LIMITED",
+        "contracts": 13,
+        "value": 1364599757.14
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "contracts": 8,
+        "value": 1192827332.3
+      },
+      {
+        "supplier": "BOEING DEFENCE AUSTRALIA LTD",
+        "contracts": 74,
+        "value": 1153799991.5
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "contracts": 43,
+        "value": 1110735124.59
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "contracts": 64,
+        "value": 928262382.76
+      },
+      {
+        "supplier": "CPB CONTRACTORS PTY LIMITED & SPOTLESS FACILITY SERVICES PTY LTD",
+        "contracts": 2,
+        "value": 925546322.0
+      },
+      {
+        "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+        "contracts": 9,
+        "value": 916387535.38
+      }
+    ]
+  },
+  "q2": {
+    "sql": "SELECT t.display_name AS supplier, f.agency_name AS agency, sum(f.current_value) AS value\nFROM (SELECT supplier_key, display_name FROM core.metric_top_suppliers(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10) t\nJOIN core.v_contract_fact f USING (supplier_key)\nWHERE f.financial_year = '2024-25' AND NOT coalesce(f.is_cancelled, false)\nGROUP BY 1, 2 ORDER BY 1, 3 DESC",
+    "columns": [
+      "supplier",
+      "agency",
+      "value"
+    ],
+    "rows": [
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Department of Health, Disability and Ageing",
+        "value": 653485314.72
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Australian Taxation Office",
+        "value": 243180286.91
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Department of Defence",
+        "value": 141851461.87
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Tourism Australia",
+        "value": 38914489.0
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Australian Bureau of Statistics",
+        "value": 10858307.95
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Australian Electoral Commission",
+        "value": 5596800.0
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Australian Criminal Intelligence Commission",
+        "value": 5468041.63
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Australian Digital Health Agency",
+        "value": 3657302.0
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Department of Agriculture, Fisheries and Forestry",
+        "value": 2941981.9
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Department of Employment and Workplace Relations",
+        "value": 2029793.05
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Services Australia",
+        "value": 1235745.76
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Future Fund Management Agency",
+        "value": 1187799.8
+      },
+      {
+        "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+        "agency": "Australian Prudential Regulation Authority",
+        "value": 327800.0
+      },
+      {
+        "supplier": "BOEING DEFENCE AUSTRALIA LTD",
+        "agency": "Department of Defence",
+        "value": 1113743861.21
+      },
+      {
+        "supplier": "BOEING DEFENCE AUSTRALIA LTD",
+        "agency": "Australian Signals Directorate",
+        "value": 40056130.29
+      },
+      {
+        "supplier": "CEA TECHNOLOGIES PTY LIMITED",
+        "agency": "Department of Defence",
+        "value": 1364599757.14
+      },
+      {
+        "supplier": "CPB CONTRACTORS PTY LIMITED & SPOTLESS FACILITY SERVICES PTY LTD",
+        "agency": "Department of Defence",
+        "value": 925546322.0
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Department of Health, Disability and Ageing",
+        "value": 797548326.27
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Aged Care Quality and Safety Commission",
+        "value": 69552909.75
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Department of Industry, Science and Resources",
+        "value": 18510613.81
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Department of Climate Change, Energy, the Environment and Water",
+        "value": 6854556.34
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "NDIS Quality and Safeguards Commission",
+        "value": 5752399.04
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+        "value": 5501325.48
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Cancer Australia",
+        "value": 5182000.0
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "National Emergency Management Agency",
+        "value": 4759258.63
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Department of Finance",
+        "value": 4400000.0
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Director of National Parks",
+        "value": 2443505.27
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Sport Integrity Australia",
+        "value": 2328294.43
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Australian Bureau of Statistics",
+        "value": 1782225.0
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Department of Home Affairs",
+        "value": 1545203.47
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Geoscience Australia",
+        "value": 839533.3
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Austrade",
+        "value": 641326.57
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Productivity Commission",
+        "value": 293275.35
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "National Health and Medical Research Council",
+        "value": 236814.65
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Australian Prudential Regulation Authority",
+        "value": 33565.4
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Australian Competition and Consumer Commission",
+        "value": 29750.0
+      },
+      {
+        "supplier": "EVOLVE FM PTY LTD",
+        "agency": "Australian Communications and Media Authority",
+        "value": 27500.0
+      },
+      {
+        "supplier": "FMS ACCOUNT RESERVE BANK OF AUSTRALIA",
+        "agency": "Department of Defence",
+        "value": 1524052924.03
+      },
+      {
+        "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+        "agency": "Department of Home Affairs",
+        "value": 866295100.0
+      },
+      {
+        "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+        "agency": "Department of Health, Disability and Ageing",
+        "value": 49796478.62
+      },
+      {
+        "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+        "agency": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+        "value": 295956.76
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "agency": "Department of Defence",
+        "value": 1132038736.01
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "agency": "Federal Court of Australia",
+        "value": 51022723.97
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "agency": "Department of the Treasury",
+        "value": 7407816.45
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "agency": "Australian Electoral Commission",
+        "value": 1373281.28
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "agency": "Department of Employment and Workplace Relations",
+        "value": 828524.46
+      },
+      {
+        "supplier": "MSS SECURITY PTY LIMITED",
+        "agency": "Fair Work Commission",
+        "value": 156250.13
+      },
+      {
+        "supplier": "SECURE JOURNEYS PTY LTD",
+        "agency": "Department of Home Affairs",
+        "value": 2343038544.0
+      },
+      {
+        "supplier": "VENTIA AUSTRALIA PTY LTD",
+        "agency": "Department of Defence",
+        "value": 3441812602.8
+      }
+    ]
+  },
+  "q3": {
+    "sql": "SELECT label, original_value, amendment_value FROM core.metric_value_by_quarter(NULL, NULL, NULL, NULL, NULL, '2022-23', '2024-25')",
+    "columns": [
+      "label",
+      "original_value",
+      "amendment_value"
+    ],
+    "rows": [
+      {
+        "label": "FY2022-23 Q1",
+        "original_value": 13960191932.64,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2022-23 Q2",
+        "original_value": 11585017834.61,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2022-23 Q3",
+        "original_value": 11391029896.1,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2022-23 Q4",
+        "original_value": 7879927323.26,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2023-24 Q1",
+        "original_value": 22349766216.31,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2023-24 Q2",
+        "original_value": 16084277790.99,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2023-24 Q3",
+        "original_value": 11643100385.33,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2023-24 Q4",
+        "original_value": 11855419897.32,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2024-25 Q1",
+        "original_value": 13057667635.91,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2024-25 Q2",
+        "original_value": 13384429867.09,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2024-25 Q3",
+        "original_value": 11812928132.14,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2024-25 Q4",
+        "original_value": 10348833467.3,
+        "amendment_value": 0.0
+      },
+      {
+        "label": "FY2026-27 Q2",
+        "original_value": 0.0,
+        "amendment_value": -3119102.0
+      },
+      {
+        "label": "Amendment date unknown",
+        "original_value": 0.0,
+        "amendment_value": 56905798193.24
+      }
+    ]
+  },
+  "q4": {
+    "sql": "SELECT count(*) AS contracts, sum(current_value) AS total_value FROM core.v_contract_fact WHERE financial_year = '2024-25' AND NOT coalesce(is_cancelled, false)",
+    "columns": [
+      "contracts",
+      "total_value"
+    ],
+    "rows": [
+      {
+        "contracts": 58202,
+        "total_value": 62222892590.7
+      }
+    ]
+  },
+  "q5": {
+    "sql": "SELECT coalesce(limited_tender_reason_code, '(none)') AS reason, contracts, value, value_share FROM core.metric_limited_reasons(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10",
+    "columns": [
+      "reason",
+      "contracts",
+      "value",
+      "value_share"
+    ],
+    "rows": [
+      {
+        "reason": "(none)",
+        "contracts": 28152,
+        "value": 15386998160.84,
+        "value_share": 0.6643847678625353
+      },
+      {
+        "reason": "AD",
+        "contracts": 1991,
+        "value": 4278667751.02,
+        "value_share": 0.18474569573661093
+      },
+      {
+        "reason": "TR",
+        "contracts": 2051,
+        "value": 2235670081.05,
+        "value_share": 0.09653248361306963
+      },
+      {
+        "reason": "ER",
+        "contracts": 384,
+        "value": 416676228.74,
+        "value_share": 0.017991380554642816
+      },
+      {
+        "reason": "EU",
+        "contracts": 96,
+        "value": 404009353.56,
+        "value_share": 0.017444446133904015
+      },
+      {
+        "reason": "CT",
+        "contracts": 91,
+        "value": 98895006.33,
+        "value_share": 0.004270120470316226
+      },
+      {
+        "reason": "AC",
+        "contracts": 33,
+        "value": 90877710.49,
+        "value_share": 0.003923947085497099
+      },
+      {
+        "reason": "PT",
+        "contracts": 68,
+        "value": 86601334.58,
+        "value_share": 0.0037393003476110143
+      },
+      {
+        "reason": "VM",
+        "contracts": 85,
+        "value": 75175008.32,
+        "value_share": 0.003245930748133707
+      },
+      {
+        "reason": "EV",
+        "contracts": 207,
+        "value": 36752457.52,
+        "value_share": 0.0015869094609984593
+      }
+    ]
+  },
+  "q6": {
+    "sql": "SELECT agency_name AS agency, contracts, value, share FROM core.metric_value_by_agency(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 15",
+    "columns": [
+      "agency",
+      "contracts",
+      "value",
+      "share"
+    ],
+    "rows": [
+      {
+        "agency": "Department of Defence",
+        "contracts": 20823,
+        "value": 27009049277.57,
+        "share": 0.43406932967958556
+      },
+      {
+        "agency": "Department of Health, Disability and Ageing",
+        "contracts": 2143,
+        "value": 5851567404.83,
+        "share": 0.0940420343895197
+      },
+      {
+        "agency": "Department of Home Affairs",
+        "contracts": 1563,
+        "value": 5416734791.85,
+        "share": 0.08705372839994906
+      },
+      {
+        "agency": "Department of Foreign Affairs and Trade - Australian Aid Program",
+        "contracts": 2642,
+        "value": 3148298948.7,
+        "share": 0.05059711655337851
+      },
+      {
+        "agency": "Department of Veterans' Affairs",
+        "contracts": 3461,
+        "value": 2798165213.61,
+        "share": 0.04497002786444263
+      },
+      {
+        "agency": "Services Australia",
+        "contracts": 2087,
+        "value": 2137741792.46,
+        "share": 0.03435619437562941
+      },
+      {
+        "agency": "Australian Taxation Office",
+        "contracts": 830,
+        "value": 1947736712.1,
+        "share": 0.0313025741974444
+      },
+      {
+        "agency": "Department of Climate Change, Energy, the Environment and Water",
+        "contracts": 2041,
+        "value": 1423136873.04,
+        "share": 0.022871596188903404
+      },
+      {
+        "agency": "Department of Employment and Workplace Relations",
+        "contracts": 949,
+        "value": 1218499764.49,
+        "share": 0.01958282094831638
+      },
+      {
+        "agency": "Department of Finance",
+        "contracts": 990,
+        "value": 983173637.15,
+        "share": 0.01580083464806565
+      },
+      {
+        "agency": "Department of Agriculture, Fisheries and Forestry",
+        "contracts": 1549,
+        "value": 868263445.98,
+        "share": 0.013954083615035489
+      },
+      {
+        "agency": "Australian Signals Directorate",
+        "contracts": 1324,
+        "value": 719036455.57,
+        "share": 0.011555818536110119
+      },
+      {
+        "agency": "Department of Social Services",
+        "contracts": 270,
+        "value": 597214622.62,
+        "share": 0.009597988742639414
+      },
+      {
+        "agency": "Australian Electoral Commission",
+        "contracts": 905,
+        "value": 514265237.58,
+        "share": 0.008264887988458182
+      },
+      {
+        "agency": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+        "contracts": 973,
+        "value": 511892462.31,
+        "share": 0.008226754511031987
+      }
+    ]
+  }
+}

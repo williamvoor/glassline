@@ -1,0 +1,2309 @@
+[
+ {
+  "version": "v0.9.1",
+  "createSurface": {
+   "surfaceId": "main",
+   "catalogId": "urn:explorer:catalog:basic-vegachart:v0_9"
+  }
+ },
+ {
+  "version": "v0.9.1",
+  "updateComponents": {
+   "surfaceId": "main",
+   "components": [
+    {
+     "id": "title",
+     "component": "Text",
+     "text": "Top 10 Suppliers by Contract Value \u2014 2024",
+     "variant": "h2"
+    },
+    {
+     "id": "intro",
+     "component": "Text",
+     "text": "Calendar year 2024. Financial year note: 2024-25 = Jul 2024 to Jun 2025. Value totals from stored results below; agency split shows concentration vs diversification."
+    },
+    {
+     "component": "Text",
+     "id": "chartTop__text_1",
+     "text": "Top 10 suppliers by total contract value",
+     "variant": "h4"
+    },
+    {
+     "component": "VegaChart",
+     "id": "chartTop__vegachart_1",
+     "spec": {
+      "mark": {
+       "type": "bar",
+       "tooltip": true
+      },
+      "data": {
+       "values": [
+        {
+         "supplier": "VENTIA AUSTRALIA PTY LTD",
+         "contracts": 37,
+         "value": 3441812602.8
+        },
+        {
+         "supplier": "SECURE JOURNEYS PTY LTD",
+         "contracts": 1,
+         "value": 2343038544.0
+        },
+        {
+         "supplier": "FMS ACCOUNT RESERVE BANK OF AUSTRALIA",
+         "contracts": 29,
+         "value": 1524052924.03
+        },
+        {
+         "supplier": "CEA TECHNOLOGIES PTY LIMITED",
+         "contracts": 13,
+         "value": 1364599757.14
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "contracts": 8,
+         "value": 1192827332.3
+        },
+        {
+         "supplier": "BOEING DEFENCE AUSTRALIA LTD",
+         "contracts": 74,
+         "value": 1153799991.5
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "contracts": 43,
+         "value": 1110735124.59
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "contracts": 64,
+         "value": 928262382.76
+        },
+        {
+         "supplier": "CPB CONTRACTORS PTY LIMITED & SPOTLESS FACILITY SERVICES PTY LTD",
+         "contracts": 2,
+         "value": 925546322.0
+        },
+        {
+         "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+         "contracts": 9,
+         "value": 916387535.38
+        }
+       ]
+      },
+      "encoding": {
+       "x": {
+        "field": "supplier",
+        "type": "nominal",
+        "sort": null
+       },
+       "y": {
+        "field": "value",
+        "type": "quantitative"
+       }
+      }
+     }
+    },
+    {
+     "component": "Text",
+     "id": "chartTop__text_2",
+     "text": "SQL: `SELECT display_name AS supplier, contracts, value FROM core.metric_top_suppliers(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10`",
+     "variant": "caption"
+    },
+    {
+     "component": "Column",
+     "id": "chartTop",
+     "children": [
+      "chartTop__text_1",
+      "chartTop__vegachart_1",
+      "chartTop__text_2"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_1",
+     "text": "Top 10 suppliers \u2014 contracts and value",
+     "variant": "h4"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_2",
+     "text": "**supplier**",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_3",
+     "text": "**contracts**",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_4",
+     "text": "**value**",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_1",
+     "children": [
+      "tableTop__text_2",
+      "tableTop__text_3",
+      "tableTop__text_4"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_5",
+     "text": "VENTIA AUSTRALIA PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_6",
+     "text": "37",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_7",
+     "text": "3,441,812,603",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_2",
+     "children": [
+      "tableTop__text_5",
+      "tableTop__text_6",
+      "tableTop__text_7"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_8",
+     "text": "SECURE JOURNEYS PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_9",
+     "text": "1",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_10",
+     "text": "2,343,038,544",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_3",
+     "children": [
+      "tableTop__text_8",
+      "tableTop__text_9",
+      "tableTop__text_10"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_11",
+     "text": "FMS ACCOUNT RESERVE BANK OF AUSTRALIA",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_12",
+     "text": "29",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_13",
+     "text": "1,524,052,924",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_4",
+     "children": [
+      "tableTop__text_11",
+      "tableTop__text_12",
+      "tableTop__text_13"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_14",
+     "text": "CEA TECHNOLOGIES PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_15",
+     "text": "13",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_16",
+     "text": "1,364,599,757",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_5",
+     "children": [
+      "tableTop__text_14",
+      "tableTop__text_15",
+      "tableTop__text_16"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_17",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_18",
+     "text": "8",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_19",
+     "text": "1,192,827,332",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_6",
+     "children": [
+      "tableTop__text_17",
+      "tableTop__text_18",
+      "tableTop__text_19"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_20",
+     "text": "BOEING DEFENCE AUSTRALIA LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_21",
+     "text": "74",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_22",
+     "text": "1,153,799,992",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_7",
+     "children": [
+      "tableTop__text_20",
+      "tableTop__text_21",
+      "tableTop__text_22"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_23",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_24",
+     "text": "43",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_25",
+     "text": "1,110,735,125",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_8",
+     "children": [
+      "tableTop__text_23",
+      "tableTop__text_24",
+      "tableTop__text_25"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_26",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_27",
+     "text": "64",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_28",
+     "text": "928,262,383",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_9",
+     "children": [
+      "tableTop__text_26",
+      "tableTop__text_27",
+      "tableTop__text_28"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_29",
+     "text": "CPB CONTRACTORS PTY LIMITED & SPOTLESS FACILITY SERVICES PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_30",
+     "text": "2",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_31",
+     "text": "925,546,322",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_10",
+     "children": [
+      "tableTop__text_29",
+      "tableTop__text_30",
+      "tableTop__text_31"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_32",
+     "text": "HEALTHCARE AUSTRALIA PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_33",
+     "text": "9",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_34",
+     "text": "916,387,535",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableTop__row_11",
+     "children": [
+      "tableTop__text_32",
+      "tableTop__text_33",
+      "tableTop__text_34"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableTop__text_35",
+     "text": "SQL: `SELECT display_name AS supplier, contracts, value FROM core.metric_top_suppliers(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10`",
+     "variant": "caption"
+    },
+    {
+     "component": "Column",
+     "id": "tableTop",
+     "children": [
+      "tableTop__text_1",
+      "tableTop__row_1",
+      "tableTop__row_2",
+      "tableTop__row_3",
+      "tableTop__row_4",
+      "tableTop__row_5",
+      "tableTop__row_6",
+      "tableTop__row_7",
+      "tableTop__row_8",
+      "tableTop__row_9",
+      "tableTop__row_10",
+      "tableTop__row_11",
+      "tableTop__text_35"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "chartSplit__text_1",
+     "text": "Agency split of supplier value",
+     "variant": "h4"
+    },
+    {
+     "component": "VegaChart",
+     "id": "chartSplit__vegachart_1",
+     "spec": {
+      "mark": {
+       "type": "bar",
+       "tooltip": true
+      },
+      "data": {
+       "values": [
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Department of Health, Disability and Ageing",
+         "value": 653485314.72
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Australian Taxation Office",
+         "value": 243180286.91
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Department of Defence",
+         "value": 141851461.87
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Tourism Australia",
+         "value": 38914489.0
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Australian Bureau of Statistics",
+         "value": 10858307.95
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Australian Electoral Commission",
+         "value": 5596800.0
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Australian Criminal Intelligence Commission",
+         "value": 5468041.63
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Australian Digital Health Agency",
+         "value": 3657302.0
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Department of Agriculture, Fisheries and Forestry",
+         "value": 2941981.9
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Department of Employment and Workplace Relations",
+         "value": 2029793.05
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Services Australia",
+         "value": 1235745.76
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Future Fund Management Agency",
+         "value": 1187799.8
+        },
+        {
+         "supplier": "ACCENTURE AUSTRALIA PTY LIMITED",
+         "agency": "Australian Prudential Regulation Authority",
+         "value": 327800.0
+        },
+        {
+         "supplier": "BOEING DEFENCE AUSTRALIA LTD",
+         "agency": "Department of Defence",
+         "value": 1113743861.21
+        },
+        {
+         "supplier": "BOEING DEFENCE AUSTRALIA LTD",
+         "agency": "Australian Signals Directorate",
+         "value": 40056130.29
+        },
+        {
+         "supplier": "CEA TECHNOLOGIES PTY LIMITED",
+         "agency": "Department of Defence",
+         "value": 1364599757.14
+        },
+        {
+         "supplier": "CPB CONTRACTORS PTY LIMITED & SPOTLESS FACILITY SERVICES PTY LTD",
+         "agency": "Department of Defence",
+         "value": 925546322.0
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Department of Health, Disability and Ageing",
+         "value": 797548326.27
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Aged Care Quality and Safety Commission",
+         "value": 69552909.75
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Department of Industry, Science and Resources",
+         "value": 18510613.81
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Department of Climate Change, Energy, the Environment and Water",
+         "value": 6854556.34
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "NDIS Quality and Safeguards Commission",
+         "value": 5752399.04
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+         "value": 5501325.48
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Cancer Australia",
+         "value": 5182000.0
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "National Emergency Management Agency",
+         "value": 4759258.63
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Department of Finance",
+         "value": 4400000.0
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Director of National Parks",
+         "value": 2443505.27
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Sport Integrity Australia",
+         "value": 2328294.43
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Australian Bureau of Statistics",
+         "value": 1782225.0
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Department of Home Affairs",
+         "value": 1545203.47
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Geoscience Australia",
+         "value": 839533.3
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Austrade",
+         "value": 641326.57
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Productivity Commission",
+         "value": 293275.35
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "National Health and Medical Research Council",
+         "value": 236814.65
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Australian Prudential Regulation Authority",
+         "value": 33565.4
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Australian Competition and Consumer Commission",
+         "value": 29750.0
+        },
+        {
+         "supplier": "EVOLVE FM PTY LTD",
+         "agency": "Australian Communications and Media Authority",
+         "value": 27500.0
+        },
+        {
+         "supplier": "FMS ACCOUNT RESERVE BANK OF AUSTRALIA",
+         "agency": "Department of Defence",
+         "value": 1524052924.03
+        },
+        {
+         "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+         "agency": "Department of Home Affairs",
+         "value": 866295100.0
+        },
+        {
+         "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+         "agency": "Department of Health, Disability and Ageing",
+         "value": 49796478.62
+        },
+        {
+         "supplier": "HEALTHCARE AUSTRALIA PTY LTD",
+         "agency": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+         "value": 295956.76
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "agency": "Department of Defence",
+         "value": 1132038736.01
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "agency": "Federal Court of Australia",
+         "value": 51022723.97
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "agency": "Department of the Treasury",
+         "value": 7407816.45
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "agency": "Australian Electoral Commission",
+         "value": 1373281.28
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "agency": "Department of Employment and Workplace Relations",
+         "value": 828524.46
+        },
+        {
+         "supplier": "MSS SECURITY PTY LIMITED",
+         "agency": "Fair Work Commission",
+         "value": 156250.13
+        },
+        {
+         "supplier": "SECURE JOURNEYS PTY LTD",
+         "agency": "Department of Home Affairs",
+         "value": 2343038544.0
+        },
+        {
+         "supplier": "VENTIA AUSTRALIA PTY LTD",
+         "agency": "Department of Defence",
+         "value": 3441812602.8
+        }
+       ]
+      },
+      "encoding": {
+       "x": {
+        "field": "supplier",
+        "type": "nominal",
+        "sort": null
+       },
+       "y": {
+        "field": "value",
+        "type": "quantitative"
+       },
+       "color": {
+        "field": "agency",
+        "type": "nominal"
+       }
+      }
+     }
+    },
+    {
+     "component": "Text",
+     "id": "chartSplit__text_2",
+     "text": "SQL: `SELECT t.display_name AS supplier, f.agency_name AS agency, sum(f.current_value) AS value FROM (SELECT supplier_key, display_name FROM core.metric_top_suppliers(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10) t JOIN core.v_contract_fact f USING (supplier_key) WHERE f.financial_year = '2024-25' AND NOT coalesce(f.is_cancelled, false) GROUP BY 1, 2 ORDER BY 1, 3 DESC`",
+     "variant": "caption"
+    },
+    {
+     "component": "Column",
+     "id": "chartSplit",
+     "children": [
+      "chartSplit__text_1",
+      "chartSplit__vegachart_1",
+      "chartSplit__text_2"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_1",
+     "text": "Supplier value split by agency",
+     "variant": "h4"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_2",
+     "text": "**supplier**",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_3",
+     "text": "**agency**",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_4",
+     "text": "**value**",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_1",
+     "children": [
+      "tableSplit__text_2",
+      "tableSplit__text_3",
+      "tableSplit__text_4"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_5",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_6",
+     "text": "Department of Health, Disability and Ageing",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_7",
+     "text": "653,485,315",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_2",
+     "children": [
+      "tableSplit__text_5",
+      "tableSplit__text_6",
+      "tableSplit__text_7"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_8",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_9",
+     "text": "Australian Taxation Office",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_10",
+     "text": "243,180,287",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_3",
+     "children": [
+      "tableSplit__text_8",
+      "tableSplit__text_9",
+      "tableSplit__text_10"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_11",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_12",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_13",
+     "text": "141,851,462",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_4",
+     "children": [
+      "tableSplit__text_11",
+      "tableSplit__text_12",
+      "tableSplit__text_13"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_14",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_15",
+     "text": "Tourism Australia",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_16",
+     "text": "38,914,489",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_5",
+     "children": [
+      "tableSplit__text_14",
+      "tableSplit__text_15",
+      "tableSplit__text_16"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_17",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_18",
+     "text": "Australian Bureau of Statistics",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_19",
+     "text": "10,858,308",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_6",
+     "children": [
+      "tableSplit__text_17",
+      "tableSplit__text_18",
+      "tableSplit__text_19"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_20",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_21",
+     "text": "Australian Electoral Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_22",
+     "text": "5,596,800",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_7",
+     "children": [
+      "tableSplit__text_20",
+      "tableSplit__text_21",
+      "tableSplit__text_22"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_23",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_24",
+     "text": "Australian Criminal Intelligence Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_25",
+     "text": "5,468,042",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_8",
+     "children": [
+      "tableSplit__text_23",
+      "tableSplit__text_24",
+      "tableSplit__text_25"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_26",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_27",
+     "text": "Australian Digital Health Agency",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_28",
+     "text": "3,657,302",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_9",
+     "children": [
+      "tableSplit__text_26",
+      "tableSplit__text_27",
+      "tableSplit__text_28"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_29",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_30",
+     "text": "Department of Agriculture, Fisheries and Forestry",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_31",
+     "text": "2,941,982",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_10",
+     "children": [
+      "tableSplit__text_29",
+      "tableSplit__text_30",
+      "tableSplit__text_31"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_32",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_33",
+     "text": "Department of Employment and Workplace Relations",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_34",
+     "text": "2,029,793",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_11",
+     "children": [
+      "tableSplit__text_32",
+      "tableSplit__text_33",
+      "tableSplit__text_34"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_35",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_36",
+     "text": "Services Australia",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_37",
+     "text": "1,235,746",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_12",
+     "children": [
+      "tableSplit__text_35",
+      "tableSplit__text_36",
+      "tableSplit__text_37"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_38",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_39",
+     "text": "Future Fund Management Agency",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_40",
+     "text": "1,187,800",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_13",
+     "children": [
+      "tableSplit__text_38",
+      "tableSplit__text_39",
+      "tableSplit__text_40"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_41",
+     "text": "ACCENTURE AUSTRALIA PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_42",
+     "text": "Australian Prudential Regulation Authority",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_43",
+     "text": "327,800",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_14",
+     "children": [
+      "tableSplit__text_41",
+      "tableSplit__text_42",
+      "tableSplit__text_43"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_44",
+     "text": "BOEING DEFENCE AUSTRALIA LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_45",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_46",
+     "text": "1,113,743,861",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_15",
+     "children": [
+      "tableSplit__text_44",
+      "tableSplit__text_45",
+      "tableSplit__text_46"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_47",
+     "text": "BOEING DEFENCE AUSTRALIA LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_48",
+     "text": "Australian Signals Directorate",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_49",
+     "text": "40,056,130",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_16",
+     "children": [
+      "tableSplit__text_47",
+      "tableSplit__text_48",
+      "tableSplit__text_49"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_50",
+     "text": "CEA TECHNOLOGIES PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_51",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_52",
+     "text": "1,364,599,757",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_17",
+     "children": [
+      "tableSplit__text_50",
+      "tableSplit__text_51",
+      "tableSplit__text_52"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_53",
+     "text": "CPB CONTRACTORS PTY LIMITED & SPOTLESS FACILITY SERVICES PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_54",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_55",
+     "text": "925,546,322",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_18",
+     "children": [
+      "tableSplit__text_53",
+      "tableSplit__text_54",
+      "tableSplit__text_55"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_56",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_57",
+     "text": "Department of Health, Disability and Ageing",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_58",
+     "text": "797,548,326",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_19",
+     "children": [
+      "tableSplit__text_56",
+      "tableSplit__text_57",
+      "tableSplit__text_58"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_59",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_60",
+     "text": "Aged Care Quality and Safety Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_61",
+     "text": "69,552,910",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_20",
+     "children": [
+      "tableSplit__text_59",
+      "tableSplit__text_60",
+      "tableSplit__text_61"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_62",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_63",
+     "text": "Department of Industry, Science and Resources",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_64",
+     "text": "18,510,614",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_21",
+     "children": [
+      "tableSplit__text_62",
+      "tableSplit__text_63",
+      "tableSplit__text_64"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_65",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_66",
+     "text": "Department of Climate Change, Energy, the Environment and Water",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_67",
+     "text": "6,854,556",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_22",
+     "children": [
+      "tableSplit__text_65",
+      "tableSplit__text_66",
+      "tableSplit__text_67"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_68",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_69",
+     "text": "NDIS Quality and Safeguards Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_70",
+     "text": "5,752,399",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_23",
+     "children": [
+      "tableSplit__text_68",
+      "tableSplit__text_69",
+      "tableSplit__text_70"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_71",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_72",
+     "text": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_73",
+     "text": "5,501,325",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_24",
+     "children": [
+      "tableSplit__text_71",
+      "tableSplit__text_72",
+      "tableSplit__text_73"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_74",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_75",
+     "text": "Cancer Australia",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_76",
+     "text": "5,182,000",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_25",
+     "children": [
+      "tableSplit__text_74",
+      "tableSplit__text_75",
+      "tableSplit__text_76"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_77",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_78",
+     "text": "National Emergency Management Agency",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_79",
+     "text": "4,759,259",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_26",
+     "children": [
+      "tableSplit__text_77",
+      "tableSplit__text_78",
+      "tableSplit__text_79"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_80",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_81",
+     "text": "Department of Finance",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_82",
+     "text": "4,400,000",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_27",
+     "children": [
+      "tableSplit__text_80",
+      "tableSplit__text_81",
+      "tableSplit__text_82"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_83",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_84",
+     "text": "Director of National Parks",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_85",
+     "text": "2,443,505",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_28",
+     "children": [
+      "tableSplit__text_83",
+      "tableSplit__text_84",
+      "tableSplit__text_85"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_86",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_87",
+     "text": "Sport Integrity Australia",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_88",
+     "text": "2,328,294",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_29",
+     "children": [
+      "tableSplit__text_86",
+      "tableSplit__text_87",
+      "tableSplit__text_88"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_89",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_90",
+     "text": "Australian Bureau of Statistics",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_91",
+     "text": "1,782,225",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_30",
+     "children": [
+      "tableSplit__text_89",
+      "tableSplit__text_90",
+      "tableSplit__text_91"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_92",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_93",
+     "text": "Department of Home Affairs",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_94",
+     "text": "1,545,203",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_31",
+     "children": [
+      "tableSplit__text_92",
+      "tableSplit__text_93",
+      "tableSplit__text_94"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_95",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_96",
+     "text": "Geoscience Australia",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_97",
+     "text": "839,533",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_32",
+     "children": [
+      "tableSplit__text_95",
+      "tableSplit__text_96",
+      "tableSplit__text_97"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_98",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_99",
+     "text": "Austrade",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_100",
+     "text": "641,327",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_33",
+     "children": [
+      "tableSplit__text_98",
+      "tableSplit__text_99",
+      "tableSplit__text_100"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_101",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_102",
+     "text": "Productivity Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_103",
+     "text": "293,275",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_34",
+     "children": [
+      "tableSplit__text_101",
+      "tableSplit__text_102",
+      "tableSplit__text_103"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_104",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_105",
+     "text": "National Health and Medical Research Council",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_106",
+     "text": "236,815",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_35",
+     "children": [
+      "tableSplit__text_104",
+      "tableSplit__text_105",
+      "tableSplit__text_106"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_107",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_108",
+     "text": "Australian Prudential Regulation Authority",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_109",
+     "text": "33,565",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_36",
+     "children": [
+      "tableSplit__text_107",
+      "tableSplit__text_108",
+      "tableSplit__text_109"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_110",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_111",
+     "text": "Australian Competition and Consumer Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_112",
+     "text": "29,750",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_37",
+     "children": [
+      "tableSplit__text_110",
+      "tableSplit__text_111",
+      "tableSplit__text_112"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_113",
+     "text": "EVOLVE FM PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_114",
+     "text": "Australian Communications and Media Authority",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_115",
+     "text": "27,500",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_38",
+     "children": [
+      "tableSplit__text_113",
+      "tableSplit__text_114",
+      "tableSplit__text_115"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_116",
+     "text": "FMS ACCOUNT RESERVE BANK OF AUSTRALIA",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_117",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_118",
+     "text": "1,524,052,924",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_39",
+     "children": [
+      "tableSplit__text_116",
+      "tableSplit__text_117",
+      "tableSplit__text_118"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_119",
+     "text": "HEALTHCARE AUSTRALIA PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_120",
+     "text": "Department of Home Affairs",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_121",
+     "text": "866,295,100",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_40",
+     "children": [
+      "tableSplit__text_119",
+      "tableSplit__text_120",
+      "tableSplit__text_121"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_122",
+     "text": "HEALTHCARE AUSTRALIA PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_123",
+     "text": "Department of Health, Disability and Ageing",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_124",
+     "text": "49,796,479",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_41",
+     "children": [
+      "tableSplit__text_122",
+      "tableSplit__text_123",
+      "tableSplit__text_124"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_125",
+     "text": "HEALTHCARE AUSTRALIA PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_126",
+     "text": "Department of Infrastructure, Transport, Regional Development, Communications, Sport and the Arts",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_127",
+     "text": "295,957",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_42",
+     "children": [
+      "tableSplit__text_125",
+      "tableSplit__text_126",
+      "tableSplit__text_127"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_128",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_129",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_130",
+     "text": "1,132,038,736",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_43",
+     "children": [
+      "tableSplit__text_128",
+      "tableSplit__text_129",
+      "tableSplit__text_130"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_131",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_132",
+     "text": "Federal Court of Australia",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_133",
+     "text": "51,022,724",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_44",
+     "children": [
+      "tableSplit__text_131",
+      "tableSplit__text_132",
+      "tableSplit__text_133"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_134",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_135",
+     "text": "Department of the Treasury",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_136",
+     "text": "7,407,816",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_45",
+     "children": [
+      "tableSplit__text_134",
+      "tableSplit__text_135",
+      "tableSplit__text_136"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_137",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_138",
+     "text": "Australian Electoral Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_139",
+     "text": "1,373,281",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_46",
+     "children": [
+      "tableSplit__text_137",
+      "tableSplit__text_138",
+      "tableSplit__text_139"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_140",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_141",
+     "text": "Department of Employment and Workplace Relations",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_142",
+     "text": "828,524",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_47",
+     "children": [
+      "tableSplit__text_140",
+      "tableSplit__text_141",
+      "tableSplit__text_142"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_143",
+     "text": "MSS SECURITY PTY LIMITED",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_144",
+     "text": "Fair Work Commission",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_145",
+     "text": "156,250",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_48",
+     "children": [
+      "tableSplit__text_143",
+      "tableSplit__text_144",
+      "tableSplit__text_145"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_146",
+     "text": "SECURE JOURNEYS PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_147",
+     "text": "Department of Home Affairs",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_148",
+     "text": "2,343,038,544",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_49",
+     "children": [
+      "tableSplit__text_146",
+      "tableSplit__text_147",
+      "tableSplit__text_148"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_149",
+     "text": "VENTIA AUSTRALIA PTY LTD",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_150",
+     "text": "Department of Defence",
+     "variant": "body"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_151",
+     "text": "3,441,812,603",
+     "variant": "body"
+    },
+    {
+     "component": "Row",
+     "id": "tableSplit__row_50",
+     "children": [
+      "tableSplit__text_149",
+      "tableSplit__text_150",
+      "tableSplit__text_151"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "component": "Text",
+     "id": "tableSplit__text_152",
+     "text": "SQL: `SELECT t.display_name AS supplier, f.agency_name AS agency, sum(f.current_value) AS value FROM (SELECT supplier_key, display_name FROM core.metric_top_suppliers(NULL, NULL, NULL, NULL, NULL, '2024-25', '2024-25', 'current') LIMIT 10) t JOIN core.v_contract_fact f USING (supplier_key) WHERE f.financial_year = '2024-25' AND NOT coalesce(f.is_cancelled, false) GROUP BY 1, 2 ORDER BY 1, 3 DESC`",
+     "variant": "caption"
+    },
+    {
+     "component": "Column",
+     "id": "tableSplit",
+     "children": [
+      "tableSplit__text_1",
+      "tableSplit__row_1",
+      "tableSplit__row_2",
+      "tableSplit__row_3",
+      "tableSplit__row_4",
+      "tableSplit__row_5",
+      "tableSplit__row_6",
+      "tableSplit__row_7",
+      "tableSplit__row_8",
+      "tableSplit__row_9",
+      "tableSplit__row_10",
+      "tableSplit__row_11",
+      "tableSplit__row_12",
+      "tableSplit__row_13",
+      "tableSplit__row_14",
+      "tableSplit__row_15",
+      "tableSplit__row_16",
+      "tableSplit__row_17",
+      "tableSplit__row_18",
+      "tableSplit__row_19",
+      "tableSplit__row_20",
+      "tableSplit__row_21",
+      "tableSplit__row_22",
+      "tableSplit__row_23",
+      "tableSplit__row_24",
+      "tableSplit__row_25",
+      "tableSplit__row_26",
+      "tableSplit__row_27",
+      "tableSplit__row_28",
+      "tableSplit__row_29",
+      "tableSplit__row_30",
+      "tableSplit__row_31",
+      "tableSplit__row_32",
+      "tableSplit__row_33",
+      "tableSplit__row_34",
+      "tableSplit__row_35",
+      "tableSplit__row_36",
+      "tableSplit__row_37",
+      "tableSplit__row_38",
+      "tableSplit__row_39",
+      "tableSplit__row_40",
+      "tableSplit__row_41",
+      "tableSplit__row_42",
+      "tableSplit__row_43",
+      "tableSplit__row_44",
+      "tableSplit__row_45",
+      "tableSplit__row_46",
+      "tableSplit__row_47",
+      "tableSplit__row_48",
+      "tableSplit__row_49",
+      "tableSplit__row_50",
+      "tableSplit__text_152"
+     ],
+     "justify": "start",
+     "align": "stretch"
+    },
+    {
+     "id": "root",
+     "component": "Column",
+     "children": [
+      "title",
+      "intro",
+      "chartTop",
+      "tableTop",
+      "chartSplit",
+      "tableSplit"
+     ]
+    }
+   ]
+  }
+ }
+]

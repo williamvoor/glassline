@@ -1,0 +1,23 @@
+# Upstream A2UI clone, kept locally for reference only
+a2ui/
+
+# Leftovers from exploration sessions
+.playwright-mcp/
+express-stub.png
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# Node
+node_modules/
+
+.DS_Store

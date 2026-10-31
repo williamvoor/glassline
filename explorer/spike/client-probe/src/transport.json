@@ -1,0 +1,75 @@
+[
+  {
+    "version": "v0.9.1",
+    "createSurface": {
+      "surfaceId": "main",
+      "catalogId": "urn:explorer:catalog:basic-vegachart:v0_9"
+    }
+  },
+  {
+    "version": "v0.9.1",
+    "updateComponents": {
+      "surfaceId": "main",
+      "components": [
+        {
+          "id": "root",
+          "component": "Column",
+          "children": [
+            "intro",
+            "chart"
+          ]
+        },
+        {
+          "id": "intro",
+          "component": "Text",
+          "text": "Top suppliers"
+        },
+        {
+          "component": "Text",
+          "id": "chart__text_1",
+          "text": "Top suppliers by value",
+          "variant": "h4"
+        },
+        {
+          "component": "VegaChart",
+          "id": "chart__vegachart_1",
+          "spec": {
+            "mark": "bar",
+            "data": {
+              "values": [
+                {
+                  "supplier": "Acme",
+                  "total": 120.5
+                },
+                {
+                  "supplier": "Beta",
+                  "total": 80.0
+                }
+              ]
+            },
+            "encoding": {
+              "x": {
+                "field": "supplier",
+                "type": "nominal"
+              },
+              "y": {
+                "field": "total",
+                "type": "quantitative"
+              }
+            }
+          }
+        },
+        {
+          "component": "Column",
+          "id": "chart",
+          "children": [
+            "chart__text_1",
+            "chart__vegachart_1"
+          ],
+          "justify": "start",
+          "align": "stretch"
+        }
+      ]
+    }
+  }
+]
