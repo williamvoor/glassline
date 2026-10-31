@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `a2ui/` | Clone of the upstream A2UI repo (Google), main branch, late Oct 2026. Git-ignored. | **Reference only. Never modify it**, and never make app code depend on paths inside it at runtime. It has its own `AGENTS.md` for upstream contributors. |
 | `explorer/` | Our app: an A2UI data explorer for Postgres | Dataset-agnostic: nothing AusTender-specific in code. |
 | `austender/` | Our AusTender database: ingestion from the AusTender OCDS API, schema, read-only role, test seed | All Python, no TypeScript. Has its own `SPEC.md`. |
+| `glimmer-tune/` | Eval harness (and later fine-tuning) for Muse Glimmer 30B generating A2UI Express | Muse Glimmer is used only to generate A2UI. |
 | `docs/adr/` | Architecture decisions | |
 
 `CONTEXT.md` (repo root) is the explorer's glossary. Use its terms.
@@ -29,7 +30,7 @@ The central design idea (ADR 0001): the model never retypes data. It references 
 
 ## Constraints that are easy to violate
 
-- **Model:** use only `meta/muse-spark-1.3` for any live call. No other models, no `-contributor` variants. Tests must never call a real model or the network (stub model with canned tool calls/Express).
+- **Model:** use only `meta/muse-spark-1.3` for any live call. No other models, no `-contributor` variants. The one exception: Muse Glimmer 30B (base or our fine-tuned adapters) may be called, only to generate A2UI. Tests must never call a real model or the network (stub model with canned tool calls/Express).
 - **Secrets:** `explorer/.env` holds `META_API_KEY`, `MODEL`, `DATABASE_URL`. Never print, log or commit them. New settings go in a committed `.env.example` with placeholders.
 - **Database:** the explorer connects only with the dataset's read-only role. Every query: `READ ONLY` transaction, `statement_timeout`, row cap with truncation reported, schema allowlist from config. The `fti` project (`../fti`) is not used; don't modify it. Its docs are a source of lessons about the AusTender API only.
 - **One merged catalog** with its own ID on both agent and client (ADR 0002). Components outside the surface's catalog render as nothing.
