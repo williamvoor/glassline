@@ -1,0 +1,55 @@
+# Gallery family -> split (ADR 0004). Hand-picked so that each split has a mix of
+# component types. Every component in dev/test also appears in some train family.
+# Don't move a family once data/test/cases.jsonl exists.
+
+train:
+  - 00_formatted-text
+  - 00_interactive-button
+  - 00_row-layout
+  - 00_simple-login-form
+  - 00_simple-text
+  - 01_flight-status
+  - 04_weather-current
+  - 05_product-card
+  - 06_music-player          # only Slider
+  - 07_task-card             # CheckBox, DateTimeInput
+  - 08_user-profile
+  - 09_login-form
+  - 11_purchase-complete
+  - 13_coffee-order
+  - 15_account-balance
+  - 17_event-detail
+  - 18_track-list
+  - 19_software-purchase     # ChoicePicker
+  - 22_credit-card
+  - 23_step-counter
+  - 24_recipe-card           # only Tabs
+  - 26_podcast-episode       # only AudioPlayer
+  - 28_countdown-timer
+  - 29_movie-card            # only Video; Modal
+  - 34_child-list-template   # List
+  - 35_markdown-text
+
+dev:
+  - 03_calendar-day
+  - 10_notification-permission
+  - 14_sports-player
+  - 21_shipping-status
+  - 27_stats-card
+  - 32_advanced-form-validator
+  - 33_financial-data-grid
+
+test:
+  - 00_complex-layout
+  - 02_email-compose
+  - 12_chat-message
+  - 16_workout-summary
+  - 20_restaurant-card
+  - 25_contact-card
+  - 30_live-invitation-builder
+  - 36_modal
+
+# Multi-turn: no template support yet.
+excluded:
+  - 00_incremental
+  - 31_incremental-dashboard

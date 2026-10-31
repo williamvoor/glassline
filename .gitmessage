@@ -1,7 +1,7 @@
 # <type>(<scope>): <subject, imperative, lower case, no period, max 72 chars>
 #
 # type:  feat | fix | refactor | test | docs | chore | perf | build
-# scope: agent | client | austender | spec | spike | docs | repo
+# scope: agent | client | austender | glimmer-tune | spec | spike | docs | repo
 #
 # Body: why the change was made and anything a reviewer would not see in the diff.
 # Wrap at 72 characters. Leave a blank line after the subject.

@@ -5,6 +5,11 @@ a2ui/
 .playwright-mcp/
 express-stub.png
 
+# Training run logs (copies of data, predictions)
+glimmer-tune/runs/
+# Rebuilt by `data_cli export`
+glimmer-tune/exports/
+
 # Secrets
 .env
 
