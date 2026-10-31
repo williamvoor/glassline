@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Explorer custom components",
+  "description": "Components the explorer adds to the basic v0.9 catalog. VegaChart is copied from the A2UI VegaChart v0.9 catalog (Apache-2.0); DataGrid and SqlDetails are ours. Agent and client both load this file.",
+  "components": {
+    "VegaChart": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "description": "Displays a Vega or Vega-Lite chart.",
+          "properties": {
+            "component": {
+              "const": "VegaChart"
+            },
+            "spec": {
+              "description": "The Vega-Lite spec to render as a JSON object.",
+              "anyOf": [
+                {
+                  "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicValue"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            },
+            "height": {
+              "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicNumber",
+              "description": "Optional height of the chart in pixels. Defaults to 290."
+            }
+          },
+          "required": ["component", "spec"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "DataGrid": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "description": "A table of pre-formatted text cells.",
+          "properties": {
+            "component": {
+              "const": "DataGrid"
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {"type": "string"},
+                  "label": {"type": "string"},
+                  "align": {"enum": ["start", "end"]}
+                },
+                "required": ["key", "label"],
+                "additionalProperties": false
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            },
+            "caption": {
+              "type": "string"
+            }
+          },
+          "required": ["component", "columns", "rows"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "SqlDetails": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "description": "A collapsed block showing the SQL behind a visual.",
+          "properties": {
+            "component": {
+              "const": "SqlDetails"
+            },
+            "sql": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": ["component", "sql"]
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

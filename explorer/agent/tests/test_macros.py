@@ -1,0 +1,250 @@
+import pytest
+from pydantic import TypeAdapter
+
+from a2ui.core.processing.message_processor import MessageProcessor, MessageProcessorOptions
+from a2ui.core.schema import AgentToRendererMessage
+from a2ui.core.validation.payload_validator import STRICT_VALIDATION
+from a2ui.inference_formats.express import ExpressFormat
+from a2ui.parser import A2uiPart
+
+from explorer_agent.catalog import EXPLORER_CATALOG_ID, explorer_catalog
+from explorer_agent.macros import (
+    MacroError,
+    format_value,
+    macro_context,
+    macro_expander,
+)
+from explorer_agent.results import ResultStore
+from tests.conftest import SUPPLIERS_SQL
+
+
+def expand(name: str, **args) -> list[dict]:
+    return macro_expander().processor.expand(name, args, instance_id="m")
+
+
+def kinds(components: list[dict]) -> list[str]:
+    return sorted(c["component"] for c in components)
+
+
+def root(components: list[dict]) -> dict:
+    return next(c for c in components if c["id"] == "m")
+
+
+def by_type(components: list[dict], kind: str) -> list[dict]:
+    return [c for c in components if c["component"] == kind]
+
+
+def to_transport(reply: str) -> list[dict]:
+    expander = macro_expander()
+    inference = expander.transform_to_inference_catalog(explorer_catalog())
+    fmt = ExpressFormat(catalogs=[inference], surface_id="main", version="v0.9.1")
+    parts = fmt.create_parser().parse_response(reply)
+    msgs = [m for p in parts if isinstance(p, A2uiPart) for m in p.a2ui]
+    typed = [TypeAdapter(AgentToRendererMessage).validate_python(m) for m in msgs]
+    return [m.model_dump(by_alias=True, exclude_none=True) for m in expander.transform_to_transport(typed)]
+
+
+# --- formatting ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "fmt", "column_type", "expected"),
+    [
+        (1234, "auto", "bigint", "1,234"),
+        (1234.0, "auto", "bigint", "1,234"),
+        (1234.567, "auto", "numeric", "1,234.57"),
+        ("Acme", "auto", "text", "Acme"),
+        (None, "auto", "numeric", "—"),
+        (3_441_812_603.4, "aud", "numeric", "$3,441,812,603"),
+        (-1500.0, "aud", "numeric", "-$1,500"),
+        (3_441_812_603.0, "aud_m", "numeric", "$3,441.8M"),
+        (12.345, "pct", "numeric", "12.3%"),
+        (0.1234, "fraction_pct", "numeric", "12.3%"),
+        (1999.6, "int", "numeric", "2,000"),
+        ("2024-07-01T00:00:00", "date", "timestamp", "2024-07-01"),
+    ],
+)
+def test_format_value(value, fmt, column_type, expected):
+    assert format_value(value, fmt, column_type) == expected
+
+
+def test_numeric_format_on_text_is_an_error():
+    with pytest.raises(MacroError, match="needs a number"):
+        format_value("Acme", "aud")
+
+
+# --- shapes --------------------------------------------------------------------------------
+
+
+def test_bar_chart_shape_and_sorting(ctx):
+    comps = expand("BarChart", result_id="r1", x="supplier", y="value", title="Top", format="aud_m")
+    assert kinds(comps) == ["Column", "SqlDetails", "Text", "VegaChart"]
+    assert root(comps)["component"] == "Column"
+    title = by_type(comps, "Text")[0]
+    assert (title["text"], title["variant"]) == ("Top", "h4")
+    spec = by_type(comps, "VegaChart")[0]["spec"]
+    assert spec["mark"] == {"type": "bar"}
+    assert spec["encoding"]["x"]["sort"] == "-y"
+    assert spec["encoding"]["y"]["title"] == "value ($M)"
+    assert spec["data"]["values"][1] == {"supplier": "Acme_[x]", "value": pytest.approx(3441.812603)}
+    assert "url" not in spec["data"]
+    sql = by_type(comps, "SqlDetails")[0]
+    assert (sql["sql"], sql["summary"]) == (SUPPLIERS_SQL, "top suppliers")
+
+
+def test_horizontal_bar_chart_puts_categories_on_y(ctx):
+    spec = by_type(expand("BarChart", result_id="r1", x="supplier", y="value", title="T", horizontal=True),
+                   "VegaChart")[0]["spec"]
+    assert spec["encoding"]["y"]["field"] == "supplier"
+    assert spec["encoding"]["y"]["sort"] == "-x"
+    assert spec["encoding"]["x"]["field"] == "value"
+
+
+def test_line_chart_keeps_row_order_or_uses_time(store):
+    store.add(sql="s", purpose="by month", columns=["month", "value"], column_types=["date", "numeric"],
+              rows=[{"month": "2024-01-01", "value": 1.0}], truncated=False)
+    with macro_context(store):
+        ordinal = by_type(expand("LineChart", result_id="r1", x="supplier", y="value", title="T"), "VegaChart")
+        temporal = by_type(expand("LineChart", result_id="r2", x="month", y="value", title="T"), "VegaChart")
+    assert ordinal[0]["spec"]["encoding"]["x"]["sort"] is None
+    assert temporal[0]["spec"]["encoding"]["x"]["type"] == "temporal"
+
+
+def test_color_keeps_top_groups_and_folds_the_rest_into_other():
+    store = ResultStore()
+    rows = [{"year": "2024", "agency": f"A{i}", "value": float(i)} for i in range(1, 11)]
+    rows.append({"year": "2023", "agency": "A1", "value": 5.0})
+    store.add(sql="s", purpose="p", columns=["year", "agency", "value"],
+              column_types=["text", "text", "numeric"], rows=rows, truncated=False)
+    with macro_context(store, max_color_categories=3):
+        spec = by_type(expand("BarChart", result_id="r1", x="year", y="value", title="T", color="agency"),
+                       "VegaChart")[0]["spec"]
+    # Totals: A10=10, A9=9, A8=8 kept; A1 (1 + 5 = 6) and A2..A7 fold into Other.
+    assert spec["encoding"]["color"]["sort"] == ["A10", "A9", "A8", "Other"]
+    values = {(v["year"], v["agency"]): v["value"] for v in spec["data"]["values"]}
+    assert values[("2024", "Other")] == sum(range(1, 8))
+    assert values[("2023", "Other")] == 5.0
+    assert len(values) == 5
+
+
+def test_data_table_columns_alignment_and_formats(ctx):
+    comps = expand("DataTable", result_id="r1", title="Suppliers", columns="value, supplier",
+                   format="value:aud_m")
+    assert kinds(comps) == ["Column", "DataGrid", "SqlDetails", "Text"]
+    grid = by_type(comps, "DataGrid")[0]
+    assert grid["columns"] == [{"key": "value", "label": "value", "align": "end"},
+                               {"key": "supplier", "label": "supplier"}]
+    assert grid["rows"][1] == ["$3,441.8M", "Acme_[x]"]
+    assert "caption" not in grid
+
+
+def test_data_table_row_cap_and_truncation_note():
+    store = ResultStore()
+    store.add(sql="s", purpose="p", columns=["n"], column_types=["integer"],
+              rows=[{"n": i} for i in range(5000)], truncated=True)
+    with macro_context(store, table_row_cap=200):
+        grid = by_type(expand("DataTable", result_id="r1", title="T"), "DataGrid")[0]
+    assert len(grid["rows"]) == 200
+    assert grid["caption"] == "Showing 200 of 5,000 rows; query truncated at 5,000 rows"
+
+
+def test_metric_shape(ctx):
+    comps = expand("Metric", result_id="r1", column="value", label="Top supplier value", row=1, format="aud")
+    assert kinds(comps) == ["Card", "Column", "SqlDetails", "Text", "Text"]
+    assert root(comps)["component"] == "Card"
+    texts = by_type(comps, "Text")
+    assert (texts[0]["text"], texts[0]["variant"]) == ("Top supplier value", "caption")
+    assert (texts[1]["text"], texts[1]["variant"]) == ("$3,441,812,603", "h2")
+
+
+def test_cite_fills_placeholders_and_escapes_markdown(ctx):
+    comps = expand("Cite", template="**{r1[1].supplier}** received {r1[1].value|aud_m} over {r1[1].contracts} contracts.")
+    assert comps == [{"id": "m", "component": "Text",
+                      "text": r"**Acme\_\[x\]** received \$3,441\.8M over 1,234 contracts.",
+                      "variant": "body"}]
+
+
+# --- errors --------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "message"),
+    [
+        ("BarChart", {"result_id": "r9", "x": "supplier", "y": "value", "title": "T"},
+         "unknown result_id 'r9'; valid IDs: r1"),
+        ("BarChart", {"result_id": "r1", "x": "suplier", "y": "value", "title": "T"},
+         "r1 has no column 'suplier'; its columns are: supplier, contracts, value"),
+        ("BarChart", {"result_id": "r1", "x": "value", "y": "supplier", "title": "T"},
+         "y column 'supplier' of r1 is text, not a number"),
+        ("LineChart", {"result_id": "r1", "x": "supplier", "y": "value", "title": "T", "format": "date"},
+         "format 'date' does not apply to a chart value"),
+        ("DataTable", {"result_id": "r1", "title": "T", "format": "value"},
+         "format entry 'value' must look like column:format"),
+        ("Metric", {"result_id": "r1", "column": "value", "label": "L", "row": 3},
+         "r1 has 3 rows; row 3 does not exist"),
+        ("Cite", {"template": "{r1[0].nope}"}, "r1 has no column 'nope'"),
+        ("Metric", {"result_id": "r1", "column": "value", "label": "L", "format": "money"},
+         "unknown format 'money'"),
+    ],
+)
+def test_macro_errors_are_captured_for_the_model(ctx, name, args, message):
+    with pytest.raises(MacroError):
+        expand(name, **args)
+    assert len(ctx.errors) == 1
+    assert ctx.errors[0].startswith(f"{name}: {message}")
+
+
+def test_errors_are_captured_even_though_the_expander_swallows_them(ctx):
+    reply = '<a2ui>\nsurface("main")\nroot = Column([chart])\nchart = BarChart("r7", "supplier", "value", "T")\n</a2ui>'
+    to_transport(reply)
+    assert ctx.errors == ["BarChart: unknown result_id 'r7'; valid IDs: r1"]
+
+
+def test_macro_outside_a_request_context_is_a_bug():
+    with pytest.raises(RuntimeError, match="outside macro_context"):
+        expand("Cite", template="{r1[0].value}")
+
+
+# --- end to end ----------------------------------------------------------------------------
+
+
+def test_express_reply_expands_to_transport_that_passes_strict_validation(ctx):
+    reply = """Here is what I found.
+<a2ui>
+surface("main")
+root = Column([lead, top, chart, table])
+lead = Cite("{r1[1].supplier} received the most.")
+top = Metric("r1", "value", "Top supplier", 1, "aud_m")
+chart = BarChart("r1", "supplier", "value", "Value by supplier", _, true, "aud_m")
+table = DataTable("r1", "Suppliers", "supplier,contracts,value", "value:aud")
+</a2ui>"""
+    transport = to_transport(reply)
+    assert ctx.errors == []
+    create = next(m for m in transport if "createSurface" in m)
+    assert create["createSurface"]["catalogId"] == EXPLORER_CATALOG_ID
+    comps = next(m for m in transport if "updateComponents" in m)["updateComponents"]["components"]
+    kinds = {c["component"] for c in comps}
+    assert {"VegaChart", "DataGrid", "SqlDetails", "Card"} <= kinds
+    assert not kinds & {"BarChart", "LineChart", "DataTable", "Metric", "Cite"}
+    ids = [c["id"] for c in comps]
+    assert len(ids) == len(set(ids))
+
+    processor = MessageProcessor(
+        catalogs=[explorer_catalog()],
+        options=MessageProcessorOptions(validation_config=STRICT_VALIDATION),
+    )
+    processor.process_messages(transport)
+
+
+def test_strict_validation_rejects_a_bad_custom_component():
+    processor = MessageProcessor(
+        catalogs=[explorer_catalog()],
+        options=MessageProcessorOptions(validation_config=STRICT_VALIDATION),
+    )
+    bad = [
+        {"version": "v0.9", "createSurface": {"surfaceId": "s", "catalogId": EXPLORER_CATALOG_ID}},
+        {"version": "v0.9", "updateComponents": {"surfaceId": "s", "components": [
+            {"id": "root", "component": "DataGrid", "columns": [], "rows": [[1]]}]}},
+    ]
+    with pytest.raises(Exception, match="(?i)valid"):
+        processor.process_messages(bad)
