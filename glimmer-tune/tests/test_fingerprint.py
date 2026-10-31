@@ -1,4 +1,22 @@
+import pytest
+
 from a2ui_eval.fingerprint import fingerprint
+
+
+# Run this module under both catalogs (overrides conftest's v0.9 fixtures; ADR 0008).
+@pytest.fixture(params=["v0_9", "v1"])
+def version(request):
+    return request.param
+
+
+@pytest.fixture
+def sdk(version, request):
+    return request.getfixturevalue(f"sdk_{version}")
+
+
+@pytest.fixture
+def index(version, request):
+    return request.getfixturevalue(f"index_{version}")
 
 BASE = """surface("s")
 root = Card(col)

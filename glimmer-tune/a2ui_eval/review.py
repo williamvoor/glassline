@@ -1,8 +1,8 @@
 """Local review page for `data/intents_draft.jsonl`: `python -m a2ui_eval.review`.
 
 Serves the built page (`review/dist`) and a tiny JSON API on 127.0.0.1. Each row's
-reference Express is compiled to A2UI v0.9 for display only, because `@a2ui/lit`
-renders v0.8/v0.9 and not v1.0 (ADR 0005). Saving changes only `intent` and
+reference Express is compiled with the v0.9 basic catalog, the one `@a2ui/lit`
+renders and the one training uses (ADR 0008). Saving changes only `intent` and
 `reviewed`; every other field is written back unchanged.
 """
 
@@ -10,19 +10,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import tempfile
 from functools import cache
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .sdk import ExpressSDK, write_basic_v0_9_catalog
+from .generate import write_jsonl
+from .sdk import ExpressSDK
 from .seeds import ROOT
 
 DRAFT = ROOT / "data" / "intents_draft.jsonl"
+CATALOG = ROOT / "catalogs" / "basic_v0_9.json"
 DIST = ROOT / "review" / "dist"
 
 # Component props whose literal string values a reader would expect in the intent.
@@ -39,16 +39,7 @@ def read_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Atomic: a crash mid-write never leaves a half-written draft (it holds your edits)."""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            for row in rows:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    write_jsonl(path, rows)  # atomic, same key order as the CLI's writes
 
 
 def update_row(path: Path, row_id: str, intent: str, reviewed: bool) -> dict[str, Any]:
@@ -116,7 +107,7 @@ def expected_values(reference: list[dict[str, Any]]) -> list[str]:
                 v = c.get(prop)
                 if isinstance(v, str):
                     out.append(v.lstrip("#").strip())
-                elif isinstance(v, dict) and v.get("@call") == "formatString":
+                elif isinstance(v, dict) and (v.get("call") or v.get("@call")) == "formatString":  # v0.9 / v1
                     template = (v.get("args") or {}).get("value")
                     if isinstance(template, str):
                         out.append(_FORMAT_REF.sub(lambda r: str(_lookup(model, r.group(1)) or r.group(0)), template))
@@ -129,9 +120,7 @@ def expected_values(reference: list[dict[str, Any]]) -> list[str]:
 
 @cache
 def v09_sdk() -> ExpressSDK:
-    path = Path(tempfile.gettempdir()) / "glimmer-tune-basic-v0_9_1.json"
-    write_basic_v0_9_catalog(path)
-    return ExpressSDK(path)
+    return ExpressSDK(CATALOG)
 
 
 def view_rows(path: Path) -> list[dict[str, Any]]:

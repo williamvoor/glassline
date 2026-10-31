@@ -1,8 +1,16 @@
 """Alignment and slot accuracy, on hand-written component JSON."""
 
+import pytest
+
 from a2ui_eval.align import align, score_components
 
 from .conftest import comps
+
+
+# Run this module under both catalogs (overrides conftest's v0.9 fixtures; ADR 0008).
+@pytest.fixture(params=["v0_9", "v1"])
+def index(request):
+    return request.getfixturevalue(f"index_{request.param}")
 
 REF = comps(
     {"id": "root", "component": "Column", "children": ["title", "email", "send"]},

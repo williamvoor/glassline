@@ -4,13 +4,21 @@ import pytest
 
 from a2ui_eval.score import close_stopped_block, score_response
 
-FORM_REF = '''surface("signup")
+# One form per catalog. Positional slots differ: v1 TextField is (label, value,
+# placeholder, ...), v0.9 is (label, value, variant, validationRegexp, ...) (ADR 0008).
+# Each entry: (express, (text, text with two free-string slots swapped)).
+_FORM = '''surface("signup")
 root = Column([title, email, send])
 title = Text("Sign up")
-email = TextField("Email", $/form/email, "you@example.com", checks=[?required])
-send = Button(sendLabel, "primary", Event("signup", {email: $/form/email}))
+email = {textfield}, checks=[?required])
+send = Button(sendLabel, "primary", Event("signup", {{email: $/form/email}}))
 sendLabel = Text("Send")
 '''
+_FIELDS = {
+    "v0_9": ('TextField("Email", $/form/email, _, "^.+@.+$"', 'TextField("^.+@.+$", $/form/email, _, "Email"'),
+    "v1": ('TextField("Email", $/form/email, "you@example.com"', 'TextField("you@example.com", $/form/email, "Email"'),
+}
+FORM_REFS = {v: (_FORM.format(textfield=a), (a, b)) for v, (a, b) in _FIELDS.items()}
 
 EXISTING = '''surface("profile")
 root = Column([name, bio])
@@ -20,8 +28,29 @@ $/user/name = "Ann"
 '''
 
 
+@pytest.fixture(scope="module", params=["v0_9", "v1"])
+def version(request):
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def form_case(sdk):
+def sdk(version, request):
+    """Every scorer test runs under both catalogs (overrides conftest's v0.9 `sdk`)."""
+    return request.getfixturevalue("sdk_v1" if version == "v1" else "sdk_v0_9")
+
+
+@pytest.fixture(scope="module")
+def index(version, request):
+    return request.getfixturevalue("index_v1" if version == "v1" else "index_v0_9")
+
+
+@pytest.fixture(scope="module")
+def FORM_REF(version):
+    return FORM_REFS[version][0]
+
+
+@pytest.fixture(scope="module")
+def form_case(sdk, FORM_REF):
     return {"id": "form", "expect_ui": True, "reference": sdk.compile_express(FORM_REF)}
 
 
@@ -29,7 +58,7 @@ def wrap(express):
     return f"Here you go.\n<a2ui>\n{express}</a2ui>"
 
 
-def test_reference_scores_perfectly_with_other_ids(sdk, index, form_case):
+def test_reference_scores_perfectly_with_other_ids(sdk, index, form_case, FORM_REF):
     pred = FORM_REF.replace("title", "heading").replace("sendLabel", "lbl").replace('surface("signup")', 'surface("s1")')
     r = score_response(sdk, index, form_case, wrap(pred), "stop")
     assert r["extracted"] and r["compiles"] and r["sdk_valid"] and r["schema_valid"]
@@ -39,8 +68,9 @@ def test_reference_scores_perfectly_with_other_ids(sdk, index, form_case):
     assert set(r["components_used"]) == {"Column", "Text", "TextField", "Button"}
 
 
-def test_swapped_positional_args(sdk, index, form_case):
-    pred = FORM_REF.replace('TextField("Email", $/form/email, "you@example.com"', 'TextField("you@example.com", $/form/email, "Email"')
+def test_swapped_positional_args(sdk, index, form_case, FORM_REF, version):
+    pred = FORM_REF.replace(*FORM_REFS[version][1])
+    assert pred != FORM_REF
     r = score_response(sdk, index, form_case, wrap(pred), "stop")
     assert r["compiles"] and r["sdk_valid"]
     assert r["slot"]["positional_errors"] == 2
@@ -48,14 +78,14 @@ def test_swapped_positional_args(sdk, index, form_case):
     assert not r["exact_match"]
 
 
-def test_stop_sequence_close_tag_is_restored(sdk, index, form_case):
+def test_stop_sequence_close_tag_is_restored(sdk, index, form_case, FORM_REF):
     stripped = f"<a2ui>\n{FORM_REF}"  # what a provider returns with stop=["</a2ui>"]
     assert close_stopped_block(stripped, "stop", sdk).endswith("</a2ui>")
     r = score_response(sdk, index, form_case, stripped, "stop")
     assert not r["truncated"] and r["exact_match"]
 
 
-def test_cut_off_response_is_truncated_and_not_closed(sdk, index, form_case):
+def test_cut_off_response_is_truncated_and_not_closed(sdk, index, form_case, FORM_REF):
     cut = "<a2ui>\n" + FORM_REF.split("send =")[0]
     assert close_stopped_block(cut, "length", sdk) == cut
     r = score_response(sdk, index, form_case, cut, "length")
@@ -63,7 +93,7 @@ def test_cut_off_response_is_truncated_and_not_closed(sdk, index, form_case):
     assert not r["exact_match"]
 
 
-def test_dangling_child_fails_sdk_and_structure(sdk, index, form_case):
+def test_dangling_child_fails_sdk_and_structure(sdk, index, form_case, FORM_REF):
     pred = FORM_REF.replace("Column([title, email, send])", "Column([title, email, send, ghost])")
     r = score_response(sdk, index, form_case, wrap(pred), "stop")
     assert r["compiles"]

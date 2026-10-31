@@ -41,13 +41,14 @@ def test_update_rejects_bad_input_and_leaves_file_alone(draft, row_id, intent, r
     assert draft.read_text() == before
 
 
-def test_expected_values_cover_data_text_format_strings_and_events():
+@pytest.mark.parametrize("call", ["call", "@call"])  # v0.9, v1
+def test_expected_values_cover_data_text_format_strings_and_events(call):
     reference = [{"createSurface": {
         "surfaceId": "s",
         "dataModel": {"name": "Ad Spend", "pct": 40, "flag": True},
         "components": [
             {"id": "t", "component": "Text", "text": "## Terms of service"},
-            {"id": "f", "component": "Text", "text": {"@call": "formatString", "args": {"value": "+${/pct}% from last week"}}},
+            {"id": "f", "component": "Text", "text": {call: "formatString", "args": {"value": "+${/pct}% from last week"}}},
             {"id": "b", "component": "Button", "child": "t", "action": {"event": {"name": "showTerms"}}},
             {"id": "p", "component": "Text", "text": {"@path": "/name"}},
         ],
@@ -75,3 +76,19 @@ def test_http_round_trip(draft, tmp_path):
     finally:
         server.shutdown()
     assert read_rows(draft)[2]["reviewed"] is True
+
+
+def test_expected_values_on_compiled_v0_9(sdk):
+    # The real v0.9 shape: createSurface, then separate updateComponents and updateDataModel.
+    reference = sdk.compile_express(
+        'surface("s")\n'
+        'root = Column([t, f, b])\n'
+        't = Text("## Terms of service")\n'
+        'f = Text(formatString("+${/pct}% from last week"))\n'
+        'b = Button(bl, _, Event("showTerms", {}))\n'
+        'bl = Text($/name)\n'
+        '$/name = "Ad Spend"\n'
+        '$/pct = 40\n'
+    )
+    assert {next(iter(k for k in m if k != "version")) for m in reference} == {"createSurface", "updateComponents", "updateDataModel"}
+    assert expected_values(reference) == ["Ad Spend", "40", "Terms of service", "+40% from last week", "showTerms"]

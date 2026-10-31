@@ -13,6 +13,8 @@ The explorer sends A2UI v0.9 with the v0.9 basic catalog, because `@a2ui/lit@0.1
 
 ## Consequences
 
+> Amended by [ADR 0008](0008-train-generic-express-on-the-v0-9-basic-catalog.md): glimmer-tune trains generic Express on the v0.9 basic catalog, without the explorer's macros or prompt. The first two consequences below no longer apply to glimmer-tune. ADR 0008 also corrects the claim that Express is version-neutral: positional slots follow each catalog's prop order, so the same Express can compile to different props.
+
 - glimmer-tune validates Express against the explorer's catalog (v0.9 basic plus macros) once that catalog exists, not against the v1 basic catalog.
 - From milestone 2b on, the training system prompt is imported from the explorer (byte-equality test). The 2a prompt, built from the v1 basic catalog, is used only for the smoke run and the gallery families.
 - The v0.9 check accepts props the v0.9 catalog lacks (`TextField.placeholder` and `Video.posterUrl` are v1 only), so "validates against v0.9" does not prove the output is pure v0.9. glimmer-tune needs a strict check that rejects props unknown to the explorer's catalog, and gallery rows that use v1-only props must not reach explorer-shaped training rows.

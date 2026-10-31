@@ -1,7 +1,9 @@
 """Finds component references in a component, using the catalog schema.
 
 A property refers to other components when its schema is the common `Child`
-(one ID) or `ChildList` (a list of IDs, or a template object). They can sit
+(v1) or `ComponentId` (v0.9) for one ID, or `ChildList` (a list of IDs, or a
+template object). v1 refers to common types relatively (`common_types.json#/...`),
+v0.9 by absolute URL (`https://a2ui.org/specification/v0_9/common_types.json#/...`). They can sit
 nested, as in `Tabs.tabs[].child`, so the schema is walked alongside the value.
 """
 
@@ -35,8 +37,15 @@ def path_str(path: Path, keep_index: bool = True) -> str:
     return out
 
 
+_SINGLE_CHILD = {"Child", "ComponentId"}
+
+
 def _def_name(ref: str) -> str:
     return ref.rsplit("/", 1)[-1]
+
+
+def _is_common(ref: str) -> bool:
+    return ref.split("#", 1)[0].rsplit("/", 1)[-1].startswith("common_types")
 
 
 class RefIndex:
@@ -61,11 +70,11 @@ class RefIndex:
         ref = schema.get("$ref")
         if isinstance(ref, str):
             name = _def_name(ref)
-            if ref.startswith("common_types") and name == "Child":
+            if _is_common(ref) and name in _SINGLE_CHILD:
                 if isinstance(value, str):
                     out.append(Ref(path, value))
                 return
-            if ref.startswith("common_types") and name == "ChildList":
+            if _is_common(ref) and name == "ChildList":
                 if isinstance(value, list):
                     out.extend(Ref(path + (i,), v) for i, v in enumerate(value) if isinstance(v, str))
                 elif isinstance(value, dict) and isinstance(value.get("componentId"), str):

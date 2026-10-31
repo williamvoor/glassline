@@ -1,6 +1,14 @@
+import pytest
+
 from a2ui_eval.structure import binding_uses, check_structure, unresolved_bindings
 
 from .conftest import comps
+
+
+# Run this module under both catalogs (overrides conftest's v0.9 fixtures; ADR 0008).
+@pytest.fixture(params=["v0_9", "v1"])
+def index(request):
+    return request.getfixturevalue(f"index_{request.param}")
 
 
 def test_refs_cover_lists_templates_nested_and_single_children(index):
@@ -80,3 +88,14 @@ def test_binding_counts_as_resolved_when_reference_binds_it(index):
     components = comps({"id": "root", "component": "TextField", "label": "Email", "value": {"@path": "/form/email"}})
     assert unresolved_bindings(["root"], components, index, [{}]) == [("root", "/form/email")]
     assert unresolved_bindings(["root"], components, index, [{}], allowed={("form", "email")}) == []
+
+
+def test_binding_uses_v0_9():
+    # v0.9 writes bindings as {"path": p}, v1 as {"@path": p} (ADR 0008).
+    assert binding_uses({"id": "t", "component": "Text", "text": {"path": "/user/name"}}) == ["/user/name"]
+    assert binding_uses({"id": "t", "component": "Text", "text": {"@path": "/user/name"}}) == ["/user/name"]
+    call = {"call": "formatCurrency", "args": {"value": {"path": "/amount"}, "currency": "USD"}}
+    assert binding_uses({"id": "t", "component": "Text", "text": call}) == ["/amount"]
+    # A child-list template's data path is a component reference (refs.py), not a binding.
+    template = {"id": "l", "component": "List", "children": {"componentId": "row", "path": "/rows"}}
+    assert binding_uses(template) == []

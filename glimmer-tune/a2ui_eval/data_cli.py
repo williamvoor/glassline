@@ -15,7 +15,7 @@ from .refs import RefIndex
 from .sdk import ExpressSDK
 from .seeds import ROOT, load_seeds
 
-CATALOG = ROOT / "catalogs" / "basic_v1.json"
+CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
 DATA = ROOT / "data"
 DRAFT = DATA / "intents_draft.jsonl"
 EXPORT = ROOT / "exports" / "sft_train.jsonl"
@@ -48,14 +48,48 @@ def cmd_generate(args) -> None:
     print(f"wrote {n} train cases")
 
 
+def merge_reviews(old: list[dict], new: list[dict]) -> tuple[list[dict], list[str]]:
+    """New draft rows, with `intent` and `reviewed` carried over from `old` by id.
+
+    Fails if a reviewed id is gone, or its UI changed: the approved intent described
+    the old one. The UI is compared by `reference_express` (text and values) and by
+    fingerprint (structure), because the fingerprint alone ignores text. Returns the
+    rows and the unreviewed ids that are gone.
+    """
+    old_by_id = {r["id"]: r for r in old}
+    new_by_id = {c["id"]: c for c in new}
+
+    def ui_changed(i: str) -> bool:
+        before, after = old_by_id[i], new_by_id[i]
+        return before["reference_express"] != after["reference_express"] or before["fingerprint"] != after["fingerprint"]
+
+    missing = [i for i, r in old_by_id.items() if r.get("reviewed") and i not in new_by_id]
+    changed = [i for i, r in old_by_id.items() if r.get("reviewed") and i in new_by_id and ui_changed(i)]
+    if missing or changed:
+        raise GenerationError(f"reviewed rows would be lost: missing {missing}, UI changed {changed}")
+    rows = []
+    for c in new:
+        prev = old_by_id.get(c["id"])
+        rows.append({**c, "intent": prev["intent"], "reviewed": bool(prev.get("reviewed"))} if prev else {**c, "reviewed": False})
+    return rows, [i for i in old_by_id if i not in new_by_id]
+
+
 def cmd_draft(args) -> None:
     path = args.data / DRAFT.name
-    if path.exists() and not args.force:
-        raise GenerationError(f"{path} exists and may hold your edits; pass --force to overwrite it")
+    if args.keep_reviews and not path.exists():
+        raise GenerationError(f"--keep-reviews needs an existing {path}")
+    if path.exists() and not (args.force or args.keep_reviews):
+        raise GenerationError(f"{path} exists and may hold your edits; pass --keep-reviews to keep them or --force to overwrite it")
     sdk, index, templates, splits = _setup(args.data)
     cases = _generate(sdk, index, templates, splits, {"dev": args.dev_count, "test": args.test_count}, args.seed)
-    n = write_jsonl(path, ({**c, "reviewed": False} for c in cases))
-    print(f"wrote {n} draft cases to {path}; edit intents, then set reviewed: true")
+    if args.keep_reviews:
+        rows, dropped = merge_reviews(read_jsonl(path), cases)
+        if dropped:
+            print(f"dropped {len(dropped)} unreviewed rows no longer generated: {', '.join(dropped)}", file=sys.stderr)
+    else:
+        rows = [{**c, "reviewed": False} for c in cases]
+    n = write_jsonl(path, rows)
+    print(f"wrote {n} draft cases to {path} ({sum(r['reviewed'] for r in rows)} reviewed); edit intents, then set reviewed: true")
 
 
 def build_eval(data: Path, splits: tuple[str, ...] = ("dev", "test")) -> dict[str, int]:
@@ -122,7 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--dev-count", type=int, default=12)
     d.add_argument("--test-count", type=int, default=17)
     d.add_argument("--seed", type=int, default=0)
-    d.add_argument("--force", action="store_true")
+    d.add_argument("--force", action="store_true", help="overwrite the draft, discarding edits and reviews")
+    d.add_argument("--keep-reviews", action="store_true", help="regenerate, keeping intents and reviews by id")
     d.set_defaults(fn=cmd_draft)
     b = sub.add_parser("build-eval")
     b.add_argument("--split", choices=("dev", "test"), help="build only this split (default: both)")

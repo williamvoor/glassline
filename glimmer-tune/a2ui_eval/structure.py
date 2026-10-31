@@ -89,16 +89,22 @@ def check_structure(components: dict[str, dict[str, Any]], index: RefIndex) -> S
 _INTERP = re.compile(r"\$\{\s*(/?[\w\-~.]+(?:/[\w\-~.]+)*)\s*\}")
 
 
+_BINDING_KEYS = ("path", "@path")
+
+
 def binding_uses(value: Any) -> list[str]:
-    """Every data path a component reads: `{"@path": p}` and `${p}` interpolations."""
+    """Every data path a component reads: a binding (`{"path": p}` in v0.9,
+    `{"@path": p}` in v1) and `${p}` interpolations. A child-list template's
+    `{"componentId", "path"}` is a component reference (refs.py), not a binding."""
     out: list[str] = []
 
     def walk(v: Any) -> None:
         if isinstance(v, dict):
-            if isinstance(v.get("@path"), str):
-                out.append(v["@path"])
+            key = None if "componentId" in v else next((k for k in _BINDING_KEYS if isinstance(v.get(k), str)), None)
+            if key:
+                out.append(v[key])
             for k, child in v.items():
-                if k != "@path":
+                if k != key:
                     walk(child)
         elif isinstance(v, list):
             for child in v:

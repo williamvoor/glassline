@@ -133,3 +133,71 @@ Tests use a fake whitespace tokenizer and tiny in-test templates where possible.
 ```bash
 cd glimmer-tune && uv run pytest
 ```
+
+---
+
+# 2b step 0: switch to the v0.9 basic catalog
+
+Status: approved by the user, 2026-10-31. Decision: [ADR 0008](../docs/adr/0008-train-generic-express-on-the-v0-9-basic-catalog.md).
+
+From now on, the data pipeline, the system prompt and the review page use the A2UI v0.9 basic catalog. The 2a data is rebuilt on it, and your 29 approvals carry over.
+
+## Files
+
+| Path | Change |
+|---|---|
+| `catalogs/basic_v0_9.json` | New. `specification/v0_9_1/catalogs/basic/catalog.json` at 825beac (byte-identical to `v0_9`), byte for byte, with one line inserted after `catalogId`: `"protocolVersion": "0.9",`, which the SDK loader requires. `basic_v1.json` stays for the conversion tests. |
+| `catalogs/README.md` | Provenance of both files |
+| `a2ui_eval/convert.py` | New. `v1_to_v0_9(messages) -> messages`, a JSON-level conversion (see Seed conversion) |
+| `a2ui_eval/seeds.py` | `Seed.messages` is v0.9. The raw v1 messages stay available as `Seed.v1_messages`. |
+| `a2ui_eval/data_cli.py` | `CATALOG` → `basic_v0_9.json`. `draft --keep-reviews`. |
+| `a2ui_eval/structure.py` | `binding_uses` reads `{"path": p}` (v0.9) as well as `{"@path": p}` (v1). It skips child-list templates (`componentId`), which `refs.py` handles. |
+| `a2ui_eval/review.py`, `a2ui_eval/sdk.py` | The review page uses `catalogs/basic_v0_9.json`. `write_basic_v0_9_catalog` is removed, because its enum order differs from the spec file and so would its prompt. The value hints read `call` as well as `@call`. |
+| `families/*.yaml` | The Express is re-canonicalised from the v0.9 decompile of the converted seed. Fixes include 09_login-form's `TextField` slots. |
+| `tests/conftest.py` | The `sdk` and `index` fixtures use v0.9. New `sdk_v1` and `index_v1` fixtures. |
+| `data/train/cases.jsonl`, `data/intents_draft.jsonl`, `data/dev/cases.jsonl`, `exports/sft_train.jsonl` | Rebuilt |
+
+## Seed conversion
+
+Seeds stay verbatim v1 on disk. `v1_to_v0_9` works on JSON only, never through Express, because Express positional slots differ between versions. v1 `TextField(label, value, placeholder, variant, ...)` and v0.9 `TextField(label, value, variant, validationRegexp, ...)` compile silently to different meanings. Per message it does this:
+- `version` becomes `"v0.9"`, and a `catalogId` under `.../v1_0/...` becomes the v0.9 basic catalog ID.
+- `{"@path": p}` becomes `{"path": p}`, and `{"@call": f, ...}` becomes `{"call": f, ...}`, at any depth.
+- A `createSurface` that carries `components` and/or `dataModel` is split into `createSurface` (the other keys), `updateComponents` and `updateDataModel` (`path: "/"`), the shape the v0.9 compiler emits.
+- A prop the v0.9 catalog lacks (`placeholder`, `posterUrl`, `steps`) raises. No seed uses one today.
+
+## Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| V1 | `basic_v0_9.json` is the upstream spec file byte for byte, plus exactly the inserted `protocolVersion` line. `ExpressSDK` loads it. | `test_v0_9.py::test_vendored_catalog_matches_upstream` (skipped when `../a2ui` is absent), `::test_catalog_loads` |
+| V2 | Every converted single-turn seed passes `sdk_check` under v0.9 (the excluded multi-turn seeds are exempt). Its fingerprint under the v0.9 index equals the v1 seed's fingerprint under the v1 index. | `test_v0_9.py::test_seeds_convert`, `::test_fingerprint_version_independent` |
+| V3 | The conversion renames `@path` and `@call`, splits `createSurface`, sets the version and catalog ID, and raises on a v1-only prop | `test_v0_9.py::test_convert_shapes`, `::test_convert_rejects_v1_only_prop` |
+| V4 | Each template, rendered with its seed's values, reproduces the **converted** seed: equal fingerprint and `exact_match`. This is the existing C5, now against v0.9, and it is the guard against positional slot shifts. | `test_generate.py::test_template_reproduces_seed[family]` |
+| V5 | Generation under v0.9 rejects v1-only props, as a compile error, so they never reach a row | `test_v0_9.py::test_v1_only_props_rejected[placeholder,posterUrl,steps]` |
+| V6 | The system prompt is built from the v0.9 catalog. C3 still holds, and the prompt names `validationRegexp` but not `placeholder`. | `test_prompt.py` (existing) and `::test_prompt_is_v0_9` |
+| V7 | `binding_uses` finds `{"path": p}` and `{"@path": p}` and ignores `{"componentId", "path"}` | `test_refs_structure.py::test_binding_uses_v0_9` |
+| V8 | `draft --keep-reviews` regenerates the drafts and carries `intent` and `reviewed` over by `id`. It fails, writing nothing, if a reviewed id is missing from the new drafts or its UI changed. "UI changed" means a different `reference_express` (text and values) or fingerprint (structure); the fingerprint alone ignores text. It reports dropped unreviewed ids. It refuses to run without an existing draft. All JSONL writes are atomic (temp file, then rename). | `test_generate.py::test_keep_reviews_carries_edits`, `::test_keep_reviews_fails_on_missing_reviewed_id`, `::test_keep_reviews_fails_on_changed_fingerprint`, `::test_keep_reviews_fails_on_changed_text_with_same_fingerprint`, `::test_keep_reviews_cli`, `::test_write_jsonl_is_atomic` |
+| V9 | After the rebuild, the real data is v0.9: every row's `reference` compiles, has version `v0.9`, and uses the v0.9 catalog ID. The draft has 29 rows, all `reviewed: true`. Intents are identical to before (checked once against git at rebuild time, not by the suite). `data/dev/cases.jsonl` holds the 12 dev rows. | `test_v0_9.py::test_real_data_is_v0_9` |
+| V10 | The review page renders the rebuilt draft, and its value hints work on compiled v0.9 messages (separate `updateComponents`/`updateDataModel`, `call`) | `test_review.py::test_real_draft_rows_compile_to_v0_9`, `::test_expected_values_on_compiled_v0_9`, `::test_expected_values_cover_data_text_format_strings_and_events[call,@call]` |
+| V11 | All earlier tests still pass. Scorer tests with v1 literals use the `sdk_v1` fixture. | full suite |
+
+## Decisions
+
+- Vendor the spec file, not the SDK's `BasicCatalog("0.9.1").to_json()`. They agree except for list order, but that order reaches the prompt text.
+- The prompt is the SDK's `prompt_snippet` for the v0.9 catalog, as-is. v0.9 has no catalog-guidelines block (v1 had about 39 lines), and upstream's v0.9 `rules.txt` is written for JSON, not Express, so it is not added.
+- The strict unknown-prop check is the compiler plus the schema (`unevaluatedProperties: false`) under v0.9. No separate checker. Silent positional shifts are caught by V4, not by a checker.
+- The scorer accepts both binding syntaxes. Milestone 1's scorer tests keep their v1 literals.
+- gt-smoke-1 stays as it is. Its adapter was trained on the v1 prompt and is not a baseline.
+- `31_incremental-dashboard` fails v0.9's reachability check on its whole multi-turn block. It is excluded anyway; V2 covers single-turn seeds only.
+
+## Non-goals
+
+- New 2b templates
+- Building the test split
+- Running a training job
+
+## Test command
+
+```bash
+cd glimmer-tune && uv run pytest
+```
