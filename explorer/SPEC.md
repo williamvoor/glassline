@@ -308,8 +308,8 @@ tests can inject the stub model. `testing/stub_server.py` is never imported by `
 Dependencies to add (exact pins, `uv.lock` committed): `psycopg_pool`, `pglast==8.7`,
 `pytest`, `pytest-asyncio`, `testcontainers[postgres]`. Keep `mcp`: the LiteLLM `tools=` import
 bug needs it (brief). Pin `a2a-sdk` exactly (`0.3.26`). `a2ui-agent-sdk` and `a2ui-core` come
-from the same A2UI git commit as glimmer-tune's (ADR 0006); `a2ui-a2a` too, if PyPI `0.1.0`
-won't resolve against it. Client:
+from the same A2UI git commit as glimmer-tune's (ADR 0006), and so does `a2ui-a2a` (PyPI `0.1.0`
+fails to import against that commit). Client:
 `@a2ui/lit@0.14.0`, `@a2ui/web_core@0.14.0`, `@a2ui/markdown-it` (version to match),
 `@a2a-js/sdk@^0.3.13` (match the server's 0.3.x; interop checked by the client test),
 `vega@5.33.1`, `vega-lite@5.23.0`, `vega-embed@6.29.0`, `lit@^3.3.3`, `zod@^3.25`; dev:
@@ -318,8 +318,9 @@ won't resolve against it. Client:
 **Client behaviour.** A chat view: input box, list of turns. An agent turn shows status
 updates while the task runs ("Running SQL: top suppliers…", "SQL failed, retrying"), then the
 prose rendered with markdown, then an `<a2ui-surface>` for that turn's surface. Each turn's
-surface stays rendered as the conversation grows. In dev, the Vite server proxies `/a2a` to
-the agent, so the browser talks to a single origin.
+surface stays rendered as the conversation grows. The browser calls the agent directly at
+`VITE_AGENT_URL` (default `http://127.0.0.1:10002`), and the agent allows `CLIENT_ORIGIN` with CORS
+(ADR 0007; no Vite proxy).
 
 ### Build order
 
@@ -476,3 +477,4 @@ Later decisions (2026-10-31, after the first macros):
 - **Prose:** `Cite` placeholders are filled in the prose too (ADR 0001 amendment).
 - **Validation:** unknown-prop check shared with glimmer-tune.
 - **A2UI SDK:** one git pin for explorer and glimmer-tune (ADR 0006).
+- **Client transport:** the browser calls the agent directly with CORS, no Vite proxy (ADR 0007).

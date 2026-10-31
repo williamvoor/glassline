@@ -13,5 +13,5 @@ The explorer and glimmer-tune install the A2UI Python SDK (`a2ui-agent-sdk`, `a2
 
 ## Consequences
 
-- `a2ui-a2a` is taken from the same commit if PyPI `a2ui-a2a==0.1.0` won't resolve against a git-built agent SDK.
+- `a2ui-a2a` is taken from the same commit. PyPI `a2ui-a2a==0.1.0` resolves, but it fails to import against the pin (`cannot import name 'parse_and_fix'`).
 - Moving the pin means re-running glimmer-tune's `build-data` and the explorer's tests together.
