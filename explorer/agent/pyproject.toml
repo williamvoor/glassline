@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "a2a-sdk[http-server]==0.3.26",
-    "a2ui-a2a==0.1.0",
+    "a2ui-a2a",
     "a2ui-agent-sdk",
     "a2ui-core",
     "litellm==1.106.6",
@@ -19,6 +19,7 @@ dependencies = [
 # One A2UI pin shared with glimmer-tune (ADR 0006): move both together.
 [tool.uv.sources]
 a2ui-agent-sdk = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_agent" }
+a2ui-a2a = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_a2a" }
 a2ui-core = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_core" }
 
 [build-system]
@@ -27,8 +28,10 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
     "pytest==8.4.2",
+    "pytest-asyncio==1.2.0",
 ]

@@ -1,0 +1,196 @@
+[
+  {
+    "version": "v0.9",
+    "createSurface": {
+      "surfaceId": "turn-1",
+      "catalogId": "urn:explorer:catalog:v1"
+    }
+  },
+  {
+    "version": "v0.9",
+    "updateComponents": {
+      "surfaceId": "turn-1",
+      "components": [
+        {
+          "id": "root",
+          "component": "Column",
+          "children": [
+            "top",
+            "chart",
+            "table"
+          ]
+        },
+        {
+          "component": "Text",
+          "id": "top__text_1",
+          "text": "Top supplier value",
+          "variant": "caption"
+        },
+        {
+          "component": "Text",
+          "id": "top__text_2",
+          "text": "$3,441.8M",
+          "variant": "h2"
+        },
+        {
+          "component": "SqlDetails",
+          "id": "top__sqldetails_1",
+          "sql": "SELECT supplier, count(*) AS contracts, sum(value) AS value\nFROM fixture.contracts\nGROUP BY supplier\nORDER BY value DESC\nLIMIT 3",
+          "summary": "top suppliers (fixture)"
+        },
+        {
+          "component": "Column",
+          "id": "top__column_1",
+          "children": [
+            "top__text_1",
+            "top__text_2",
+            "top__sqldetails_1"
+          ],
+          "justify": "start",
+          "align": "stretch"
+        },
+        {
+          "component": "Card",
+          "id": "top",
+          "child": "top__column_1"
+        },
+        {
+          "component": "Text",
+          "id": "chart__text_1",
+          "text": "Value by supplier",
+          "variant": "h4"
+        },
+        {
+          "component": "VegaChart",
+          "id": "chart__vegachart_1",
+          "spec": {
+            "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+            "data": {
+              "values": [
+                {
+                  "supplier": "Supplier A",
+                  "value": 3441.812603
+                },
+                {
+                  "supplier": "Supplier B",
+                  "value": 812.4
+                },
+                {
+                  "supplier": "Supplier C",
+                  "value": 96.2500005
+                }
+              ]
+            },
+            "mark": {
+              "type": "bar"
+            },
+            "encoding": {
+              "x": {
+                "field": "supplier",
+                "type": "nominal",
+                "title": "Supplier",
+                "sort": "-y"
+              },
+              "y": {
+                "field": "value",
+                "type": "quantitative",
+                "title": "Value ($M)",
+                "axis": {
+                  "format": ",.1f"
+                }
+              },
+              "tooltip": [
+                {
+                  "field": "supplier",
+                  "type": "nominal"
+                },
+                {
+                  "field": "value",
+                  "type": "quantitative",
+                  "format": ",.1f"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "component": "SqlDetails",
+          "id": "chart__sqldetails_1",
+          "sql": "SELECT supplier, count(*) AS contracts, sum(value) AS value\nFROM fixture.contracts\nGROUP BY supplier\nORDER BY value DESC\nLIMIT 3",
+          "summary": "top suppliers (fixture)"
+        },
+        {
+          "component": "Column",
+          "id": "chart",
+          "children": [
+            "chart__text_1",
+            "chart__vegachart_1",
+            "chart__sqldetails_1"
+          ],
+          "justify": "start",
+          "align": "stretch"
+        },
+        {
+          "component": "Text",
+          "id": "table__text_1",
+          "text": "Suppliers",
+          "variant": "h4"
+        },
+        {
+          "component": "DataGrid",
+          "id": "table__datagrid_1",
+          "columns": [
+            {
+              "key": "supplier",
+              "label": "Supplier"
+            },
+            {
+              "key": "contracts",
+              "label": "Contracts",
+              "align": "end"
+            },
+            {
+              "key": "value",
+              "label": "Value",
+              "align": "end"
+            }
+          ],
+          "rows": [
+            [
+              "Supplier A",
+              "37",
+              "$3,441,812,603"
+            ],
+            [
+              "Supplier B",
+              "12",
+              "$812,400,000"
+            ],
+            [
+              "Supplier C",
+              "5",
+              "$96,250,000"
+            ]
+          ]
+        },
+        {
+          "component": "SqlDetails",
+          "id": "table__sqldetails_1",
+          "sql": "SELECT supplier, count(*) AS contracts, sum(value) AS value\nFROM fixture.contracts\nGROUP BY supplier\nORDER BY value DESC\nLIMIT 3",
+          "summary": "top suppliers (fixture)"
+        },
+        {
+          "component": "Column",
+          "id": "table",
+          "children": [
+            "table__text_1",
+            "table__datagrid_1",
+            "table__sqldetails_1"
+          ],
+          "justify": "start",
+          "align": "stretch"
+        }
+      ]
+    }
+  }
+]
