@@ -28,13 +28,13 @@ INSERT INTO mart.contract (
     notice_id, agency_key, agency_name, publish_date, financial_year, procurement_method,
     limited_tender_reason_code, limited_tender_reason, unspsc, unspsc_segment, unspsc_family, unspsc_class,
     period_start, period_end, original_value, current_value, value_change, amendment_count,
-    cancelled_amendment_count, supplier_count, is_cancelled, description, source_url)
+    cancelled_amendment_count, supplier_count, is_cancelled, description)
 SELECT c.notice_id, c.agency_key, a.name, c.publish_date, c.financial_year, c.procurement_method,
        c.limited_tender_reason_code, c.limited_tender_reason, c.unspsc,
        left(c.unspsc, 2), left(c.unspsc, 4), left(c.unspsc, 6),
        c.current_period_start, c.current_period_end, c.original_value, c.current_value,
        c.current_value - c.original_value, c.amendment_count, c.cancelled_amendment_count,
-       coalesce(n.n, 0), c.is_cancelled, c.description, c.source_url
+       coalesce(n.n, 0), c.is_cancelled, c.description
 FROM core.contract c
 JOIN core.agency a USING (agency_key)
 LEFT JOIN (SELECT notice_id, count(*) AS n FROM core.contract_supplier GROUP BY notice_id) n USING (notice_id);
