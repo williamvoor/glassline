@@ -28,7 +28,7 @@ def ensure_roles(
     (the container's bootstrap user, or a superuser in tests). Idempotent.
 
     austender_loader owns everything and does all writes. explorer_ro gets SELECT on mart only
-    (granted by migration 0001) and is read-only by default.
+    (granted by migration 0001), no temp tables or schema public, and is read-only by default.
     """
     with conn.transaction():
         loader_exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (LOADER,)).fetchone()
@@ -49,6 +49,10 @@ def ensure_roles(
         db = conn.execute("SELECT current_database()").fetchone()[0]
         conn.execute(sql.SQL("GRANT CREATE, TEMPORARY ON DATABASE {} TO {}").format(sql.Identifier(db), sql.Identifier(LOADER)))
         conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(db), sql.Identifier(EXPLORER_RO)))
+        # explorer_ro gets nothing beyond mart, so take away what PUBLIC gets by default (temp tables, schema
+        # public). The loader keeps TEMPORARY through its own grant above.
+        conn.execute(sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM PUBLIC").format(sql.Identifier(db)))
+        conn.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
 
 
 def migration_files() -> list[Path]:

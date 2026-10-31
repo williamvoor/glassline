@@ -7,7 +7,7 @@
   "parties": [
     {
       "id": "8b50fc7752b7d38f447a5b914fe73f61",
-      "name": "Delta Dynamics Pty Ltd",
+      "name": "Delta Dynamics Ltd",
       "additionalIdentifiers": [
         {
           "id": "51200300407",
@@ -53,7 +53,7 @@
       "suppliers": [
         {
           "id": "8b50fc7752b7d38f447a5b914fe73f61",
-          "name": "Delta Dynamics Pty Ltd"
+          "name": "Delta Dynamics Ltd"
         }
       ],
       "date": "2025-02-20T04:00:00Z"

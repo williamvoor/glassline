@@ -1,6 +1,6 @@
 {
   "ocid": "prod-seed0007",
-  "id": "prod-seed0007-00000000000000000000000000001b5b",
+  "id": "prod-seed0007-00000000000000000000000000001b59",
   "date": "2026-10-06T01:16:34Z",
   "initiationType": "tender",
   "language": "EN",
@@ -87,7 +87,7 @@
       "amendments": [
         {
           "id": "CN9000007-A3",
-          "releaseID": "prod-seed0007-00000000000000000000000000001b5b",
+          "releaseID": "prod-seed0007-00000000000000000000000000001b59",
           "amendsReleaseID": "prod-seed0007-00000000000000000000000000000007"
         }
       ]

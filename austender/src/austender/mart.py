@@ -1,7 +1,7 @@
 """core -> mart, and the one-transaction `rebuild` of core and mart from raw.
 
-mart tables are created by migrations (with their comments and indexes); a rebuild truncates and refills
-them, so readers (which only ever see committed state) never observe a partial rebuild.
+mart tables are created by migrations (with their comments and indexes); a rebuild empties and refills
+them in one transaction, so readers (which only ever see committed state) never observe a partial rebuild.
 """
 
 from __future__ import annotations
@@ -20,9 +20,16 @@ MART_TABLES = (
     "supplier_agency_fy",
 )
 
+# DELETE, not TRUNCATE: TRUNCATE takes an ACCESS EXCLUSIVE lock that would block the explorer's reads for
+# the whole rebuild. With DELETE, readers keep seeing the previous mart until the rebuild commits.
 _BUILD_MART = """
-TRUNCATE mart.contract, mart.contract_supplier, mart.supplier, mart.agency,
-         mart.supplier_fy, mart.agency_fy, mart.supplier_agency_fy;
+DELETE FROM mart.contract;
+DELETE FROM mart.contract_supplier;
+DELETE FROM mart.supplier;
+DELETE FROM mart.agency;
+DELETE FROM mart.supplier_fy;
+DELETE FROM mart.agency_fy;
+DELETE FROM mart.supplier_agency_fy;
 
 INSERT INTO mart.contract (
     notice_id, agency_key, agency_name, publish_date, financial_year, procurement_method,

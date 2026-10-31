@@ -51,7 +51,9 @@ so re-run it later (it is idempotent) and rebuild.
 ## How the explorer connects
 
 Read-only role `explorer_ro` has `SELECT` on schema `mart` only (tables created later included) and
-`default_transaction_read_only = on`. It cannot see `raw`, `core` or `ops`.
+`default_transaction_read_only = on`. It cannot see `raw`, `core` or `ops`, create temp tables or use
+schema `public`. Its real write barrier is the missing privileges, so the explorer should still open
+`READ ONLY` transactions.
 
 ```
 postgresql://explorer_ro:<password>@localhost:5434/austender
@@ -86,7 +88,11 @@ read `mart`. Add the package as an editable path dev-dependency; it needs only `
   summary tables, which exclude them.
 - A multi-supplier contract's current value is split equally across its suppliers (`value_share`), so
   summing never double counts.
-- Current value is the highest-numbered non-cancelled amendment's value, else the original. Amendments are
+- Current value is the highest-numbered non-cancelled amendment's value (skipping amendments without a
+  value), else the original. Amendments are
   full snapshots; the API gives them no date, so none is stored.
 - Dates are `Australia/Canberra`; financial years run July to June (`2024-25`).
-- Suppliers are keyed by valid ABN, else `name:` plus the normalised name.
+- Suppliers are keyed by valid ABN, else `name:` plus the normalised name. A withheld name ("Name
+  Withheld") without an ABN gets `withheld:<notice_id>`, so placeholders never merge into one supplier.
+- `rebuild` empties and refills `mart` with `DELETE` in one transaction, so the explorer keeps reading the
+  previous data until it commits.

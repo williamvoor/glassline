@@ -75,3 +75,18 @@ def test_unplaceable_releases_return_none():
     assert parse_release({"id": "x", "contracts": [{"id": "CN1"}]}) is None
     amend_without_id = {"id": "x", "date": "2025-01-01T00:00:00Z", "tag": ["contractAmendment"], "contracts": [{"id": "CN1"}]}
     assert parse_release(amend_without_id) is None
+
+
+def test_withheld_supplier_names_get_a_key_per_notice():
+    """"Name Withheld" is a placeholder, not a supplier: two such notices must not merge into one supplier."""
+    a, b = seed("CN9000009"), seed("CN9000010")  # S4 (no ABN) and S5 (invalid ABN)
+    for d, name in ((a, "Name Withheld"), (b, "Name withheld")):
+        next(p for p in d["parties"] if "supplier" in p["roles"])["name"] = name
+    assert parse_release(a).suppliers[0].supplier_key == "withheld:CN9000009"
+    assert parse_release(b).suppliers[0].supplier_key == "withheld:CN9000010"
+
+
+def test_withheld_supplier_name_with_a_valid_abn_keeps_the_abn_key():
+    d = seed("CN9000001")
+    next(p for p in d["parties"] if "supplier" in p["roles"])["name"] = "Name Withheld"
+    assert parse_release(d).suppliers[0].supplier_key == "57200300402"

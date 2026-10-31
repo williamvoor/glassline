@@ -24,6 +24,24 @@
       ]
     },
     {
+      "id": "f320f5b9529abdb737c7d37175dbfb7e",
+      "name": "Globex GmbH",
+      "address": {
+        "streetAddress": "",
+        "locality": "SYDNEY",
+        "region": "Outside Australia",
+        "postalCode": "2000",
+        "countryName": "GERMANY"
+      },
+      "contactPoint": {
+        "name": "Procurement",
+        "email": "PROCUREMENT@EXAMPLE.GOV.AU"
+      },
+      "roles": [
+        "supplier"
+      ]
+    },
+    {
       "id": "a429030d7c7e22cf2b81b2953d826b14",
       "name": "Bureau of Imaginary Works",
       "roles": [

@@ -114,8 +114,19 @@ def _abn_raw(party: dict) -> str | None:
     return None
 
 
+# Placeholder names published instead of a supplier's real name (normalised). Without an ABN they say nothing
+# about who the supplier is, so each notice's withheld supplier gets its own key rather than merging into one.
+WITHHELD_NAMES = frozenset({"name withheld"})
+
+
 def entity_key(abn: str | None, norm: str) -> str:
     return abn if abn else f"name:{norm}"
+
+
+def supplier_key(abn: str | None, norm: str, notice_id: str) -> str:
+    if not abn and norm in WITHHELD_NAMES:
+        return f"withheld:{notice_id}"
+    return entity_key(abn, norm)
 
 
 def _is_overseas(address: dict) -> bool:
@@ -189,7 +200,7 @@ def parse_release(payload: dict) -> ParsedRelease | None:
                 name_norm=norm,
                 abn_raw=abn_raw,
                 abn=abn,
-                supplier_key=entity_key(abn, norm),
+                supplier_key=supplier_key(abn, norm, notice_id),
                 country=_s(addr.get("countryName")),
                 state=_s(addr.get("region")),
                 is_overseas=_is_overseas(addr),
@@ -275,7 +286,7 @@ JOIN core.contract c USING (notice_id)
 WHERE r.kind = 'amendment'
 ORDER BY r.notice_id, r.amendment_seq, r.release_ts, r.release_id;
 
--- value_delta: against the previous NON-cancelled snapshot (the parent if there is none).
+-- value_delta: against the previous NON-cancelled snapshot with a value (the parent if there is none).
 UPDATE core.amendment a
 SET value_delta = d.delta
 FROM (
@@ -283,11 +294,12 @@ FROM (
            a2.value - coalesce(lag(a2.value) OVER (PARTITION BY a2.notice_id ORDER BY a2.seq), c.original_value) AS delta
     FROM core.amendment a2
     JOIN core.contract c USING (notice_id)
-    WHERE NOT a2.is_cancelled
+    WHERE NOT a2.is_cancelled AND a2.value IS NOT NULL
 ) d
 WHERE a.notice_id = d.notice_id AND a.seq = d.seq;
 
--- Counts, and the current state from the highest-k NON-cancelled amendment.
+-- Counts, and the current state from the highest-k NON-cancelled amendment (for the value: the highest-k
+-- one that has a value).
 UPDATE core.contract c
 SET amendment_count = s.n,
     cancelled_amendment_count = s.n_cancelled,
@@ -299,7 +311,7 @@ FROM (
            count(*) AS n,
            count(*) FILTER (WHERE is_cancelled) AS n_cancelled,
            bool_or(NOT is_cancelled) AS has_current,
-           (array_agg(value ORDER BY seq DESC) FILTER (WHERE NOT is_cancelled))[1] AS cur_value,
+           (array_agg(value ORDER BY seq DESC) FILTER (WHERE NOT is_cancelled AND value IS NOT NULL))[1] AS cur_value,
            (array_agg(period_start ORDER BY seq DESC) FILTER (WHERE NOT is_cancelled))[1] AS cur_start,
            (array_agg(period_end ORDER BY seq DESC) FILTER (WHERE NOT is_cancelled))[1] AS cur_end
     FROM core.amendment GROUP BY notice_id
