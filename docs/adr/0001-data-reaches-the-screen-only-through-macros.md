@@ -1,3 +1,5 @@
 # Data reaches the screen only through macros
 
 The model never writes a data value into the UI. It runs SQL, gets a Result ID, and calls a macro (`BarChart`, `LineChart`, `DataTable`, `Metric`, or `Cite` for numbers inside sentences) that builds the components from the stored rows server-side. We chose this over letting the model write charts and tables directly because the spike showed models retyping and rounding numbers, and because it makes "every number on screen comes from the database" true by construction rather than by prompt. The cost is a narrow UI vocabulary: the model sees only macros and a few layout components, and any new kind of Visual needs a new macro.
+
+**Amendment (2026-10-31):** the Turn's prose also travels outside the Surface, as a plain A2A text part. `Cite` placeholders are filled there too, so numbers in prose come from the store as well. A bare number typed by the model in prose is logged as a warning, not rejected, because years and phrases like "top 10" would make rejection too noisy.

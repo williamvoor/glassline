@@ -46,5 +46,5 @@ A chart, table or metric on a Surface, built by a Macro from one Result. Every V
 _Avoid_: Widget, graphic
 
 **Cite**:
-The Macro that places values from a Result inside a sentence of prose, so numbers in text are never retyped.
+The Macro that places values from a Result inside a sentence, either in the Turn's prose or on its Surface, so numbers in text are never retyped.
 _Avoid_: Fact (reads as a data concept, as in "fact table"), quote
