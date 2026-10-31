@@ -1,0 +1,104 @@
+{
+  "ocid": "prod-seed0007",
+  "id": "prod-seed0007-00000000000000000000000000001b59",
+  "date": "2026-10-06T01:16:34Z",
+  "initiationType": "tender",
+  "language": "EN",
+  "parties": [
+    {
+      "id": "f5e9f3e94c3205c70b2b444557d284f5",
+      "name": "Cobalt & Sons Pty Ltd",
+      "additionalIdentifiers": [
+        {
+          "id": "38200300403",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {
+        "streetAddress": "",
+        "locality": "SYDNEY",
+        "region": "QLD",
+        "postalCode": "2000",
+        "countryName": "AUSTRALIA"
+      },
+      "contactPoint": {
+        "name": "Procurement",
+        "email": "PROCUREMENT@EXAMPLE.GOV.AU"
+      },
+      "roles": [
+        "supplier"
+      ]
+    },
+    {
+      "id": "2bc5e23c3de9cecc0abddb8217834c57",
+      "name": "Department of Fictional Affairs",
+      "roles": [
+        "procuringEntity"
+      ],
+      "additionalIdentifiers": [
+        {
+          "id": "14100200301",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {},
+      "contactPoint": {
+        "email": "tenders@example.gov.au"
+      }
+    }
+  ],
+  "awards": [
+    {
+      "id": "CN9000007-award",
+      "suppliers": [
+        {
+          "id": "f5e9f3e94c3205c70b2b444557d284f5",
+          "name": "Cobalt & Sons Pty Ltd"
+        }
+      ],
+      "date": "2025-02-10T04:00:00Z"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CN9000007",
+      "awardID": "CN9000007-award",
+      "dateSigned": "2024-01-01T00:00:00Z",
+      "description": "Seed contract 7",
+      "title": "REF-9000007",
+      "items": [
+        {
+          "id": "72100000-x",
+          "classification": {
+            "scheme": "UNSPSC",
+            "id": "72100000"
+          }
+        }
+      ],
+      "period": {
+        "startDate": "2024-07-01T14:00:00Z",
+        "endDate": "2026-06-29T14:00:00Z"
+      },
+      "value": {
+        "currency": "AUD",
+        "amount": "80000.00"
+      },
+      "status": "active",
+      "amendments": [
+        {
+          "id": "CN9000007-A1",
+          "releaseID": "prod-seed0007-00000000000000000000000000001b59",
+          "amendsReleaseID": "prod-seed0007-00000000000000000000000000000007"
+        }
+      ]
+    }
+  ],
+  "tag": [
+    "contractAmendment"
+  ],
+  "tender": {
+    "id": "prod-seed0007",
+    "procurementMethod": "open",
+    "procurementMethodDetails": "Open tender"
+  }
+}

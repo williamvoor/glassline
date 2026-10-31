@@ -1,0 +1,97 @@
+{
+  "ocid": "prod-seed0011",
+  "id": "prod-seed0011-0000000000000000000000000000000b",
+  "date": "2025-04-01T00:00:00Z",
+  "initiationType": "tender",
+  "language": "EN",
+  "parties": [
+    {
+      "id": "e6838be486a0baa73af645a982cd1002",
+      "name": "ACME WIDGETS PTY. LTD.",
+      "additionalIdentifiers": [
+        {
+          "id": "76200300401",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {
+        "streetAddress": "",
+        "locality": "SYDNEY",
+        "region": "NSW",
+        "postalCode": "2000",
+        "countryName": "AUSTRALIA"
+      },
+      "contactPoint": {
+        "name": "Procurement",
+        "email": "PROCUREMENT@EXAMPLE.GOV.AU"
+      },
+      "roles": [
+        "supplier"
+      ]
+    },
+    {
+      "id": "2bc5e23c3de9cecc0abddb8217834c57",
+      "name": "Department of Fictional Affairs",
+      "roles": [
+        "procuringEntity"
+      ],
+      "additionalIdentifiers": [
+        {
+          "id": "14100200301",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {},
+      "contactPoint": {
+        "email": "tenders@example.gov.au"
+      }
+    }
+  ],
+  "awards": [
+    {
+      "id": "CN9000011-award",
+      "suppliers": [
+        {
+          "id": "e6838be486a0baa73af645a982cd1002",
+          "name": "ACME WIDGETS PTY. LTD."
+        }
+      ],
+      "date": "2025-04-01T00:00:00Z"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CN9000011",
+      "awardID": "CN9000011-award",
+      "dateSigned": "2024-01-01T00:00:00Z",
+      "description": "Seed contract 11",
+      "title": "REF-9000011",
+      "items": [
+        {
+          "id": "72100000-x",
+          "classification": {
+            "scheme": "UNSPSC",
+            "id": "72100000"
+          }
+        }
+      ],
+      "period": {
+        "startDate": "2024-07-01T14:00:00Z",
+        "endDate": "2025-12-31T13:00:00Z"
+      },
+      "value": {
+        "currency": "AUD",
+        "amount": "45000.00"
+      },
+      "status": "active"
+    }
+  ],
+  "tag": [
+    "contract"
+  ],
+  "tender": {
+    "id": "prod-seed0011",
+    "procurementMethod": "open",
+    "procurementMethodDetails": "Open tender"
+  }
+}

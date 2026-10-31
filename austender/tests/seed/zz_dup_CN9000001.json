@@ -1,0 +1,97 @@
+{
+  "ocid": "prod-seed0001",
+  "id": "prod-seed0001-00000000000000000000000000000001",
+  "date": "2024-08-15T02:00:00Z",
+  "initiationType": "tender",
+  "language": "EN",
+  "parties": [
+    {
+      "id": "ca0e1fd120cd86e60a9634b8a02ae5fc",
+      "name": "Borealis Consulting Pty Ltd",
+      "additionalIdentifiers": [
+        {
+          "id": "57200300402",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {
+        "streetAddress": "",
+        "locality": "SYDNEY",
+        "region": "VIC",
+        "postalCode": "2000",
+        "countryName": "AUSTRALIA"
+      },
+      "contactPoint": {
+        "name": "Procurement",
+        "email": "PROCUREMENT@EXAMPLE.GOV.AU"
+      },
+      "roles": [
+        "supplier"
+      ]
+    },
+    {
+      "id": "2bc5e23c3de9cecc0abddb8217834c57",
+      "name": "Department of Fictional Affairs",
+      "roles": [
+        "procuringEntity"
+      ],
+      "additionalIdentifiers": [
+        {
+          "id": "14100200301",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {},
+      "contactPoint": {
+        "email": "tenders@example.gov.au"
+      }
+    }
+  ],
+  "awards": [
+    {
+      "id": "CN9000001-award",
+      "suppliers": [
+        {
+          "id": "ca0e1fd120cd86e60a9634b8a02ae5fc",
+          "name": "Borealis Consulting Pty Ltd"
+        }
+      ],
+      "date": "2024-08-15T02:00:00Z"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CN9000001",
+      "awardID": "CN9000001-award",
+      "dateSigned": "2024-01-01T00:00:00Z",
+      "description": "Seed contract 1",
+      "title": "REF-9000001",
+      "items": [
+        {
+          "id": "72100000-x",
+          "classification": {
+            "scheme": "UNSPSC",
+            "id": "72100000"
+          }
+        }
+      ],
+      "period": {
+        "startDate": "2024-08-14T14:00:00Z",
+        "endDate": "2025-08-14T14:00:00Z"
+      },
+      "value": {
+        "currency": "AUD",
+        "amount": "100000.00"
+      },
+      "status": "active"
+    }
+  ],
+  "tag": [
+    "contract"
+  ],
+  "tender": {
+    "id": "prod-seed0001",
+    "procurementMethod": "open",
+    "procurementMethodDetails": "Open tender"
+  }
+}

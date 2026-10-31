@@ -1,0 +1,91 @@
+{
+  "ocid": "prod-seed0015",
+  "id": "prod-seed0015-0000000000000000000000000000000f",
+  "date": "2025-08-12T04:00:00Z",
+  "initiationType": "tender",
+  "language": "EN",
+  "parties": [
+    {
+      "id": "f320f5b9529abdb737c7d37175dbfb7d",
+      "name": "Globex GmbH",
+      "address": {
+        "streetAddress": "",
+        "locality": "SYDNEY",
+        "region": "Outside Australia",
+        "postalCode": "2000",
+        "countryName": "GERMANY"
+      },
+      "contactPoint": {
+        "name": "Procurement",
+        "email": "PROCUREMENT@EXAMPLE.GOV.AU"
+      },
+      "roles": [
+        "supplier"
+      ]
+    },
+    {
+      "id": "a429030d7c7e22cf2b81b2953d826b14",
+      "name": "Bureau of Imaginary Works",
+      "roles": [
+        "procuringEntity"
+      ],
+      "additionalIdentifiers": [
+        {
+          "id": "84100200302",
+          "scheme": "AU-ABN"
+        }
+      ],
+      "address": {},
+      "contactPoint": {
+        "email": "tenders@example.gov.au"
+      }
+    }
+  ],
+  "awards": [
+    {
+      "id": "CN9000015-award",
+      "suppliers": [
+        {
+          "id": "f320f5b9529abdb737c7d37175dbfb7d",
+          "name": "Globex GmbH"
+        }
+      ],
+      "date": "2025-08-12T04:00:00Z"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CN9000015",
+      "awardID": "CN9000015-award",
+      "dateSigned": "2024-01-01T00:00:00Z",
+      "description": "Seed contract 15",
+      "title": "REF-9000015",
+      "items": [
+        {
+          "id": "90100000-x",
+          "classification": {
+            "scheme": "UNSPSC",
+            "id": "90100000"
+          }
+        }
+      ],
+      "period": {
+        "startDate": "2024-07-01T14:00:00Z",
+        "endDate": "2025-12-31T13:00:00Z"
+      },
+      "value": {
+        "currency": "AUD",
+        "amount": "15000.00"
+      },
+      "status": "active"
+    }
+  ],
+  "tag": [
+    "contract"
+  ],
+  "tender": {
+    "id": "prod-seed0015",
+    "procurementMethod": "open",
+    "procurementMethodDetails": "Open tender"
+  }
+}
