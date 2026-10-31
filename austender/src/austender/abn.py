@@ -26,13 +26,15 @@ def valid_abn(raw: str | None) -> str | None:
     return digits if sum(w * n for w, n in zip(_WEIGHTS, nums)) % 89 == 0 else None
 
 
-_TRUSTEE = re.compile(r"\b(?:(?:as|the)\s+)*(?:trustee\s+for|trustee\s+of|atf)\b.*$")
+# "trustee for" and its abbreviation "atf" only: "Public Trustee of Queensland" is a supplier's real name.
+_TRUSTEE = re.compile(r"\b(?:(?:as|the)\s+)*(?:trustee\s+for|atf)\b.*$")
 _SUFFIX = re.compile(r"(?:^|\s)(?:pty|ltd|limited|inc)$")
 
 
 def name_norm(name: str | None) -> str:
     """Lower case, unaccented, `&` -> and, `P/L` -> pty ltd, no punctuation, trailing legal suffixes
-    and `... trustee for ...` clauses removed. Falls back to the unstripped form if stripping empties it."""
+    and `... trustee for ...` clauses removed. Falls back to keeping the clause, then to no stripping at all,
+    if stripping empties it."""
     if not name:
         return ""
     s = unicodedata.normalize("NFKD", name)
@@ -42,11 +44,12 @@ def name_norm(name: str | None) -> str:
     s = s.replace("'", "").replace("’", "")
     s = re.sub(r"[^\w\s]|_", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
-    unstripped = s
-    s = _TRUSTEE.sub("", s).strip()
+    return _strip_suffixes(_TRUSTEE.sub("", s).strip()) or _strip_suffixes(s) or s
+
+
+def _strip_suffixes(s: str) -> str:
     while True:
         t = _SUFFIX.sub("", s).strip()
         if t == s:
-            break
+            return s
         s = t
-    return s or unstripped
