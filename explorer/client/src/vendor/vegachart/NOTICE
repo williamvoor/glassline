@@ -1,0 +1,12 @@
+VegaChart for A2UI v0.9
+
+index.ts and vegaChart.ts are copied from the A2UI repository
+(https://github.com/a2ui-project/a2ui, commit 825beac: typescript/catalogs/vegachart/
+src/components/vegaChart.ts and src/v0_9/index.ts), Copyright 2024 Google LLC, licensed
+under the Apache License 2.0 (see LICENSE).
+
+Changes by the explorer project:
+- vegaChart.ts imports A2uiLitElement from '@a2ui/lit/v0_9' instead of
+  '@a2ui/web_core/v1_0', which does not export it in @a2ui/*@0.14.0.
+- The v1.0 type import (VegaChartV1Api) is removed; the element is typed for v0.9 only.
+- Relative imports are adjusted for the flat directory.

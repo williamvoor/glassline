@@ -1,0 +1,29 @@
+{
+  "name": "explorer-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "0.3.13",
+    "@a2ui/lit": "0.14.0",
+    "@a2ui/markdown-it": "0.2.2",
+    "@a2ui/web_core": "0.14.0",
+    "@lit/context": "1.1.6",
+    "lit": "^3.3.3",
+    "vega": "5.33.1",
+    "vega-embed": "6.29.0",
+    "vega-lite": "5.23.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "happy-dom": "20.14.6",
+    "typescript": "5.8.3",
+    "vite": "6.4.5",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,88 @@
+// Interop: the real Python agent (stub model) ↔ @a2a-js/sdk, over HTTP + SSE. Needs `uv` on PATH.
+import {spawn, type ChildProcess} from 'node:child_process';
+import {createServer} from 'node:net';
+import {resolve} from 'node:path';
+import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import type {A2uiMessage} from '@a2ui/web_core/v0_9';
+import {connect, type AskEvent} from '../src/a2a.js';
+import {createProcessor} from '../src/catalog.js';
+
+const AGENT_DIR = resolve(process.cwd(), '../agent'); // tests run from explorer/client
+const STATUS_TEXT = 'Running SQL: top suppliers (fixture)'; // explorer_agent.testing.stub_server
+
+let server: ChildProcess | undefined;
+let agentUrl = '';
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.unref();
+    s.on('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const port = (s.address() as {port: number}).port;
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+beforeAll(async () => {
+  const port = await freePort();
+  server = spawn('uv', ['run', 'python', '-m', 'explorer_agent.testing.stub_server', '--port', String(port),
+    // Not a CORS test (Node does not enforce CORS; test_cors_preflight covers it).
+    '--client-origin', window.location.origin], {
+    cwd: AGENT_DIR,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true, // own process group, so uv's python child is killed with it
+  });
+  let stderr = '';
+  server.stderr!.on('data', d => (stderr += d));
+  agentUrl = await new Promise<string>((resolve, reject) => {
+    server!.on('error', e => reject(new Error(`could not start uv (is it on PATH?): ${e.message}`)));
+    server!.on('exit', code => reject(new Error(`stub server exited with ${code}:\n${stderr}`)));
+    server!.stdout!.on('data', d => {
+      const m = /READY (\S+)/.exec(String(d));
+      if (m) resolve(m[1]!);
+    });
+  });
+});
+
+afterAll(() => {
+  if (server?.pid) {
+    try {
+      process.kill(-server.pid, 'SIGTERM');
+    } catch {
+      // already gone
+    }
+  }
+});
+
+describe('interop with the stub agent', () => {
+  it('streams a status update, then prose and A2UI the renderer accepts', async () => {
+    const processor = createProcessor();
+    const agent = await connect(agentUrl, processor.getRendererCapabilities({versions: ['v0.9']}));
+    const events: AskEvent[] = [];
+    for await (const e of agent.ask('Which suppliers got the most?')) events.push(e);
+
+    expect(events.filter(e => e.kind === 'status').map(e => (e as {text: string}).text)).toContain(STATUS_TEXT);
+    const final = events.at(-1)!;
+    expect(final.kind).toBe('final');
+    if (final.kind !== 'final') return;
+    expect(final.prose).toContain('Supplier A');
+    expect(final.prose).not.toContain('{r1');
+    expect(final.a2ui.length).toBeGreaterThan(0);
+    for (const m of final.a2ui) {
+      const body = Object.values(m).find(v => typeof v === 'object' && v && 'surfaceId' in v) as {surfaceId: string};
+      expect(body.surfaceId).toBe('turn-1');
+    }
+    processor.processMessages(final.a2ui as unknown as A2uiMessage[]);
+    expect(processor.model.surfacesMap.get('turn-1')).toBeDefined();
+
+    // Same context → the next turn gets its own surface.
+    const again: AskEvent[] = [];
+    for await (const e of agent.ask('And again?', final.contextId)) again.push(e);
+    const second = again.at(-1)!;
+    expect(second.kind === 'final' && second.contextId).toBe(final.contextId);
+    if (second.kind === 'final') processor.processMessages(second.a2ui as unknown as A2uiMessage[]);
+    expect(processor.model.surfacesMap.get('turn-2')).toBeDefined();
+  });
+});
