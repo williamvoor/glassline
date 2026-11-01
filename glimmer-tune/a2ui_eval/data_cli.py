@@ -53,6 +53,7 @@ def cmd_generate(args) -> None:
 
 def merge_reviews(old: list[dict], new: list[dict]) -> tuple[list[dict], list[str]]:
     """New draft rows, with `intent` and `reviewed` carried over from `old` by id.
+    An unreviewed row's intent is carried over only if its UI is unchanged.
 
     Fails if a reviewed id is gone, or its UI changed: the approved intent described
     the old one. The UI is compared by `reference_express` (text and values) and by
@@ -73,7 +74,9 @@ def merge_reviews(old: list[dict], new: list[dict]) -> tuple[list[dict], list[st
     rows = []
     for c in new:
         prev = old_by_id.get(c["id"])
-        rows.append({**c, "intent": prev["intent"], "reviewed": bool(prev.get("reviewed"))} if prev else {**c, "reviewed": False})
+        # An unreviewed edit is kept only while it still describes the same UI.
+        keep = prev is not None and (prev.get("reviewed") or not ui_changed(c["id"]))
+        rows.append({**c, "intent": prev["intent"], "reviewed": bool(prev.get("reviewed"))} if keep else {**c, "reviewed": False})
     return rows, [i for i in old_by_id if i not in new_by_id]
 
 

@@ -109,7 +109,7 @@ Tests use a fake whitespace tokenizer and tiny in-test templates where possible.
 - The CLI uses the real tokenizer (`meta-models/Muse-Glimmer-30B` `tokenizer.json`, from the public, ungated HF repo). The +64 overhead is a conservative estimate, not the renderer. The real renderer check is the cookbook `muse_glimmer_starter prepare` in the smoke run, outside the tests.
 - Export **fails** on over-length rows rather than dropping them, because `sft_loop` drops them silently.
 - One user turn per row. Multi-turn families are excluded until a later milestone.
-- Dev/test intents are drafted from templates, never by a model. You edit `intents_draft.jsonl` and set `reviewed: true`.
+- Dev/test intents are drafted from templates, never by a model. You edit `intents_draft.jsonl` and set `reviewed: true`. (Amended by 2d: a report-only model review stands in for yours.)
 - I hand-pick the split assignment for a balanced mix of component types. It's yours to review in `data/splits.yaml`.
 - Default counts: train 60 variants per family, dev 12, test 17. These are CLI flags.
 
@@ -176,7 +176,7 @@ Seeds stay verbatim v1 on disk. `v1_to_v0_9` works on JSON only, never through E
 | V5 | Generation under v0.9 rejects v1-only props, as a compile error, so they never reach a row | `test_v0_9.py::test_v1_only_props_rejected[placeholder,posterUrl,steps]` |
 | V6 | The system prompt is built from the v0.9 catalog. C3 still holds, and the prompt names `validationRegexp` but not `placeholder`. | `test_prompt.py` (existing) and `::test_prompt_is_v0_9` |
 | V7 | `binding_uses` finds `{"path": p}` and `{"@path": p}` and ignores `{"componentId", "path"}` | `test_refs_structure.py::test_binding_uses_v0_9` |
-| V8 | `draft --keep-reviews` regenerates the drafts and carries `intent` and `reviewed` over by `id`. It fails, writing nothing, if a reviewed id is missing from the new drafts or its UI changed. "UI changed" means a different `reference_express` (text and values) or fingerprint (structure); the fingerprint alone ignores text. It reports dropped unreviewed ids. It refuses to run without an existing draft. All JSONL writes are atomic (temp file, then rename). | `test_generate.py::test_keep_reviews_carries_edits`, `::test_keep_reviews_fails_on_missing_reviewed_id`, `::test_keep_reviews_fails_on_changed_fingerprint`, `::test_keep_reviews_fails_on_changed_text_with_same_fingerprint`, `::test_keep_reviews_cli`, `::test_write_jsonl_is_atomic` |
+| V8 | `draft --keep-reviews` regenerates the drafts and carries `intent` and `reviewed` over by `id`. An unreviewed row keeps its old intent only if its UI is unchanged; otherwise it takes the new render. It fails, writing nothing, if a reviewed id is missing from the new drafts or its UI changed. "UI changed" means a different `reference_express` (text and values) or fingerprint (structure); the fingerprint alone ignores text. It reports dropped unreviewed ids. It refuses to run without an existing draft. All JSONL writes are atomic (temp file, then rename). | `test_generate.py::test_keep_reviews_carries_edits`, `::test_keep_reviews_fails_on_missing_reviewed_id`, `::test_keep_reviews_fails_on_changed_fingerprint`, `::test_keep_reviews_fails_on_changed_text_with_same_fingerprint`, `::test_keep_reviews_cli`, `::test_write_jsonl_is_atomic` |
 | V9 | After the rebuild, the real data is v0.9: every row's `reference` compiles, has version `v0.9`, and uses the v0.9 catalog ID. The draft has 29 rows, all `reviewed: true`. Intents are identical to before (checked once against git at rebuild time, not by the suite). `data/dev/cases.jsonl` holds the 12 dev rows. | `test_v0_9.py::test_real_data_is_v0_9` |
 | V10 | The review page renders the rebuilt draft, and its value hints work on compiled v0.9 messages (separate `updateComponents`/`updateDataModel`, `call`) | `test_review.py::test_real_draft_rows_compile_to_v0_9`, `::test_expected_values_on_compiled_v0_9`, `::test_expected_values_cover_data_text_format_strings_and_events[call,@call]` |
 | V11 | All earlier tests still pass. Scorer tests with v1 literals use the `sdk_v1` fixture. | full suite |
@@ -256,6 +256,66 @@ Status: draft, 2026-11-01. No new machinery and no new ADR: this applies the 2a 
 ```bash
 cd glimmer-tune && uv run pytest
 ```
+
+---
+
+# 2d: intents in the user's words
+
+Status: **approved** 2026-11-01. It replaces the 2b register rules for every gallery family (train, dev and test) and amends the 2c-1 intent rules. It follows a model review of the 191 unreviewed drafts (Sonnet, report-only). That review found stale intents (fixed in V8), incoherent slot combinations, duplicate references and spec-style wording.
+
+## Why
+
+Intents read like a prop listing ("a column (spaceBetween, stretched) with an h1 markdown header"). Real users name what they want on screen, not the props that build it. You decided (2026-11-01):
+- dev/test intents read **the way a user really asks**, so the model has to choose layout props itself
+- train intents move to the same register, so train and eval match
+
+## Register rules (R)
+
+| # | Rule |
+|---|---|
+| R1 | An intent is a request to an assistant: goal first ("I need…", "Show…", "Make…", or a plain noun phrase). It names no component, prop or enum value: no Column/Row/Card/Text, no justify, align, weight, variant, h1, fit or usageHint. Everyday layout words a user might say are allowed ("side by side", "in a card", "a line between", "at the bottom"). |
+| R2 | It states the **content** the user would supply: every heading, label, button text, message and option, plus the data values (names, numbers, dates, URLs). Literal text that a user would quote is quoted. |
+| R3 | It never states data paths, event names, regexes, date-format patterns or icon names in catalog form. A user may describe an icon ("a heart") or a format ("the weekday name"). |
+| R4 | Each family has at least two intent templates that differ in phrasing and length. Neither has to pin the whole reference. |
+| R5 | Related slot values are one bundled slot (2b rule, now enforced for headers with their fields, senders with subjects, channels with conversations, labels with messages). |
+| R6 | Dev/test drafts within a family have distinct `reference_express` values. Duplicates are dropped and the slot space must be large enough to fill the count. |
+
+## What this changes elsewhere
+
+- **C16 (slot sharing)** keeps checking every scalar slot leaf **except** leaves keyed `path`, `event`, `icon`, `align`, `justify`, `variant`, `display`, `regex`, `key`, `date_format` and `marks` (markdown heading marks). Stored option values and a picked index are per-family `MAY_OMIT` entries. A leaf a user would type (text, numbers, URLs) must still appear.
+- **Scoring:** the reference keeps the gallery's props, so a perfect answer to an under-specified intent can still miss slots. exact_match stops being a ceiling to aim for. Milestone 3 reports, besides the literal slot F1, a score that ignores data paths and event names (it was already planned for paths). Read the numbers as comparisons between models, not as absolute quality.
+- **2c-1 intents:** S9's self-check drops paths and event names. It still requires literal text and data values. The detail levels stay, but `specific` states props in everyday words ("equal widths", "spread out top to bottom"), never prop names. "The target follows the intent" stays: an unstated optional prop is left out of a synthetic target.
+- **Approvals:** dev/test drafts are reviewed by a model (report-only Sonnet agent). Its approvals count as yours (your decision, 2026-11-01). `SPEC.md` 2a's "you edit and set `reviewed: true`" now means: the review agent's `approve` verdicts are applied with a script, and its `fix`/`reject` rows go back to the templates.
+- **The 29 approved rows** are re-drafted too, because their intents are in the old register. Test is not built yet, so nothing is frozen.
+
+## Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| D1 | No intent template of any family, outside its slot expressions (slot values are content), contains a component or enum name from the catalog as a whole word (Column, Row, Card, Text, spaceBetween, stretch, h1, caption, …) or a `/path` | `test_generate.py::test_intents_in_user_register[family]` |
+| D2 | C16 as amended above | `test_generate.py::test_intents_mention_slot_values[family]` |
+| D3 | `draft` gives the default counts with no duplicate `reference_express` within a family | `test_generate.py::test_drafts_have_distinct_references` |
+| D4 | Every template still reproduces its seed and every variant self-scores exact_match (C5, C7) | existing |
+| D5 | S9 as amended | `test_synth_intents.py::test_required_identifiers_present[detail]` |
+
+## Order of work
+
+1. Rewrite one family (00_complex-layout) as the sample. You approve it.
+2. Rewrite the other 40 templates. Re-draft dev/test with `--force` and regenerate train and the export.
+3. Run the Sonnet review on the new drafts, report-only. Apply its approvals, fix the templates it flags, and repeat until the rejects are small enough. Then run `build-eval`.
+4. Amend the 2c-1 intents (S9, the `specific` wording) as part of A2.
+
+**Progress (2026-11-01):** steps 1–3 are done. All 41 templates are in the user's words. Train was regenerated (1560 rows, export drops 0). The model review took four rounds:
+- round 1 (old drafts): 36 approved of 191
+- round 2: 107 of 220
+- round 3: 216 of 220
+- round 4: the last 4 (16_workout-summary) after each workout got its own heading
+
+All 220 drafts are `reviewed: true`, and dev is built (84 rows). Test is **not** built yet, because building it freezes it. Step 4 is still open.
+
+## Non-goals
+
+- Model-written intents for gallery rows. 2c-3's rewording stays optional.
 
 ---
 

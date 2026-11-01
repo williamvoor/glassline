@@ -101,10 +101,10 @@ def test_real_data_is_v0_9(sdk):
     draft = read_jsonl(DATA / "intents_draft.jsonl")
     dev = read_jsonl(DATA / "dev" / "cases.jsonl")
     train = read_jsonl(DATA / "train" / "cases.jsonl")
-    # 2b: 7 dev families x 12 + 8 test families x 17; the 29 2a approvals carried over.
-    assert len(draft) == 220 and sum(r["reviewed"] for r in draft) == 29
+    # 2d: 7 dev families x 12 + 8 test families x 17, all approved by the model review.
+    assert len(draft) == 220 and all(r["reviewed"] for r in draft)
     assert len(train) == 26 * 60
-    assert [r["id"] for r in dev] == [r["id"] for r in draft if r["split"] == "dev" and r["reviewed"]] and len(dev) == 12
+    assert [r["id"] for r in dev] == [r["id"] for r in draft if r["split"] == "dev" and r["reviewed"]] and len(dev) == 84
     for row in draft + dev + train:
         assert all(m["version"] == "v0.9" for m in row["reference"]), row["id"]
         assert row["reference"][0]["createSurface"]["catalogId"] == V0_9_BASIC_CATALOG_ID, row["id"]
