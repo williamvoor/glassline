@@ -43,6 +43,9 @@ uv run austender backfill --from 2013-01 --to 2026-09 --resume   # after an inte
 uv run austender rebuild
 ```
 
+Or run `./backfill.sh` (inside `tmux`), which does all of the above from 2013-01 to the last complete UTC
+month, keeps a Mac awake, and logs to `logs/` (git-ignored). `./backfill.sh 2020-01 2020-12` sets the range.
+
 A month is checkpointed only after all its pages are stored; an interrupted month is fetched again and
 already-stored releases are skipped. A release id seen again with a different payload is recorded in
 `ops.rejected_release` and the stored row is left unchanged. The latest month is incomplete until it ends,

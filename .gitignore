@@ -26,3 +26,6 @@ wheels/
 node_modules/
 
 .DS_Store
+
+# AusTender backfill logs
+austender/logs/
