@@ -265,7 +265,7 @@ Status: 2c-1 approved 2026-11-01, then amended the same day so that the vocabula
 
 Staged so that you see coverage and samples before anything is generated at full size, and so that a real SFT run fits before 2026-11-30:
 
-- **2c-1:** single-turn new surfaces. Catalog model, LLM-written vocabulary, skeletons, growth, values, data model, validation and round trip, deterministic intents, dedup, coverage report, linter, review mode, mixed export. **Checkpoints:** (a) you review the vocabulary diff before the generator uses it; (b) the coverage report and 10 rendered samples go to you before full-size generation.
+- **2c-1:** single-turn new surfaces. Catalog model, LLM-written vocabulary, skeletons, growth, values, data model, validation and round trip, deterministic intents, dedup, coverage report, linter, review mode, mixed export. **Checkpoints:** (a) you review the vocabulary diff before the generator uses it; (b) the coverage report and 10 rendered samples go to you before full-size generation. Checkpoint (a) passed on 2026-11-01: you approved the 10 committed vocabulary files as they are.
 - **2c-2:** update turns (data-only, components without root, `update=true`, `deleteSurface`) and text-only rows, with their export row shapes.
 - **2c-3:** optional intent rewording with `meta/muse-spark-1.3`, plus the drop filter.
 
@@ -277,7 +277,8 @@ The rest of this section specifies 2c-1 in full. 2c-2 and 2c-3 are outlined at t
 - Function return types come from the catalog JSON. A boolean return is a check, a string return is a value function, and void is an action. `length` and `numeric` need `min` or `max`, through an `anyOf` the helper doesn't carry.
 - `Tabs.tabs` and `ChoicePicker.options` must be fully literal: the compiler rejects any `$path` inside them, though the schema allows it.
 - The traps in Slider: `value` is required but `min` comes before `max`, so the form is `Slider(_, min, max, $/v)`. `weight` follows the specific props, and `checks` is always last.
-- Decompile drops `theme` and `accessibility`, sorts data keys alphabetically, and writes data lines before components. A `null` data value can't round-trip. The generator never emits any of these.
+- Decompile drops `theme` and `accessibility`, sorts data keys alphabetically, and writes data lines before components. The generator never emits `theme`, `accessibility` or `null` data values. (A probe on 2026-11-01 showed that a `null` data value does round-trip. The generator still avoids it, because a null field is never a plausible value.)
+- `DateTimeInput.min`/`max` validate only when bound. The schema puts each literal through a `oneOf` of `format: date/time/date-time`, and formats aren't enforced, so every literal string matches all three and fails. The generator therefore always binds `min`/`max` (probe, 2026-11-01).
 - `sdk_check` catches dangling refs, orphans, cycles, bad enums, missing required props and type errors. It doesn't catch a binding with no data value. Our `structure.unresolved_bindings` does.
 - The scorer compares data paths and event names literally. Component ids are aligned by position, so ids are free.
 
@@ -291,6 +292,7 @@ The rest of this section specifies 2c-1 in full. 2c-2 and 2c-3 are outlined at t
 | `a2ui_eval/synth/vocab_schema.py` | The vocabulary shape and `validate_vocab(doc, catalog_model, eval_texts) -> list[error]` |
 | `a2ui_eval/synth/vocab_writer.py` | `write_vocab(domain, model, eval_texts, complete=<llm_call.py subprocess>)`: prompts the model, parses the YAML, validates, retries with the errors, and writes the file only if it's valid |
 | `a2ui_eval/synth/llm_call.py` | Standalone single LiteLLM call (JSON on stdin and stdout). `vocab_writer` runs it with `uv run --no-project --with litellm==1.106.6 --with mcp --with python-dotenv`, because LiteLLM 1.106.6 needs `huggingface-hub<2` and glimmer-tune needs `>=2.4`. It uses the same pin and `mcp` workaround as the explorer, and glimmer-tune's own deps and lock are unchanged. |
+| `a2ui_eval/synth/skeleton.py` | Loads and validates skeleton files against the `CatalogModel` (build A) |
 | `a2ui_eval/synth/grow.py` | Fills open slots with components that fit, within budget, steered by coverage weights |
 | `a2ui_eval/synth/fill.py` | Values for every chosen prop: literals that match the type and enum, or bindings (`binding_ratio`). Optional-slot patterns, checks, actions, `formatString`. |
 | `a2ui_eval/synth/datamodel.py` | Builds a data model that gives every bound path a plausible value, with nested maps and lists and template items. Paths come from labels, deterministically ("Card holder" → `/cardHolder`). Input paths may start empty, as gallery forms do. |
@@ -445,6 +447,173 @@ Checked by hand, not by the suite: a reject rate below 10% on a 50-row reviewed 
 - Update turns, delete turns, text-only rows (2c-2) and LLM rewording (2c-3)
 - Training runs
 - Generating the full-size set before you've seen the coverage report and 10 samples
+
+## 2c-1 build A: skeletons and the generator
+
+Status: built in the session of 2026-11-01. This part of 2c-1 builds the skeletons, banned archetypes, grow, fill, data model, intents, struct hash, coverage and the pipeline, with the `synth` and `coverage` commands. **Build B** comes later and covers the plausibility linter rules (S8), `export --mix` and the export guards for synthetic rows (S12), and review mode (S13). Checkpoint b (the coverage report plus 10 samples) comes after build A. In build A, `lint.py` holds only the banned-archetype matchers.
+
+### Skeleton file
+
+Each skeleton lives in `a2ui_eval/synth/skeletons/<id>.yaml` and has these keys:
+- `id`: equals the file stem
+- `tags`: a subset of `form`, `list`, `detail`, `dialog`, `media`
+- `domains`: a list of vocabulary domains, or `all`
+- `tree`: one node
+
+A node is one of three things:
+- **A fixed container**, `{<Component>: {<slot>: node | [node…], props: {…}}}`. The component must exist in the `CatalogModel`, and each slot must be a `child` or `children` slot. `props` fixes enum props, such as `{align: stretch}`.
+- **A block**, either a bare name such as `title`, or `{block: <name>, optional: <p>, …params}`. `optional` is the probability that the block is included.
+- **An open slot**, `{open: [<block>…], count: [lo, hi]}`. It is filled with `count` blocks of the listed kinds, chosen by coverage weight, within the row's depth budget.
+
+The blocks, which live in `grow.py`, are these. Each one draws its words from the surface's one topic.
+
+| Block | Builds |
+|---|---|
+| `title`, `section`, `body` | a heading Text (variant or markdown prefix), a sub-heading Text, or a body Text |
+| `kv` | a Row of a label Text and a bound value Text. The value can be a plain absolute binding, a nested map path, a list index, `formatString`, `formatNumber`, `formatCurrency`, `formatDate` or `pluralize`. |
+| `stats` | a Row of 2–4 Columns, each holding a value Text and a caption Text |
+| `field` | an input for one topic field, chosen by the field's kind:<br>• text, email, secret, long text or number → TextField, or a Slider for a number with bounds<br>• date or time → DateTimeInput or TextField<br>• bool → CheckBox<br>• choice → ChoicePicker<br>It may carry checks. |
+| `choices` | a ChoicePicker from a choice group. `multi` maps to `multipleSelection`, otherwise it is `mutuallyExclusive`. |
+| `actions`, `submit` | a Row of 1–3 Buttons, or one primary Button. Each Button's child is a Text or an Icon. The action is an Event (bare, with context, or with form context) or `openUrl`. |
+| `media`, `icon_row` | an Image, Video or AudioPlayer with an `https://example.com/...` URL; or a Row holding an Icon (literal or bound name) and a Text |
+| `divider` | a Divider, with the vertical axis only inside a Row |
+| `list` | the records of one entity, in a Row, Column or List. It is either a `_template` with relative bindings, or static children with list-index bindings. |
+| `tabs` | Tabs with 2–3 tabs. Titles come from section titles, and each tab holds a nested group. |
+| `modal` | a Modal whose trigger is a Button and whose content is a Column holding a section, a body and optionally actions |
+| `group`, `card` | a Column, Row or Card around a nested open slot |
+
+When a surface has any inputs, its first `submit` Button (or else the first Button that isn't a Modal trigger) gets an Event whose context holds every input path. The linter rule needs this only for 2 or more inputs, but a lone input is still sent with its form. A surface with 2 or more inputs and no Button is rejected (`fill: form_without_submit`). Every skeleton that can hold fields contains a `submit` block or an `actions` block, and the skeleton loader enforces this.
+
+Splits: `data/splits.yaml` gains two keys:
+- `skeletons:`, with `train`, `dev` and `held_out` lists
+- `banned_archetypes:`, mapping each test family to `{description, matcher}`
+
+`load_splits` ignores both keys. There are about 22 skeletons: about 14 train, 6 dev and 2 held out.
+
+### Config, coverage keys and weights
+
+`SynthConfig` holds these defaults:
+
+| Setting | Default |
+|---|---|
+| `depth` | (2, 5) |
+| `size` | (5, 40) |
+| `target` (N) | 30 |
+| `dedup_k` | 3 |
+| `binding_ratio` | 0.5 |
+| `pattern_cap` | 16 |
+| `always_set` | `{TextField: [value], DateTimeInput: [enableDate, enableTime], ChoicePicker: [variant]}`. Patterns without these slots aren't keys. The reasons:<br>• an unbound input fails the linter<br>• a DateTimeInput with neither flag set can't pick anything, so the flag matching the field kind is true and the other is false<br>• a multi choice group needs `multipleSelection` (build-A review, 2026-11-01) |
+
+Depth counts levels, with root as level 1.
+
+Coverage keys are computed from the **emitted JSON**, never from what the generator intended. The universe of keys comes from the `CatalogModel` (S2):
+- `component:<C>`
+- `prop:<C>.<p>`
+- `pattern:<C>:<slots>`. These are the first `pattern_cap` patterns in the order (size, slot positions), and each must contain `always_set`.
+- `shape:<C>:trailing|middle`, for each shape the patterns can reach
+- `binding:` followed by one of:
+  - `absolute`, `relative`, `nested`, `index`, `interpolation`
+  - one key per value-role function except `formatString`
+- `list:template:<C>` and `list:static:<C>`, for every component with a `children` slot
+- `check:` followed by one of:
+  - one key per check-role function
+  - `length:min|max|both`, `numeric:min|max|both`
+  - `multi`
+- `action:` followed by one of:
+  - `event_bare`, `event_context`, `event_form_context`
+  - one key per action-role function
+
+Weighting:
+- A choice's weight is `max(0, N − count) + 1`, summed over the keys it would hit. Weights are recomputed per row, and only accepted rows count.
+- Open slots weight each block kind by the keys of its components.
+- Within a block, choices weight their specific keys. A choice is one of: a component, an optional-slot pattern, an enum value, a binding kind, a check kind or an action kind.
+
+### Pipeline and rows
+
+`synthesize(n, seed, split, config) -> (rows, report)`. The skeletons come from `split`, and `held_out` and `test` are refused. Each attempt runs these steps in order:
+1. Draw the skeleton (balanced by row count), the domain, the topic, the depth and the size.
+2. Grow, then fill, then build the data model, then emit v0.9 messages: `createSurface{sendDataModel: true}`, `updateComponents`, and `updateDataModel{path: "/"}` when there is data.
+3. Validate, in this order:
+   - **sdk:** `sdk_check(wrap(decompile(m)))`
+   - **round trip:** `compile(decompile(m)) == m`
+   - **unresolved:** `unresolved_bindings`, where input paths count as allowed
+   - **size and depth:** within range
+   - **banned:** no banned-archetype matcher matches
+   - **eval literal:** no literal text leaks an eval literal (vocabulary rule, applied to generated strings such as check messages)
+   - **intent:** the S9 self-check passes
+   - **eval fingerprint:** the fingerprint is not a dev or test seed's or draft's
+   - **dedup:** the struct hash has fewer than `k` rows
+
+`report.rejected[reason]` counts each failure, including build failures: `grow` (no room within the budget), `fill`, `data_conflict` (two labels give one path) and `decompile`. The run stops at `n` rows, or after `20 × n` attempts with a shortfall in the report.
+
+Row ids are `synth/<split>/<skeleton>/<nnnnn>`, and the surface id is `<domain>-<skeleton>-<n>`. The row also carries `topic`, as well as the case-shape fields above. `detail` rotates terse, medium, specific. `patterns` is the row's coverage keys.
+
+`data_cli synth --split {train,dev} --count N --seed S [--target N]` writes `data/synth/<split>/cases.jsonl` and prints the report. `data_cli coverage` writes `data/synth/coverage.json` and the table in `data/synth/README.md`.
+
+### Intents (made concrete)
+
+Every intent states:
+- the domain and topic purpose
+- every literal text, quoted exactly, including markdown prefixes, check messages, option labels and values, Tabs titles, URLs and format strings
+- every event name
+- every non-boolean data value
+- the paths:
+  - input value paths, list sources, event context paths, bound Icon names, DateTimeInput bounds, nested paths and index paths, written as `/path`
+  - **display-only paths** (a Text bound to `path_for_label(L)` while `L` is stated) are stated only at `specific`. Elsewhere the model derives them by the label rule.
+  - template-relative paths follow the same rule, through the entity's field labels
+
+The three levels add detail like this:
+- **medium** adds the component types in tree order
+- **specific** adds the enum props (variants, alignment, justify, fit, axis, display style) and the display paths
+
+The self-check is `intent_gaps(row) -> list[str]`, and it runs on the reference JSON, not on the generator's tree. **Decision:** data values are stated because the scorer compares them, and a target holding values that the intent never gave would teach the model to make them up. This extends the 2c Intents text, which listed only the literal text.
+
+### Banned archetypes
+
+There is one matcher per test family, written as a predicate on the folded v0.9 components. Each one is tight enough to catch a near-copy without catching generic forms, lists or cards:
+
+| Test family | The matcher catches |
+|---|---|
+| `00_complex-layout` | a root Column whose children are [Text, Row of 2 or more TextField, Text] |
+| `02_email-compose` | under one Column, 3 or more consecutive Rows of [Text, Text], then a Divider, then a Column of 3 or more Text, then a Row of 2 or more Buttons |
+| `12_chat-message` | a template item that is a Row of [Image, Column[Row[Text, Text], Text]] |
+| `16_workout-summary` | a Column of [Row[Icon, Text], Divider, Row of 3 Columns each holding 2 Text, Text] |
+| `20_restaurant-card` | a Column of exactly [Image, Column] whose inner Column starts with a Row[Text, Text], holds a Row that starts with Icon "star", and has no Button. The train seed 29_movie-card is a near twin, with a Modal beside the details and a Button in them, so the matcher excludes those. |
+| `25_contact-card` | a Column of [Image, Text, Text, Divider, Column of 3 or more Row[Icon, Text], Row of 2 or more Button] |
+| `30_live-invitation-builder` | a Row of 2 Columns, where one holds an input and the other holds a Card |
+| `36_modal` | a Column of exactly [Text, Modal], where the Modal's content is a Column holding at most 2 Text and nothing else |
+
+S11's banned test checks two things: each matcher accepts its own converted test seed, and it rejects 50 rows generated from every train and dev skeleton.
+
+### Criteria covered by build A
+
+S2 (the coverage half), S3, S4, S5, S6, S7, S9, S10, S11, S14 and S15. S4's forced round-trip mismatch is a `theme` on `createSurface`, which decompile drops. S6 runs at N = 2. S10's eval-fingerprint test injects a fingerprint. Extra build-A tests:
+- `test_synth_skeletons.py::test_skeletons_load` covers every node kind, unknown components or slots, and a fields skeleton without a submit.
+- `test_synth_pipeline.py::test_split_refuses_test_and_held_out`
+- `test_splits.py` still passes with the new keys.
+
+### Decisions (build A)
+
+- Grow and fill hold component *semantics*, such as "a bool field becomes a CheckBox" or "the variant follows the field kind", because the schema can't supply them. Slot order, required props, enums, patterns and function roles still come only from `CatalogModel`. A catalog component with no block never gets generated, and it shows up as a coverage gap (S2).
+- `pluralize` nouns come from an entity name whose last word ends in "s" ("Available flights" → flight/flights), inside `formatString`, in gallery style. It counts the records, bound at `path_for_label(name + " count")`.
+- `formatCurrency` is used only for labels matching price, cost, total, amount, fee, balance, fare, rent, budget or payment. The currency is drawn from AUD, USD, EUR and GBP and stated in the intent.
+- Check messages are templated in code, for example "<Label> is required", and are guarded by the pipeline's eval-literal step.
+- `not` appears on a submit Button as `not(length(<path>, max: 2))`, with the message "<Label> must be longer than 2 characters".
+- Held-out skeletons are listed but not generated in 2c-1.
+- The items of a static list, and a template item, share one look. The icon, the column formats, the slot pattern, the enum props and the weight are drawn once per list. Static item *i* shows record *i*, as a literal or bound to `/<entity>/i/<field>`.
+- Secret fields are never prefilled. Media URLs are unique within a surface.
+- The purpose line names the screen kind from the emitted content: form if it has inputs, else dialog, list, media or detail. It doesn't come from the skeleton tags.
+- The enum props stated at `specific` are read from the `CatalogModel`'s static-enum slots. `Icon.name` is excluded because it is always stated.
+- The S9 self-check matches a number only when it stands alone, not inside a longer number.
+- For build B: the export guards must also block a synthetic train row whose fingerprint equals a synthetic dev row's. Today `eval_prints` covers only gallery dev and test seeds and drafts.
+- Decided after the build-A review (grilling, 2026-11-01). These are to be built before full-size generation:
+  - **The target follows the intent.** At terse and medium, the Reference leaves out every optional prop the Intent doesn't state, such as weight, variants and alignment. Only specific rows carry full prop variety. Coverage then comes mostly from specific rows, so the detail mix or the row count has to change (see the next round).
+  - **Skeletons and topics must fit.** A code-side filter checks that a topic has what a skeleton's blocks need. The vocabulary doesn't change, because checkpoint (a) approved it.
+  - **Size tail:** about 15% of rows have 25–40 components. Build B's export checks the token lengths.
+  - **Detail mix is steered by coverage.** A row that would hit a starved prop or pattern key is rendered as specific. Terse and medium each keep a floor of at least 25% of rows.
+  - **Terse states layout in plain words.** "Side by side" means a Row, "in a card" means a Card, and stacked is the default Column. A terse target is then fully determined by its intent.
+  - **Fit filter:** needs are inferred from the blocks (a list needs an entity, a field block needs fields of a fitting kind). A skeleton can also add an optional `requires:` list for semantic needs, such as `money_field` for checkout.
+  - **Held out** skeletons are a reserve. They are never used for training or dev, and are generated only to probe generalisation later. "Family" means gallery designs only (`glimmer-tune/CONTEXT.md`).
 
 ## 2c-2 and 2c-3 outline
 

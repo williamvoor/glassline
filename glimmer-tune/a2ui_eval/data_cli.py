@@ -14,6 +14,8 @@ from .prompt import build_system_prompt
 from .refs import RefIndex
 from .sdk import ExpressSDK
 from .seeds import ROOT, load_seeds
+from .synth.pipeline import SynthError
+from .synth.skeleton import SkeletonError
 from .synth.vocab_writer import VocabError
 
 CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
@@ -168,6 +170,34 @@ def cmd_vocab(args) -> None:
         raise VocabError(f"failed domains: {failed}")
 
 
+SYNTH = DATA / "synth"
+
+
+def cmd_synth(args) -> None:
+    from .synth.coverage import SynthConfig
+    from .synth.pipeline import load_env, synthesize
+
+    env = load_env(args.data)
+    config = SynthConfig(target=args.target)
+    rows, report = synthesize(env, args.count, args.seed, args.split, config)
+    n = write_jsonl(args.data / "synth" / args.split / "cases.jsonl", rows)
+    print(json.dumps(report.to_dict(), indent=2))
+    print(f"wrote {n} synthetic {args.split} rows")
+    if report.rows < args.count:
+        raise GenerationError(f"shortfall: {report.rows} of {args.count} rows")
+
+
+def cmd_coverage(args) -> None:
+    from .synth.catalog_model import CatalogModel
+    from .synth.coverage import SynthConfig, report, write_report
+
+    model = CatalogModel(ExpressSDK(CATALOG))
+    rows = read_jsonl(args.data / "synth" / "train" / "cases.jsonl")
+    rep = report(rows, model, SynthConfig(target=args.target))
+    write_report(rep, args.data / "synth" / "coverage.json", args.data / "synth" / "README.md")
+    print(f"{rep['rows']} rows, {len(rep['gaps'])} keys below {rep['target']}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m a2ui_eval.data_cli")
     p.add_argument("--data", type=Path, default=DATA)
@@ -196,6 +226,15 @@ def build_parser() -> argparse.ArgumentParser:
     which.add_argument("--all", action="store_true")
     which.add_argument("--check", action="store_true", help="re-validate the committed files; no model call")
     v.set_defaults(fn=cmd_vocab)
+    sy = sub.add_parser("synth", help="generate synthetic single-turn surfaces (no model calls)")
+    sy.add_argument("--split", choices=("train", "dev"), required=True)
+    sy.add_argument("--count", type=int, required=True)
+    sy.add_argument("--seed", type=int, default=0)
+    sy.add_argument("--target", type=int, default=30, help="coverage target N per key")
+    sy.set_defaults(fn=cmd_synth)
+    co = sub.add_parser("coverage", help="coverage report for data/synth/train")
+    co.add_argument("--target", type=int, default=30)
+    co.set_defaults(fn=cmd_coverage)
     return p
 
 
@@ -203,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         args.fn(args)
-    except (GenerationError, ExportError, VocabError) as e:
+    except (GenerationError, ExportError, VocabError, SynthError, SkeletonError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

@@ -53,3 +53,60 @@ test:
 excluded:
   - 00_incremental
   - 31_incremental-dashboard
+
+# Synthetic skeletons (ADR 0009): each is train-only, dev-only or held out. No
+# synthetic row goes to test.
+skeletons:
+  train:
+    - checkout_summary
+    - confirmation_dialog
+    - dashboard_grid
+    - detail_sheet
+    - faq_sections
+    - media_gallery
+    - notification_list
+    - player_panel
+    - profile_editor
+    - search_results
+    - settings_form
+    - signup_form
+    - tabbed_detail
+    - wizard_step
+  dev:
+    - account_overview
+    - booking_tabs
+    - catalog_cards
+    - filter_panel
+    - order_tracker
+    - split_overview
+  held_out:
+    - quick_actions
+    - review_and_confirm
+
+# Test family -> the archetype a skeleton would leak. The matcher (synth/lint.py)
+# rejects a synthetic surface that mirrors the design.
+banned_archetypes:
+  00_complex-layout:
+    description: a heading, a row of two or more text fields side by side, and a caption
+    matcher: complex_layout
+  02_email-compose:
+    description: three or more label/value header rows, a divider, a body of paragraphs and a row of buttons
+    matcher: email_compose
+  12_chat-message:
+    description: a templated list whose item is an avatar beside a name row and a message text
+    matcher: chat_message
+  16_workout-summary:
+    description: an icon and title row, a divider, a row of three value-over-label stats and a footer text
+    matcher: workout_summary
+  20_restaurant-card:
+    description: a hero image over a details column with a name/price row and a star rating row
+    matcher: restaurant_card
+  25_contact-card:
+    description: an avatar, name and title, a divider, three or more icon detail rows and a row of buttons
+    matcher: contact_card
+  30_live-invitation-builder:
+    description: a two-pane row with a form column beside a column holding a preview card
+    matcher: live_invitation_builder
+  36_modal:
+    description: a heading and a button that opens a modal holding only a little text
+    matcher: modal
