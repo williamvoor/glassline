@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 
 import httpx
@@ -57,6 +58,13 @@ def surface_ids(messages: list[dict]) -> set[str]:
     return {b["surfaceId"] for m in messages for b in m.values() if isinstance(b, dict) and "surfaceId" in b}
 
 
+def turn_surface(messages: list[dict], n: int) -> str:
+    """The one surface ID in `messages`, checked to be Turn `n`'s (`turn-<n>-<tag>`)."""
+    (sid,) = surface_ids(messages)
+    assert re.fullmatch(rf"turn-{n}-[0-9a-f]{{6}}", sid), sid
+    return sid
+
+
 async def test_agent_card():
     async with client_for() as c:
         card = (await c.get("/.well-known/agent-card.json")).json()
@@ -80,7 +88,7 @@ async def test_stream_returns_status_then_prose_and_a2ui():
     assert all(p["kind"] == "data" for p in parts[1:])
     msgs = a2ui_messages(parts)
     assert len(msgs) == len(parts) - 1 > 0
-    assert surface_ids(msgs) == {"turn-1"}
+    turn_surface(msgs, 1)
 
 
 async def test_second_turn_gets_its_own_surface():
@@ -89,7 +97,22 @@ async def test_second_turn_gets_its_own_surface():
         context_id = first[-1]["contextId"]
         second = await stream(c, "again", context_id=context_id)
     assert second[-1]["contextId"] == context_id
-    assert surface_ids(a2ui_messages(final_parts(second))) == {"turn-2"}
+    one = turn_surface(a2ui_messages(final_parts(first)), 1)
+    two = turn_surface(a2ui_messages(final_parts(second)), 2)
+    assert one.split("-")[-1] == two.split("-")[-1]  # one tag per Conversation
+
+
+async def test_surface_ids_do_not_repeat_after_a_restart():
+    """The client keeps its contextId and surfaces across an agent restart. The restarted agent's
+    turn-1 surface must not reuse an ID the client already holds, or the client rejects it."""
+    async with client_for() as c:
+        first = await stream(c)
+    context_id = first[-1]["contextId"]
+    async with client_for() as c:  # a fresh app: the restart
+        after = await stream(c, "again", context_id=context_id)
+    before_ids = surface_ids(a2ui_messages(final_parts(first)))
+    after_ids = surface_ids(a2ui_messages(final_parts(after)))
+    assert before_ids and after_ids and before_ids.isdisjoint(after_ids)
 
 
 @pytest.mark.parametrize(
@@ -228,4 +251,4 @@ chart = BarChart("r1", "supplier_name", "total_value", "Top suppliers", _, false
     assert "Running SQL: top suppliers" in statuses
     parts = final_parts(events)
     assert parts[0]["kind"] == "text" and parts[0]["text"].startswith("**")
-    assert surface_ids(a2ui_messages(parts)) == {"turn-1"}
+    turn_surface(a2ui_messages(parts), 1)

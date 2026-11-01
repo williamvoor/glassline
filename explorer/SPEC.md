@@ -193,7 +193,9 @@ given configuration and database schema):
 
 Nothing per-request (date, IDs, timestamps, result IDs) appears in layers 1–3. The surface
 ID in the model's output is always `main`, and the pipeline rewrites it to the turn's ID
-(`turn-<n>`) after compiling. The spike confirmed the generated prompt does not depend on
+(`turn-<n>-<tag>`, where `<tag>` is 6 random hex characters fixed per Conversation, so IDs
+don't repeat after an agent restart while the client still holds the old surfaces) after
+compiling. The spike confirmed the generated prompt does not depend on
 `surface_id`. The current date, if ever needed, goes in the user message.
 
 **Layer 2: agent instructions** (generic):

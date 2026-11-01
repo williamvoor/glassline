@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -40,6 +41,9 @@ class Conversation:
     store: ResultStore = field(default_factory=ResultStore)
     turns: int = 0
     surface_id: str = ""  # the current Turn's surface, set by the executor
+    # Random per Conversation, so surface IDs don't repeat across agent restarts: the client keeps
+    # its contextId and surfaces, and rejects a createSurface for an ID it already holds.
+    surface_tag: str = field(default_factory=lambda: secrets.token_hex(3))
     history: list[dict[str, Any]] = field(default_factory=list)  # messages for the model, stored in full
     turn_starts: list[int] = field(default_factory=list)  # history index where each Turn begins
     prompt_tokens: int = 0
@@ -129,7 +133,7 @@ class ExplorerExecutor(AgentExecutor):
 
             async with conv.lock:  # overlapping messages on one context run one after the other
                 conv.turns += 1
-                conv.surface_id = f"turn-{conv.turns}"
+                conv.surface_id = f"turn-{conv.turns}-{conv.surface_tag}"
                 unknown = conv.unknown_context
                 try:
                     ui = await self._answerer(conv, context.get_user_input(), status)

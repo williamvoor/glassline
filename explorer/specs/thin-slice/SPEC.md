@@ -66,7 +66,9 @@ catches it.
      metadata `a2uiClientCapabilities["v0.9"]["supportedCatalogIds"]` contains
      `EXPLORER_CATALOG_ID`. Missing or malformed metadata counts as not supported.
   3. Get or create the Conversation for `context_id`. Increment `turns`. The surface ID is
-     `turn-<turns>`.
+     `turn-<turns>-<tag>`, where `<tag>` is 6 random hex characters fixed per Conversation
+     (amended in step 3: plain `turn-<n>` collided with the client's old surfaces after an
+     agent restart).
   4. `reply = await answerer(conv, text, status)`. `status(text)` sends a
      `working` status update with that text.
   5. `UiPipeline.build(reply, conv.store, surface_id)`. Then complete with one message: a
@@ -148,8 +150,8 @@ Agent: `cd explorer/agent && uv run pytest`.
 | A7 | Bare number in prose → WARNING logged with the number; build still succeeds | `test_ui.py::test_bare_number_is_logged` |
 | A8 | Strict validation failure → `UiError` (catalog-invalid component reaching validation) | `test_ui.py::test_validation_failure_raises_ui_error` |
 | A9 | Agent card: streaming, A2UI v0.9 extension URI, `supportedCatalogIds == [EXPLORER_CATALOG_ID]` | `test_server.py::test_agent_card` |
-| A10 | `message/stream` with header + capabilities → a `working` update with text `Running SQL: top suppliers (fixture)`, then `completed` whose message has a text part (filled prose) then data parts with an A2UI mimeType whose messages carry `turn-1` | `test_server.py::test_stream_returns_status_then_prose_and_a2ui` |
-| A11 | Same `contextId` twice → second reply's surface is `turn-2`; `r1` still resolves | `test_server.py::test_second_turn_gets_its_own_surface` |
+| A10 | `message/stream` with header + capabilities → a `working` update with text `Running SQL: top suppliers (fixture)`, then `completed` whose message has a text part (filled prose) then data parts with an A2UI mimeType whose messages carry `turn-1-<tag>` | `test_server.py::test_stream_returns_status_then_prose_and_a2ui` |
+| A11 | Same `contextId` twice → second reply's surface is `turn-2-<tag>` with the same tag; `r1` still resolves | `test_server.py::test_second_turn_gets_its_own_surface` |
 | A12 | No extension header, or capabilities without our catalog → prose only, no data parts | `test_server.py::test_without_a2ui_support_prose_only` (parametrized) |
 | A13 | Answerer returns a reply with a macro error → completed with the "couldn't build the view" text listing the error | `test_server.py::test_ui_error_completes_with_explanation` |
 | A14 | Answerer raises → completed with the generic message; a following request still works | `test_server.py::test_answerer_exception_does_not_kill_server` |
@@ -165,7 +167,7 @@ Client: `cd explorer/client && npm run build && npm test`.
 | C3 | `DataGrid` shows `<b>x</b>` in a cell and caption as text; `align:end` right-aligns; no caption when absent | `test/data-grid.test.ts` |
 | C4 | `connect`/`ask` send the extension header on card and RPC requests, and `a2uiClientCapabilities` with our catalog ID (stub fetch) | `test/a2a.test.ts` |
 | C5 | Markdown renderer drops `<img>`, keeps links and emphasis, no raw HTML | `test/markdown.test.ts` |
-| C6 | **Interop**: spawn `uv run python -m explorer_agent.testing.stub_server --port <free>` in `../agent`, `ask` through `@a2a-js/sdk` in Node → a status event with the fixture text, a final event with prose and A2UI messages for `turn-1`; the A2UI messages feed a `MessageProcessor` with our catalog without error | `test/interop.test.ts` |
+| C6 | **Interop**: spawn `uv run python -m explorer_agent.testing.stub_server --port <free>` in `../agent`, `ask` through `@a2a-js/sdk` in Node → a status event with the fixture text, a final event with prose and A2UI messages for `turn-1-<tag>`; the A2UI messages feed a `MessageProcessor` with our catalog without error | `test/interop.test.ts` |
 | C7 | `npm run build` (tsc + vite build) passes | the command |
 
 Manual check (not a test): run the stub server on 10002 and `npm run dev`, then ask
@@ -205,7 +207,8 @@ screenshot.
   - `SqlDetails` wraps the SQL in `<pre><code>`.
 - **Deferred from review:**
   - After an agent restart, the client still holds its `contextId` and surfaces. The new
-    Conversation restarts at `turn-1`, which collides with the old surface. This belongs
-    with the unknown-`contextId` handling in step 3.
+    Conversation restarts at `turn-1`, which collides with the old surface. Fixed in step 3:
+    surface IDs carry a per-Conversation random tag
+    (`test_server.py::test_surface_ids_do_not_repeat_after_a_restart`).
   - `cancel` is not supported.
   - `httpx` and `starlette` are used as transitive dependencies.

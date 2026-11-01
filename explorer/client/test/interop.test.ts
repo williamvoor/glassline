@@ -7,6 +7,14 @@ import type {A2uiMessage} from '@a2ui/web_core/v0_9';
 import {connect, type AskEvent} from '../src/a2a.js';
 import {createProcessor} from '../src/catalog.js';
 
+function surfaceIdOf(messages: Record<string, unknown>[]): string | undefined {
+  for (const m of messages) {
+    const create = m['createSurface'] as {surfaceId?: string} | undefined;
+    if (create?.surfaceId) return create.surfaceId;
+  }
+  return undefined;
+}
+
 const AGENT_DIR = resolve(process.cwd(), '../agent'); // tests run from explorer/client
 const STATUS_TEXT = 'Running SQL: top suppliers (fixture)'; // explorer_agent.testing.stub_server
 
@@ -70,19 +78,24 @@ describe('interop with the stub agent', () => {
     expect(final.prose).toContain('Supplier A');
     expect(final.prose).not.toContain('{r1');
     expect(final.a2ui.length).toBeGreaterThan(0);
+    const firstId = surfaceIdOf(final.a2ui)!;
+    expect(firstId).toMatch(/^turn-1-[0-9a-f]{6}$/);
     for (const m of final.a2ui) {
       const body = Object.values(m).find(v => typeof v === 'object' && v && 'surfaceId' in v) as {surfaceId: string};
-      expect(body.surfaceId).toBe('turn-1');
+      expect(body.surfaceId).toBe(firstId);
     }
     processor.processMessages(final.a2ui as unknown as A2uiMessage[]);
-    expect(processor.model.surfacesMap.get('turn-1')).toBeDefined();
+    expect(processor.model.surfacesMap.get(firstId)).toBeDefined();
 
     // Same context → the next turn gets its own surface.
     const again: AskEvent[] = [];
     for await (const e of agent.ask('And again?', final.contextId)) again.push(e);
     const second = again.at(-1)!;
     expect(second.kind === 'final' && second.contextId).toBe(final.contextId);
-    if (second.kind === 'final') processor.processMessages(second.a2ui as unknown as A2uiMessage[]);
-    expect(processor.model.surfacesMap.get('turn-2')).toBeDefined();
+    if (second.kind !== 'final') return;
+    const secondId = surfaceIdOf(second.a2ui)!;
+    expect(secondId).toMatch(/^turn-2-[0-9a-f]{6}$/);
+    processor.processMessages(second.a2ui as unknown as A2uiMessage[]);
+    expect(processor.model.surfacesMap.get(secondId)).toBeDefined();
   });
 });

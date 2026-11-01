@@ -1,4 +1,4 @@
-// <explorer-app>: the chat view. One surface per agent turn (surface ID `turn-<n>`).
+// <explorer-app>: the chat view. One surface per agent turn (surface ID `turn-<n>-<tag>`, the tag random per conversation).
 import {LitElement, html, nothing} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
 import {unsafeHTML} from 'lit/directives/unsafe-html.js';

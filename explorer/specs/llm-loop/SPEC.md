@@ -230,7 +230,7 @@ dataset directory. `UiError` carries `prose`, the reply's filled prose, when onl
   answerer, the executor still completes with `UI_ERROR_PREFIX`, as before.
 - `Conversation` gains:
   - `history: list[dict]`;
-  - `surface_id: str`, set by the executor to `turn-<n>` before it calls the answerer;
+  - `surface_id: str`, set by the executor to `turn-<n>-<tag>` before it calls the answerer;
   - `unknown_context: bool`.
 - `Conversation` has an `asyncio.Lock`. The executor holds it for the whole Turn, so two
   overlapping messages on one `contextId` run one after the other instead of interleaving
@@ -304,7 +304,8 @@ responses (tool calls or text, with a usage block) and records every call's kwar
 | E1 | Unknown `contextId` → a new conversation, the note at the start of the prose and in the model's input; no `contextId` → no note | `test_server.py::test_unknown_context_note` |
 | E4 | Two concurrent messages on one `contextId` run one after the other (the second Turn starts only after the first ends) | `test_server.py::test_same_context_is_serialised` |
 | E2 | LRU: with `max_conversations=2`, a third conversation evicts the least recently used one, and returning to it gives the note | `test_server.py::test_conversation_lru` |
-| E3 | In-process A2A with the real `LlmLoop` and the stub model on the seed DB: a status, then prose plus A2UI parts for `turn-1` | `test_server.py::test_stream_with_llm_loop` (db) |
+| E3 | In-process A2A with the real `LlmLoop` and the stub model on the seed DB: a status, then prose plus A2UI parts for `turn-1-<tag>` | `test_server.py::test_stream_with_llm_loop` (db) |
+| E5 | Same `contextId` sent to a fresh app (a restart) → its surface IDs share none with the ones sent before | `test_server.py::test_surface_ids_do_not_repeat_after_a_restart` |
 | M1 | `__main__` with a missing `DATABASE_URL` or a loader-role DSN exits 1 with one `explorer: …` line on stderr and no traceback; the DSN's password doesn't appear | `test_main.py` (subprocess; db for the loader case) |
 | M2 | `__main__` with the seed DB's `explorer_ro` DSN prints its listening line, and the agent card is served | `test_main.py::test_starts` (subprocess, db) |
 | M3 | An unreachable database → one `explorer: cannot connect to the database …` line, exit 1, no password in the output | `test_main.py::test_unreachable_database_fails_cleanly` |
