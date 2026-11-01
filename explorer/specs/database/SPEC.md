@@ -200,7 +200,7 @@ Run with `cd explorer/agent && uv run pytest`.
 | D23 | A query nested too deeply for the walker → `GuardError`, never `RecursionError` | `test_guard.py::test_deeply_nested_query_is_a_guard_error` |
 
 **Live check (marked `live_db`, not run by default; local database only, no model, no network):**
-`uv run pytest -m live_db`. It reads `DATABASE_URL` from `explorer/.env`.
+`uv run pytest -m live_db`. It reads `DATABASE_URL` from the repo root's `.env`.
 
 | # | Check |
 |---|---|

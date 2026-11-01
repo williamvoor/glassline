@@ -137,8 +137,8 @@ One merged catalog, defined once and loaded on both sides (spike risk 1, ADR 000
   spike risk 1), plus our own check that rejects any property the merged catalog does not
   define (the SDK accepts some v1-only props, such as `TextField.placeholder`, ADR 0005).
   Lit ignores unknown props silently, so without this a Surface could lose content unseen.
-  glimmer-tune imports this validator and the system prompt from the agent package
-  (editable path dependency), so training and serving check the same thing.
+  The check is a public function (`ui.check_known_props`). Per ADR 0008, glimmer-tune no longer
+  imports the explorer's system prompt or macros; it may import this check.
 - The client vendors VegaChart under `client/src/vendor/vegachart/` with the Apache-2.0 header kept
   and a `NOTICE` listing our changes (imports changed for `@a2ui/*@0.14.0`).
 
@@ -231,7 +231,7 @@ Every model call logs `model`, `prompt_tokens`, `cached_tokens`, `completion_tok
 
 ## 7. Configuration
 
-Environment variables (with `explorer/.env` loaded by `python-dotenv`). All are listed in a
+Environment variables (with the repo root's `.env` loaded by `python-dotenv`). All are listed in a
 committed `explorer/.env.example` with placeholders.
 
 | Variable | Default | Meaning |
@@ -331,7 +331,8 @@ surface stays rendered as the conversation grows. The browser calls the agent di
    seen in Lit. It goes through a minimal real `ui.py` (parse, expand, validate; no repair
    retries yet). This retires the A2A interop risk first.
 2. SQL runner, guard and schema tools, against the disposable test database.
-3. Macros, UI pipeline and prompt.
+3. Prompt, LLM loop (tool calls, Repairs, history, model retry, Turn time budget), entry point
+   (`python -m explorer_agent`). Macros were built earlier. Sub-spec: `specs/llm-loop/SPEC.md`.
 4. Live runs against the loaded AusTender database: acceptance (section 11) and the reasoning
    effort check.
 

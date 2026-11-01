@@ -7,11 +7,15 @@ A data explorer that answers plain-English questions about a Postgres database w
 ### Data
 
 **Dataset**:
-One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, glossary, dictionary). One running agent serves one Dataset.
+One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, notes, glossary). One running agent serves one Dataset.
 _Avoid_: Database (for the whole bundle), source, domain
 
+**Data dictionary**:
+The descriptions of every table and column in the Allowed schemas, stored in the database itself. The agent's only description of the data.
+_Avoid_: Schema prompt, docs
+
 **Dataset context**:
-The part of the agent's instructions that describes the Dataset: notes, glossary, chosen dictionary sections and a table index. Identical for every question.
+The Dataset's notes, glossary and Data dictionary, as given to the agent. Identical for every question.
 _Avoid_: Schema prompt, domain layer
 
 **Allowed schema**:
@@ -44,6 +48,10 @@ _Avoid_: Template, helper
 **Visual**:
 A chart, table or metric on a Surface, built by a Macro from one Result. Every Visual shows the SQL behind it.
 _Avoid_: Widget, graphic
+
+**Repair**:
+A further attempt at a Turn's Surface after it failed the checks, using the same Results.
+_Avoid_: Retry (also used for model API retries), fix-up
 
 **Cite**:
 The Macro that places values from a Result inside a sentence, either in the Turn's prose or on its Surface, so numbers in text are never retyped.
