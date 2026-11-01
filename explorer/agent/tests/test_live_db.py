@@ -1,6 +1,6 @@
 """Checks against the loaded dataset database. Not run by default: `uv run pytest -m live_db`.
 
-Reads `explorer/.env` (DATABASE_URL, DATASET_DIR). Local database only: no model, no network.
+Reads the repo root's `.env` (DATABASE_URL, DATASET_DIR), like `__main__`. Local database only: no model, no network.
 """
 
 import logging
@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
+from explorer_agent.__main__ import ENV_FILE
 from explorer_agent.config import load_settings
 from explorer_agent.schema import SchemaCatalog, render_schema_section
 from explorer_agent.sql import SqlOk, SqlRunner, open_pool
@@ -27,7 +28,7 @@ SCHEMA_SECTION_LIMIT = 12_000
 
 @pytest.fixture
 async def live():
-    env_file = EXPLORER_ROOT / ".env"
+    env_file = ENV_FILE
     if not env_file.is_file():
         pytest.fail(f"live_db checks need {env_file} with DATABASE_URL (see .env.example)")
     settings = load_settings({k: v for k, v in dotenv_values(env_file).items() if v is not None}, EXPLORER_ROOT)

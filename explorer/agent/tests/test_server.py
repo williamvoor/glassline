@@ -5,9 +5,10 @@ import httpx
 import pytest
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
-from explorer_agent.executor import GENERIC_ERROR, UI_ERROR_PREFIX
+from explorer_agent.executor import GENERIC_ERROR, UI_ERROR_PREFIX, UNKNOWN_CONTEXT_PROSE, Conversations
 from explorer_agent.server import build_app
 from explorer_agent.testing.stub_server import STATUS_TEXT, stub_answerer
+from explorer_agent.ui import UiPipeline, UiResult
 
 URL = "http://agent.test"
 ORIGIN = "http://127.0.0.1:5173"
@@ -110,7 +111,8 @@ async def test_without_a2ui_support_prose_only(header, metadata):
 
 async def test_ui_error_completes_with_explanation():
     async def bad(conv, text, status):
-        return '<a2ui>\nroot = Column([c])\nc = BarChart("r9", "x", "y", "T")\n</a2ui>'
+        reply = '<a2ui>\nroot = Column([c])\nc = BarChart("r9", "x", "y", "T")\n</a2ui>'
+        return UiPipeline().build(reply, conv.store, conv.surface_id)
 
     async with client_for(bad) as c:
         parts = final_parts(await stream(c))
@@ -126,7 +128,7 @@ async def test_answerer_exception_does_not_kill_server():
         calls.append(text)
         if len(calls) == 1:
             raise RuntimeError("boom")
-        return "fine"
+        return UiResult(prose="fine", messages=[], bare_numbers=[])
 
     async with client_for(flaky) as c:
         first = final_parts(await stream(c))
@@ -145,3 +147,85 @@ async def test_cors_preflight():
     assert r.status_code == 200
     assert r.headers["access-control-allow-origin"] == ORIGIN
     assert "x-a2a-extensions" in r.headers["access-control-allow-headers"].lower()
+
+
+# E1
+async def test_unknown_context_note():
+    seen = []
+
+    async def answer(conv, text, status):
+        seen.append(conv.unknown_context)
+        return UiResult(prose="answer", messages=[], bare_numbers=[])
+
+    async with client_for(answer) as c:
+        fresh = final_parts(await stream(c))  # no contextId: a new conversation
+        ctx = (await stream(c))[-1]["contextId"]
+        known = final_parts(await stream(c, context_id=ctx))
+        unknown = final_parts(await stream(c, context_id="from-before-a-restart"))
+        again = final_parts(await stream(c, context_id="from-before-a-restart"))
+    assert fresh[0]["text"] == "answer" and known[0]["text"] == "answer"
+    assert unknown[0]["text"] == f"{UNKNOWN_CONTEXT_PROSE}\n\nanswer"
+    assert again[0]["text"] == "answer"  # only the first Turn after the gap gets the note
+    assert seen == [False, False, False, True, False]
+
+
+# E2
+async def test_conversation_lru():
+    async def answer(conv, text, status):
+        return UiResult(prose="answer", messages=[], bare_numbers=[])
+
+    app = build_app(answer, url=URL, client_origin=ORIGIN, conversations=Conversations(max_conversations=2))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL) as c:
+        a = (await stream(c))[-1]["contextId"]
+        b = (await stream(c))[-1]["contextId"]
+        assert final_parts(await stream(c, context_id=a))[0]["text"] == "answer"  # a is now most recent
+        await stream(c)  # a third conversation evicts b, the least recently used
+        assert final_parts(await stream(c, context_id=a))[0]["text"] == "answer"
+        assert final_parts(await stream(c, context_id=b))[0]["text"].startswith(UNKNOWN_CONTEXT_PROSE)
+
+
+# E4
+async def test_same_context_is_serialised():
+    import asyncio
+
+    log = []
+
+    async def answer(conv, text, status):
+        log.append(("start", text))
+        await asyncio.sleep(0.1)
+        log.append(("end", text))
+        return UiResult(prose=text, messages=[], bare_numbers=[])
+
+    async with client_for(answer) as c:
+        ctx = (await stream(c, "first"))[-1]["contextId"]
+        log.clear()
+        await asyncio.gather(stream(c, "a", context_id=ctx), stream(c, "b", context_id=ctx))
+    assert [kind for kind, _ in log] == ["start", "end", "start", "end"]
+
+
+# E3: the real loop behind A2A, with the stub model and the seed database
+@pytest.mark.db
+async def test_stream_with_llm_loop(ro_pool):
+    from explorer_agent.llm import LlmLoop, LoopConfig
+    from explorer_agent.schema import SchemaCatalog
+    from explorer_agent.sql import SqlRunner
+    from explorer_agent.testing.stub_model import ScriptedCompletion, text, tool_calls
+
+    sql = "SELECT supplier_name, total_value FROM mart.supplier_fy WHERE financial_year = '2024-25' ORDER BY 2 DESC LIMIT 3"
+    reply = """**{r1[0].supplier_name}** leads.
+<a2ui>
+surface("main")
+root = Column([chart])
+chart = BarChart("r1", "supplier_name", "total_value", "Top suppliers", _, false, "currency_m")
+</a2ui>"""
+    model = ScriptedCompletion([tool_calls(("run_sql", {"sql": sql, "purpose": "top suppliers"})), text(reply)])
+    loop = LlmLoop(LoopConfig(), "SYSTEM", UiPipeline(), SqlRunner(ro_pool, ("mart",), 5000, 100),
+                   SchemaCatalog(ro_pool, ["mart"]), completion=model)
+    async with client_for(loop) as c:
+        events = await stream(c)
+    statuses = [e["status"]["message"]["parts"][0]["text"] for e in events
+                if e.get("kind") == "status-update" and e["status"]["state"] == "working" and e["status"].get("message")]
+    assert "Running SQL: top suppliers" in statuses
+    parts = final_parts(events)
+    assert parts[0]["kind"] == "text" and parts[0]["text"].startswith("**")
+    assert surface_ids(a2ui_messages(parts)) == {"turn-1"}

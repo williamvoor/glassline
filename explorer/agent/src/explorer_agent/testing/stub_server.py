@@ -17,6 +17,7 @@ import uvicorn
 from explorer_agent.executor import Conversation, StatusFn
 from explorer_agent.results import ResultStore
 from explorer_agent.server import build_app
+from explorer_agent.ui import UiPipeline, UiResult
 
 FIXTURE_PURPOSE = "top suppliers (fixture)"
 FIXTURE_SQL = (
@@ -50,11 +51,21 @@ def seed_fixture(store: ResultStore) -> None:
     )
 
 
-async def stub_answerer(conv: Conversation, text: str, status: StatusFn) -> str:
+_PIPELINE: UiPipeline | None = None
+
+
+def _pipeline() -> UiPipeline:
+    global _PIPELINE
+    if _PIPELINE is None:
+        _PIPELINE = UiPipeline()
+    return _PIPELINE
+
+
+async def stub_answerer(conv: Conversation, text: str, status: StatusFn) -> UiResult:
     if not conv.store.ids():
         seed_fixture(conv.store)
     await status(STATUS_TEXT)
-    return FIXED_REPLY
+    return _pipeline().build(FIXED_REPLY, conv.store, conv.surface_id)
 
 
 def main(argv: list[str] | None = None) -> None:

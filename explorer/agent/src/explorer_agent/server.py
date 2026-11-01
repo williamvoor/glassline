@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from a2a.server.apps import A2AStarletteApplication
+from a2a.server.agent_execution import SimpleRequestContextBuilder
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
@@ -12,7 +13,6 @@ from starlette.middleware.cors import CORSMiddleware
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.executor import Answerer, Conversations, ExplorerExecutor
-from explorer_agent.ui import UiPipeline
 
 
 def agent_card(url: str) -> AgentCard:
@@ -36,12 +36,21 @@ def build_app(
     *,
     url: str,
     client_origin: str,
-    pipeline: UiPipeline | None = None,
     conversations: Conversations | None = None,
 ) -> Starlette:
     card = agent_card(url)
-    executor = ExplorerExecutor(answerer, conversations or Conversations(), pipeline or UiPipeline(), card)
-    handler = DefaultRequestHandler(agent_executor=executor, task_store=InMemoryTaskStore())
+    conversations = executor_conversations = conversations or Conversations()
+    executor = ExplorerExecutor(answerer, executor_conversations, card)
+    task_store = InMemoryTaskStore()
+    handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=task_store,
+        # New context IDs come from Conversations, so it can tell a new conversation from an
+        # unknown one (parent spec §2.3).
+        request_context_builder=SimpleRequestContextBuilder(
+            task_store=task_store, context_id_generator=conversations.id_generator
+        ),
+    )
     app = A2AStarletteApplication(agent_card=card, http_handler=handler).build()
     # The browser calls the agent directly (ADR 0007).
     app.add_middleware(

@@ -1,7 +1,7 @@
 """Settings: environment variables plus the dataset directory (parent spec §7).
 
 `load_settings` is pure: it reads only the mapping it is given and the dataset files. The entry
-point loads `explorer/.env` first, so tests never pick up real secrets.
+point loads the repo root's `.env` first, so tests never pick up real secrets.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 from explorer_agent.sql import check_dsn
 
 FORMATS = ("express", "direct_json")
+HISTORY_MODES = ("compact", "full")
 SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]*")  # used with fullmatch
 
 
@@ -56,6 +57,9 @@ class Settings:
     agent_port: int
     client_origin: str
     log_level: str
+    history_mode: str
+    turn_timeout_s: int
+    slow_turn_s: int
     dataset: Dataset
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
@@ -70,6 +74,8 @@ _INTS = {
     "MAX_TOOL_ITERATIONS": 8,
     "MAX_UI_RETRIES": 2,
     "AGENT_PORT": 10002,
+    "TURN_TIMEOUT_S": 60,
+    "SLOW_TURN_S": 30,
 }
 
 
@@ -135,6 +141,9 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
     fmt = env.get("FORMAT", "").strip() or "express"
     if fmt not in FORMATS:
         raise ConfigError(f"FORMAT must be one of {', '.join(FORMATS)}")
+    history_mode = env.get("HISTORY_MODE", "").strip() or "compact"
+    if history_mode not in HISTORY_MODES:
+        raise ConfigError(f"HISTORY_MODE must be one of {', '.join(HISTORY_MODES)}")
     database_url = env.get("DATABASE_URL", "").strip()
     if not database_url:
         raise ConfigError("DATABASE_URL is required (the dataset's read-only login)")
@@ -161,5 +170,8 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         agent_port=_positive_int(env, "AGENT_PORT"),
         client_origin=env.get("CLIENT_ORIGIN", "").strip() or "http://127.0.0.1:5173",
         log_level=env.get("LOG_LEVEL", "").strip() or "INFO",
+        history_mode=history_mode,
+        turn_timeout_s=_positive_int(env, "TURN_TIMEOUT_S"),
+        slow_turn_s=_positive_int(env, "SLOW_TURN_S"),
         dataset=dataset,
     )

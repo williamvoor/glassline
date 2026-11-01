@@ -8,7 +8,8 @@ import pytest
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.results import ResultStore
 from explorer_agent.testing.stub_server import FIXED_REPLY, seed_fixture
-from explorer_agent.ui import UiError, UiPipeline, validate
+from explorer_agent.catalog import explorer_catalog
+from explorer_agent.ui import UiError, UiPipeline, check_known_props, known_props, validate
 
 CLIENT_FIXTURE = Path(__file__).resolve().parents[2] / "client" / "test" / "fixtures" / "slice_transport.json"
 MACRO_NAMES = {"BarChart", "LineChart", "DataTable", "Metric", "Cite"}
@@ -119,3 +120,67 @@ def test_client_fixture_is_current(pipeline, fixture_store):
         CLIENT_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         CLIENT_FIXTURE.write_text(current, encoding="utf-8")
     assert CLIENT_FIXTURE.read_text(encoding="utf-8") == current
+
+
+# U1: props the merged catalog doesn't define are rejected (ADR 0005)
+def _update(*comps):
+    return [{"version": "v0.9", "updateComponents": {"surfaceId": "s", "components": list(comps)}}]
+
+
+def test_unknown_prop_rejected():
+    msgs = _update(
+        {"id": "root", "component": "Column", "children": ["name"]},
+        {"id": "name", "component": "TextField", "label": "Name", "value": "x", "placeholder": "type here"},
+    )
+    with pytest.raises(UiError) as e:
+        check_known_props(msgs, explorer_catalog())
+    assert e.value.messages == ["TextField 'name' has no property 'placeholder'"]
+
+
+def test_envelope_keys_allowed():
+    msgs = _update(
+        {"id": "t", "component": "Text", "text": "hi", "accessibility": {"label": "greeting"}, "weight": 1},
+        {"id": "b", "component": "Button", "child": "t", "action": {"event": {"name": "go"}}, "checks": []},
+        {"id": "g", "component": "DataGrid", "columns": [], "rows": [], "caption": "c"},
+    )
+    check_known_props(msgs, explorer_catalog())
+
+
+def test_custom_components_do_not_get_basic_common_props():
+    with pytest.raises(UiError, match="DataGrid 'g' has no property 'weight'"):
+        check_known_props(_update({"id": "g", "component": "DataGrid", "columns": [], "rows": [], "weight": 1}),
+                          explorer_catalog())
+
+
+def test_every_component_schema_resolves():
+    props = known_props(explorer_catalog())
+    assert set(props) == set(explorer_catalog().components)
+    assert all({"id", "component"} <= p for p in props.values())
+
+
+# U2
+def test_currency_from_dataset(fixture_store):
+    ui = UiPipeline(currency_symbol="€").build(FIXED_REPLY, fixture_store, "turn-1")
+    assert "€" in ui.prose and "$" not in ui.prose
+    rendered = json.dumps(ui.messages, ensure_ascii=False)
+    assert "€" in rendered and "$" not in rendered.replace("$schema", "")
+
+
+# U1 through the pipeline: the parser can't see props that macros add, so the check runs on
+# expanded output. A macro that emits an unknown prop must fail the build.
+def test_pipeline_runs_unknown_prop_check(monkeypatch, fixture_store):
+    from a2ui.transformers.macros import MacroExpander
+
+    real = MacroExpander.transform_to_transport
+
+    def leaky(self, messages):
+        out = real(self, messages)
+        for m in out:
+            comps = getattr(getattr(m, "update_components", None), "components", None)
+            if comps:
+                comps[0]["placeholder"] = "leaked"
+        return out
+
+    monkeypatch.setattr(MacroExpander, "transform_to_transport", leaky)
+    with pytest.raises(UiError, match="has no property 'placeholder'"):
+        UiPipeline().build(FIXED_REPLY, fixture_store, "turn-1")
