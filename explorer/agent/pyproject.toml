@@ -31,6 +31,7 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["scripts"]
 asyncio_mode = "auto"
 addopts = "-m 'not live_db'"
 markers = [
