@@ -431,10 +431,59 @@ End-to-end smoke test (`agent/tests/e2e`, marked `live`, **not** run by default;
 the real model, so run it by hand only): start the agent against the loaded database, send the
 acceptance question, and check the response has a chart, a table and SQL.
 
-**Reasoning effort check** (manual, live): five fixed questions (drafted during the build and
-approved by the user before any live run) asked at `minimal` and at `low`. The numbers in each
-answer are compared by hand against hand-written SQL. The result goes in `docs/` and decides
-whether `minimal` stays the default.
+**Reasoning effort check** (manual, live): five fixed questions asked at `minimal` and at `low`.
+The numbers in each answer are compared by hand against reference SQL. The result decides
+whether `minimal` stays the default. Decided with the user on 2026-11-01:
+
+- **Scope:** the real model (`meta/muse-spark-1.3`) with the full tool loop; only
+  `REASONING_EFFORT` changes between runs. No other levels.
+- **Questions** (approved; Q1's year and the traps of Q2 and Q5 amended 2026-11-02), each aimed
+  at a trap in the data:
+  1. *"How much contract value did the Department of Defence award in calendar year 2014, and
+     across how many contracts?"* (calendar vs financial year; cancelled contracts excluded; two
+     agency keys share the name "Department of Defence", and in 2014 their contract counts
+     differ).
+  2. *"Which 5 suppliers received the most value from limited tenders in 2022-23?"* ("limited"
+     is the procurement method, not the presence of a limited-tender reason; the top "supplier"
+     is a Foreign Military Sales payment account).
+  3. *"Which 10 contracts published in 2023-24 grew the most through amendments, from what to
+     what?"* (original vs current value; no invented amendment dates).
+  4. *"How has total contract value changed by financial year since the data starts?"* (the
+     first and last financial years are partial).
+  5. *"What share of 2024-25 contract value went to overseas suppliers?"* (the contract's own
+     overseas flag, not the supplier's ever-overseas flag; cancelled excluded from numerator and
+     denominator).
+- **Data limit:** AusTender publishes exactly one supplier per notice (all 1,171,903 raw
+  releases to 2026-10), so splitting value across suppliers can't be tested on this data.
+- **Runs:** 3 per question per level, each in a fresh Conversation (30 scored runs), plus one
+  warm-up question per level that is left out of the timings so cold cache misses don't skew them.
+- **Harness:** `agent/scripts/effort_check.py` sends the questions over A2A to a running agent
+  and records prose, SQL, Surface, timings and tokens as JSONL. It is not a pytest test: tests
+  never call a real model.
+- **Reference SQL:** written by the agent author, run read-only, and reviewed by the user with
+  its values **before any live run**. It lives in `docs/effort-check/reference.sql`, with the
+  values and known wrong answers in `docs/effort-check/reference-values.md`.
+- **Scoring** (by the user):
+  - A number is correct when it matches the reference after the same rounding as displayed.
+    Numbers the model typed into prose are scored like any other number.
+  - Question 1: either total (both agencies by name, or one agency key) is correct if the answer
+    says which it used.
+  - Question 2: ranks are scored by name and order, not by value (ranks 4 to 6 round alike).
+    Leaving out the FMS payment account is correct only if the answer says why. Merging
+    suppliers into corporate groups is wrong.
+  - Question 3: ranked by dollar growth. Ranking by percent growth is wrong.
+  - Question 4: correct only if the partial years are flagged or left out.
+  - A Turn that times out, fails its Repairs or errors counts as wrong, with its failure type
+    recorded.
+- **Decision rule:** switch the default to `low` only if, on some question, `minimal` is wrong in
+  at least 2 of 3 runs and `low` is right in at least 2 of 3. Every 1-of-3 miss is still listed
+  in the write-up.
+- **A question that fails at both levels** is a prompt or data dictionary problem, not a reasoning
+  one. Fix it generically (a fix must make sense to someone who never saw the five questions),
+  record the fix, and re-run all questions at both levels. If no generic fix exists, record a
+  known gap.
+- **Output:** the write-up at `docs/reasoning-effort-check.md` and the raw runs (JSONL) under
+  `docs/effort-check/`, both committed (no secrets in them).
 
 ## 11. Acceptance criteria
 

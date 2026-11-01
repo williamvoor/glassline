@@ -118,7 +118,10 @@ left unchanged (the earlier project saw 56 of these).
   is cancelled. Cancelled notices keep their full value in the source, which is exactly the trap.
 - `amendment_count` counts all `-A<k>` notices; `cancelled_amendment_count` is a subset of it, not
   additional.
-- `core.contract_supplier`: one row per party with role `supplier` (notice + ordinal). ABN from
+- `core.contract_supplier`: one row per party with role `supplier` (notice + ordinal). In practice
+  AusTender publishes exactly one supplier party per release: all 1,171,903 raw releases from
+  2013-01 to 2026-10 have one (checked 2026-11-02). Multi-supplier handling and its seed cases are
+  kept in case that changes. ABN from
   `additionalIdentifiers` with scheme `AU-ABN`. Keep `abn_raw`; store `abn` only when it passes the
   checksum (11 digits; weights 10,1,3,5,7,9,11,13,15,17,19 after subtracting 1 from the first digit;
   sum mod 89 = 0). About 7.5% of suppliers have no ABN; that is normal. Don't store `contactPoint`
