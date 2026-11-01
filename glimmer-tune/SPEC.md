@@ -261,11 +261,11 @@ cd glimmer-tune && uv run pytest
 
 # 2c: catalog-driven synthetic surfaces
 
-Status: draft, 2026-11-01, not yet approved. Decision: [ADR 0009](../docs/adr/0009-synthetic-surfaces-from-the-catalog-with-skeletons.md). Research facts are from the 2026-11-01 SDK research (SDK = `.venv/lib/python3.13/site-packages/a2ui/`).
+Status: 2c-1 approved 2026-11-01, then amended the same day so that the vocabulary is written by an LLM (see Vocabulary, S16–S19). 2c-2 and 2c-3 are not approved. Decision: [ADR 0009](../docs/adr/0009-synthetic-surfaces-from-the-catalog-with-skeletons.md). Research facts are from the 2026-11-01 SDK research (SDK = `.venv/lib/python3.13/site-packages/a2ui/`).
 
 Staged so that you see coverage and samples before anything is generated at full size, and so that a real SFT run fits before 2026-11-30:
 
-- **2c-1:** single-turn new surfaces. Catalog model, skeletons, growth, values, data model, validation and round trip, deterministic intents, dedup, coverage report, linter, review mode, mixed export. **Checkpoint:** coverage report and 10 rendered samples go to you before full-size generation.
+- **2c-1:** single-turn new surfaces. Catalog model, LLM-written vocabulary, skeletons, growth, values, data model, validation and round trip, deterministic intents, dedup, coverage report, linter, review mode, mixed export. **Checkpoints:** (a) you review the vocabulary diff before the generator uses it; (b) the coverage report and 10 rendered samples go to you before full-size generation.
 - **2c-2:** update turns (data-only, components without root, `update=true`, `deleteSurface`) and text-only rows, with their export row shapes.
 - **2c-3:** optional intent rewording with `meta/muse-spark-1.3`, plus the drop filter.
 
@@ -287,7 +287,10 @@ The rest of this section specifies 2c-1 in full. 2c-2 and 2c-3 are outlined at t
 |---|---|
 | `a2ui_eval/synth/catalog_model.py` | `CatalogModel(sdk)`: components with ordered slots (name, required, kind: `text`/`dynamic`/`static-enum`/`static-literal`/`child`/`children`/`action`/`checks`/`map-list`, enum), and functions with arguments and role (`check`/`value`/`action`). Built only from `build_catalog_helpers` plus the catalog JSON. |
 | `a2ui_eval/synth/skeletons/*.yaml` | About 20 archetypes. Each has an id, a domain list, a coarse tree whose nodes are fixed components or open slots with constraints (allowed component kinds, depth and width budget), and plausibility tags (form, list, detail, dialog). |
-| `a2ui_eval/synth/vocab/*.yaml` | Domain vocabularies (travel, banking, fitness, retail, health, events, education, home, work, media): titles, labels, body sentences, entity records, event names, icons per concept |
+| `a2ui_eval/synth/vocab/*.yaml` | Domain vocabularies (travel, banking, fitness, retail, health, events, education, home, work, media), written by `meta/muse-spark-1.3` and committed (see Vocabulary) |
+| `a2ui_eval/synth/vocab_schema.py` | The vocabulary shape and `validate_vocab(doc, catalog_model, eval_texts) -> list[error]` |
+| `a2ui_eval/synth/vocab_writer.py` | `write_vocab(domain, model, eval_texts, complete=<llm_call.py subprocess>)`: prompts the model, parses the YAML, validates, retries with the errors, and writes the file only if it's valid |
+| `a2ui_eval/synth/llm_call.py` | Standalone single LiteLLM call (JSON on stdin and stdout). `vocab_writer` runs it with `uv run --no-project --with litellm==1.106.6 --with mcp --with python-dotenv`, because LiteLLM 1.106.6 needs `huggingface-hub<2` and glimmer-tune needs `>=2.4`. It uses the same pin and `mcp` workaround as the explorer, and glimmer-tune's own deps and lock are unchanged. |
 | `a2ui_eval/synth/grow.py` | Fills open slots with components that fit, within budget, steered by coverage weights |
 | `a2ui_eval/synth/fill.py` | Values for every chosen prop: literals that match the type and enum, or bindings (`binding_ratio`). Optional-slot patterns, checks, actions, `formatString`. |
 | `a2ui_eval/synth/datamodel.py` | Builds a data model that gives every bound path a plausible value, with nested maps and lists and template items. Paths come from labels, deterministically ("Card holder" → `/cardHolder`). Input paths may start empty, as gallery forms do. |
@@ -296,7 +299,7 @@ The rest of this section specifies 2c-1 in full. 2c-2 and 2c-3 are outlined at t
 | `a2ui_eval/synth/lint.py` | Plausibility linter (see Linter) |
 | `a2ui_eval/synth/coverage.py` | Counts, coverage weights, and the report (JSON plus a Markdown table) |
 | `a2ui_eval/synth/structhash.py` | Dedup hash: the fingerprint plus enum props, optional-slot pattern, action kind and check kinds |
-| `a2ui_eval/data_cli.py` | `synth --split {train,dev} --count N --seed S`, `coverage`, `lint --gallery`. `export --mix 0.7` adds synthetic train rows to gallery rows, oversampling the gallery. |
+| `a2ui_eval/data_cli.py` | `vocab --domain D` (or `--all`), `vocab --check`, `synth --split {train,dev} --count N --seed S`, `coverage`, `lint --gallery`. `export --mix 0.7` adds synthetic train rows to gallery rows, oversampling the gallery. |
 | `a2ui_eval/export.py` | Accepts synthetic cases. The split guard checks the skeleton's split. The fingerprint and intent guards also run against dev/test seeds and gallery drafts. |
 | `a2ui_eval/review.py`, `review/src/main.ts` | `--synthetic <cases.jsonl> --sample 50 --seed S`: renders a sample, and records approve/reject with a reason in `data/synth/review.jsonl` |
 | `data/splits.yaml` | New `skeletons:` (train/dev/held_out lists) and `banned_archetypes:` (test family → description, plus a matcher name in `lint.py`) |
@@ -319,6 +322,59 @@ Case shape: as in Case schema, plus `source: "synthetic"`, `skeleton`, `domain`,
 - **Validation:** a row is written only if `sdk_check` passes, `unresolved_bindings` is empty, and `compile(decompile(m)) == m`. Rejections are counted by reason. A round-trip mismatch is logged with the messages, as a possible SDK bug.
 - **Dedup:** at most `k` rows (default 3) per struct hash. A row whose plain fingerprint equals a dev/test seed's or draft's is dropped.
 - **Determinism:** the same seed and config give byte-identical output.
+
+## Vocabulary
+
+The LLM writes words only. Structure, paths, bindings and data values that the code derives from labels stay deterministic code. The vocabulary is written once per domain, validated, committed and reviewed by you as a diff. After that, generation reads only the committed files, so S5 (determinism) holds and no tests or `synth` runs call the model.
+
+The vocabulary is grouped into **topics**, so that the words on one screen belong together. The generator picks one topic per surface and draws every title, sentence, field, action, list and choice from it. (Without topics, a "Hotel details in Kyoto" heading would sit above a flight sentence and a seat form; refuter review, 2026-11-01.)
+
+One file per domain: the header (`domain`, `model`, `prompt_sha256`) plus `topics` [8, unique names]. Each topic is a mapping with exactly these keys (counts per topic in brackets):
+- `name`: sentence case, at most 40 characters, such as "Hotel booking"
+- `screen_titles` [4]: headings, at most 60 characters. Unique across the whole domain.
+- `section_titles` [4]: sub-headings, at most 40 characters
+- `body` [6]: sentences of 5–25 words with **no digits**, because numbers in prose would contradict bound data. Unique across the whole domain.
+- `fields` [8]: `{label, kind, examples, options?, min?, max?}`
+  - `kind` is one of `text`, `email`, `number`, `date`, `time`, `bool`, `choice`, `long_text`, `secret`
+  - `examples` [3–5] are distinct and match the kind:
+    - `date`: a quoted `YYYY-MM-DD` string
+    - `time`: `HH:MM`
+    - `email`: an address on `example.com`, `example.org`, `example.net` or a `.test` domain
+    - `long_text`: at least 5 words
+    - `bool`: contains both `true` and `false`, so it is exempt from the distinct rule
+    - `choice`: one of the options, using at least 2 different options. Choice is also exempt from the distinct rule, because a 2-option field can't have 3 distinct examples.
+  - `options` [2–6, distinct] is required for `choice` and not allowed otherwise
+  - `min`/`max` are optional, and only for `number`. If given, min < max and every example is within them. They become check and Slider bounds.
+- `actions` [4]: `{label, event, icon?}`. `event` is snake_case (the gallery convention: `view_details`, `pay_bill`). `icon` is in the catalog's Icon enum.
+- `entities` [2]: `{name, icon?, fields: [label…] (2–5, distinct), records [4–6]}` for lists and templates. Each record has exactly the fields. Values are strings, numbers or booleans, never YAML dates. A column has one type: int and float both count as number. Records are distinct.
+- `choice_groups` [2]: `{label, multi, options [2–6, distinct]}`. `multi` is a bool: true means multiple selection, false means mutually exclusive or Tabs.
+
+Every label, entity name and choice-group label:
+- starts with a capital letter
+- has no underscores
+- has no internal lower→upper camel boundary, so `InStock` is rejected because it would give `/instock`
+
+Within a topic, field labels and choice-group labels share one set of distinct paths (`path_for_label`), because both bind into the same data model. Each entity's field labels have distinct paths of their own, because they are relative to a template item. Unknown keys are rejected at every level.
+
+Also rejected:
+- placeholder text: lorem, ipsum, foo, TODO (upper case), xxx, "example text", "sample text", "placeholder text"
+- **eval literals.** An eval literal is a literal text, check message, event name or data-model string in a dev or test seed, draft or case that doesn't also appear in a train seed. Both sides are normalised: words are split at spaces, `_` and camelCase, lower-cased, with leading `#` and trailing punctuation stripped. The rule is:
+  - an eval literal of **3 or more words** is rejected when it appears as a whole-word run *inside* any vocabulary string
+  - a **2-word literal containing a digit** is rejected on an exact match
+  - other 2-word literals ("Email address", "Phone number") and single words are ordinary UI words and are allowed. Banning them led the model to awkward dodges such as "Billing Zip Code Number".
+
+The writer:
+- runs three calls per domain, all with `reasoning_effort="low"`, a fixed `prompt_cache_key`, and one byte-identical system prompt (the schema plus the Icon enum):
+  1. "Domain: D. List 8 topics." The reply is `<topics>` YAML.
+  2. and 3. "Domain: D. Write these topics: …", four topics per call. The reply is `<vocab>` YAML holding `topics:`.
+- validates each reply against the topic rules, the requested names, and the screen titles and bodies already taken by earlier batches
+- on failure, sends the errors back, up to 2 retries per call
+- writes the file only when the merged domain is valid
+- runs domains concurrently, at most 4 at a time
+
+The header records `model` and `prompt_sha256`, which is the SHA-256 of the system prompt. Keys come from `genUI/.env` and are never printed. `vocab --check` re-validates every committed file and fails when a file's `prompt_sha256` doesn't match the current system prompt. The test suite runs the same check.
+
+**Re-writing:** a committed file can start failing `vocab --check` because dev or test cases were rebuilt (new eval literals) or because the prompt changed. Re-run `uv run python -m a2ui_eval.data_cli vocab --domain D` (live call) and review the diff.
 
 ## Intents
 
@@ -362,6 +418,10 @@ Each rule has an id. The linter also runs `--gallery` on every single-turn conve
 | S13 | Synthetic review mode serves a deterministic sample of `--sample` rows rendered as v0.9, and records `{id, verdict, reason}`. Reject needs a reason. | `test_review.py::test_synthetic_sample`, `::test_synthetic_verdict_requires_reason` |
 | S14 | The coverage report lists every key with its count, and the Markdown table is written to `data/synth/README.md` | `test_synth_coverage.py::test_report_table` |
 | S15 | All earlier tests pass | full suite |
+| S16 | `validate_vocab` accepts a hand-made valid file and gives the right error for **each** rejection rule in Vocabulary, one parametrised row per rule. The eval-literal rule rejects a 3+-word literal inside a longer string and a snake_case event matching spaced eval text. It allows a digit-free 2-word literal. | `test_synth_vocab.py::test_valid_accepted`, `::test_rule_rejects[rule]`, `::test_eval_literal_matching` |
+| S17 | Writer, with a stubbed model: invalid output is retried with the errors in the next message, valid output is written with `model` and `prompt_sha256`, and after the retries run out nothing is written and the command exits non-zero. Topic batches are merged, and a screen title already used by an earlier batch is sent back as an error. The system prompt is byte-identical across domains and calls. | `test_synth_vocab.py::test_writer_retries_with_errors`, `::test_writer_writes_valid`, `::test_writer_gives_up`, `::test_writer_rejects_taken_titles`, `::test_prompt_stable_prefix` |
+| S18 | Every committed vocab file passes `validate_vocab` and its `prompt_sha256` matches the current system prompt. A stale hash fails the check. | `test_synth_vocab.py::test_committed_vocab_valid`, `::test_check_flags_stale_prompt` |
+| S19 | The tests never call a model. Importing `data_cli` or `vocab_writer` doesn't import LiteLLM, and glimmer-tune's environment doesn't contain it. | `test_synth_vocab.py::test_no_llm_import_at_module_load` |
 
 Checked by hand, not by the suite: a reject rate below 10% on a 50-row reviewed sample. First target: 3–5k train rows and about 200 dev rows across 6 or more dev skeletons.
 
@@ -375,6 +435,10 @@ Checked by hand, not by the suite: a reject rate below 10% on a 50-row reviewed 
 - The generator never emits `theme`, `accessibility`, `null` data values, or bindings inside `Tabs.tabs`/`ChoicePicker.options`, because none of them round-trip.
 - `and`/`or`/`not` inside checks: the research didn't test this. S6's check category confirms it compiles; if it doesn't, it's removed from the coverage keys and the change is recorded here.
 - Dev reports gallery rows and synthetic rows separately.
+- Vocabulary is written by `meta/muse-spark-1.3`, once per domain, and committed. Rejected alternatives: code-only vocabulary (too little variety for ~5k rows) and the LLM writing whole screens (that brings back invalid trees and two spellings). Paths are derived from labels by code, never written by the model.
+- Vocabulary is shared by train and dev skeletons. A split leak through distinctive phrases is blocked by the eval-literal rule, not by separate vocabularies. Generic UI words are shared on purpose, so synthetic dev measures structure, not unseen wording. A consequence: generic dev and test labels such as "Email Address" (`32_advanced-form-validator`) can appear in train vocabulary, so they aren't held out. Test (gallery only) measures real-world wording.
+- Casing variety (Title Case vs sentence case) is left to the generator, which can apply deterministic casing transforms. The vocabulary doesn't have to vary it.
+- Deferred from the vocabulary review: repeats across domains (labels such as "Date of birth" in several domains are fine).
 
 ## Non-goals (2c-1)
 

@@ -14,6 +14,7 @@ from .prompt import build_system_prompt
 from .refs import RefIndex
 from .sdk import ExpressSDK
 from .seeds import ROOT, load_seeds
+from .synth.vocab_writer import VocabError
 
 CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
 DATA = ROOT / "data"
@@ -144,6 +145,29 @@ def cmd_export(args) -> None:
     print(json.dumps(report.to_dict(), indent=2))
 
 
+def cmd_vocab(args) -> None:
+    from .synth.catalog_model import CatalogModel
+    import asyncio
+
+    from .synth import vocab_writer
+    from .synth.vocab_writer import DOMAINS, check_vocab_dir, repo_eval_texts
+
+    model = CatalogModel(ExpressSDK(CATALOG))
+    texts = repo_eval_texts(model, args.data)
+    if args.check:
+        problems = check_vocab_dir(model, texts)
+        for name, errs in problems.items():
+            print(f"{name}:\n  " + "\n  ".join(errs), file=sys.stderr)
+        if problems:
+            raise VocabError(f"{len(problems)} invalid vocabulary files")
+        print("all vocabulary files valid")
+        return
+    domains = list(DOMAINS) if args.all else [args.domain]
+    failed = asyncio.run(vocab_writer.write_domains(domains, model, texts))
+    if failed:
+        raise VocabError(f"failed domains: {failed}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m a2ui_eval.data_cli")
     p.add_argument("--data", type=Path, default=DATA)
@@ -166,6 +190,12 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--max-seq-len", type=int, default=8192)
     e.add_argument("--out", type=Path, default=EXPORT)
     e.set_defaults(fn=cmd_export)
+    v = sub.add_parser("vocab", help="write domain vocabularies with meta/muse-spark-1.3")
+    which = v.add_mutually_exclusive_group(required=True)
+    which.add_argument("--domain")
+    which.add_argument("--all", action="store_true")
+    which.add_argument("--check", action="store_true", help="re-validate the committed files; no model call")
+    v.set_defaults(fn=cmd_vocab)
     return p
 
 
@@ -173,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         args.fn(args)
-    except (GenerationError, ExportError) as e:
+    except (GenerationError, ExportError, VocabError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0
