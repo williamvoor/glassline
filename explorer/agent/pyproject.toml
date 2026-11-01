@@ -11,6 +11,8 @@ dependencies = [
     "a2ui-core",
     "litellm==1.106.6",
     "mcp>=2.3.0",
+    "pglast==8.7",
+    "psycopg-pool==3.3.3",
     "psycopg[binary]>=3.3.6",
     "python-dotenv>=1.2.4",
     "uvicorn>=0.54.0",
@@ -21,6 +23,7 @@ dependencies = [
 a2ui-agent-sdk = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_agent" }
 a2ui-a2a = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_a2a" }
 a2ui-core = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_core" }
+austender = { path = "../../austender", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.9.28,<0.10"]
@@ -29,9 +32,16 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m 'not live_db'"
+markers = [
+    "db: needs the disposable Postgres 18 test database (Docker)",
+    "live_db: reads the loaded dataset database from explorer/.env; run by hand with -m live_db",
+]
 
 [dependency-groups]
 dev = [
+    "austender",
     "pytest==8.4.2",
     "pytest-asyncio==1.2.0",
+    "testcontainers[postgres]==4.15.0",
 ]
