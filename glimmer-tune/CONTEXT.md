@@ -1,0 +1,95 @@
+# glimmer-tune
+
+The eval harness and training-data factory for teaching Muse Glimmer 30B to write A2UI Express. It turns gallery designs and catalog-driven synthetic surfaces into eval cases and SFT rows.
+
+## Language
+
+### Sources
+
+**Seed**:
+One vendored A2UI gallery example, converted to v0.9. It is the ground truth for its Family.
+_Avoid_: Example, sample
+
+**Family**:
+One gallery design and all the cases made from its Seed. It applies to gallery designs only.
+_Avoid_: Skeleton (for synthetic rows), template
+
+**Template**:
+A hand-written slot file that varies one Family's text and data to produce many Gallery rows.
+_Avoid_: Skeleton
+
+**Skeleton**:
+A layout archetype for synthetic surfaces: fixed containers plus Blocks and Open slots, filled from one Topic. It is the synthetic counterpart of a Family for splits.
+_Avoid_: Family, template, archetype (except in Banned archetype)
+
+**Block**:
+A named unit that a Skeleton places, such as a field, a key/value row or a list, which becomes a small subtree of components.
+_Avoid_: Widget, component (a Block is usually several components)
+
+**Open slot**:
+A place in a Skeleton that is filled with a number of Blocks of allowed kinds, chosen by coverage.
+_Avoid_: Hole, placeholder
+
+**Vocabulary**:
+The committed, LLM-written words for one Domain: titles, sentences, fields, actions, entities and choice groups.
+_Avoid_: Dictionary, word list
+
+**Domain**:
+A subject area for Vocabulary, such as travel or banking.
+_Avoid_: Dataset, category
+
+**Topic**:
+A coherent group of words within one Domain's Vocabulary. One surface draws all its words from one Topic.
+_Avoid_: Theme, subject
+
+### Cases and rows
+
+**Case**:
+One evaluation or training item: an Intent, a Reference, and the existing surface it applies to.
+_Avoid_: Example, sample, test
+
+**Intent**:
+The user's request in plain English that a Case's Reference answers. It states every identifier the scorer needs.
+_Avoid_: Prompt, query, instruction
+
+**Reference**:
+The v0.9 messages a Case expects, and their canonical Express decompile, which is the training target.
+_Avoid_: Gold, answer, label
+
+**Detail level**:
+How much of the Reference an Intent spells out: terse, medium or specific. The Reference sets only what its Intent asks for.
+_Avoid_: Verbosity, difficulty
+
+**Gallery row**:
+A Case made from a Family's Template.
+_Avoid_: Hand row, real row
+
+**Synthetic row**:
+A Case grown from a Skeleton by the generator.
+_Avoid_: Generated row, fake row
+
+### Splits and leaks
+
+**Split**:
+Where a Family or a Skeleton belongs: train, dev or test for Families, and train, dev or held out for Skeletons. Test is gallery-only.
+_Avoid_: Partition, fold
+
+**Held out**:
+A reserve split for Skeletons. Its rows are never trained on and never used for dev, and are generated only to probe generalisation later.
+_Avoid_: Test (for Skeletons), excluded
+
+**Excluded**:
+A Family that is in no split, because the harness can't make its Cases yet (the multi-turn seeds).
+_Avoid_: Held out
+
+**Banned archetype**:
+The layout of one test Family that no Skeleton may mirror, as checked by a matcher.
+_Avoid_: Blocked design
+
+**Eval literal**:
+A distinctive string from dev or test data that never appears in train data. Vocabulary and Synthetic rows must not contain one.
+_Avoid_: Leak string
+
+**Coverage key**:
+One catalog feature that synthetic data must exercise a target number of times, such as a component, a prop, a slot pattern, a binding kind, a check kind or an action kind.
+_Avoid_: Feature, pattern (a slot pattern is one kind of Coverage key)
