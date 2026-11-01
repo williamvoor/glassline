@@ -201,3 +201,194 @@ Seeds stay verbatim v1 on disk. `v1_to_v0_9` works on JSON only, never through E
 ```bash
 cd glimmer-tune && uv run pytest
 ```
+
+---
+
+# 2b: templates for the remaining single-turn families
+
+Status: draft, 2026-11-01. No new machinery and no new ADR: this applies the 2a template rules (C5, C7, C8, C16) and step 0's v0.9 catalog to every family.
+
+## Files
+
+| Path | Change |
+|---|---|
+| `families/*.yaml` | 35 new templates, one per single-turn family without one (22 train, 6 dev, 7 test). With the 6 from 2a, that's all 41 non-excluded seeds. |
+| `tests/test_generate.py` | `MAY_OMIT` grows only for leaves that are shown conditionally. New `test_every_family_has_a_template`. `test_keep_reviews_cli` finds its dev row by id, not by position, because a test family (00_complex-layout) now sorts first. |
+| `tests/test_v0_9.py` | `test_real_data_is_v0_9`: 220 draft rows with 29 reviewed, 1560 train rows, and dev equal to the reviewed dev drafts |
+| `data/train/cases.jsonl`, `data/intents_draft.jsonl`, `exports/sft_train.jsonl` | Regenerated. The draft uses `draft --keep-reviews`, so the 29 approvals carry over. |
+| `data/dev/cases.jsonl` | Not rebuilt until you review the new dev rows |
+
+## Template rules
+
+- The Express is the canonical v0.9 decompile of the converted seed, with slots substituted. The surface id stays the seed's, as in 2a.
+- Each template has at least two intent templates, one detailed and one terse. Every intent names the literal text (including constant labels, markdown prefixes such as `## `, and date formats), the data values, the event names, and the icon names. A heading prefix is written as the literal `## `, never as "(h2)", because "h2" could mean the Text variant instead.
+- Data paths are named as `/path` only where the user would refer to them: input values (TextField, CheckBox, ChoicePicker, DateTimeInput, Slider), list sources (`_template`), event context, and values bound by data (for example an icon name read from `/icon`). Display-only paths such as `/holderName` are left to the model. That matches the approved 2a rows (05, 23, 27). The scorer compares data paths literally, so milestone 3 reports a data score that ignores paths alongside the literal one.
+- Related values (a person and their contact details, a sport and its stats, a prompt and its icon) are one slot value, so a variant never mixes them.
+- Slots vary text, data and, where the seed allows it cheaply, structure (an optional child, a list length). Enum props vary only within the catalog enum (for example `Icon.name`).
+- There must be enough unique variants for the default counts: train 60, dev 12, test 17.
+
+## Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| B1 | Every family whose split is train, dev or test has a template | `test_generate.py::test_every_family_has_a_template` |
+| B2 | Each new template reproduces its converted seed (equal fingerprint and `exact_match`) | `test_generate.py::test_template_reproduces_seed[family]` (C5/V4) |
+| B3 | Each new template's variants compile, pass `sdk_check` and self-score `exact_match` | `test_generate.py::test_cases_valid[family]` (C7) |
+| B4 | Each intent names every non-boolean scalar slot leaf, except listed `MAY_OMIT` leaves | `test_generate.py::test_intents_mention_slot_values[family]` (C16) |
+| B5 | `generate` (60 per train family) and `draft --keep-reviews` (dev 12, test 17) run without a shortfall. The 29 approved rows keep their ids, intents and `reviewed: true`. | Run once at rebuild time. `test_v0_9.py::test_real_data_is_v0_9` is updated to the new draft count, with 29 still reviewed. |
+| B6 | `export` succeeds. Drops per family are reported and checked by hand. | Run once at rebuild time |
+| B7 | All earlier tests pass | full suite |
+
+## Decisions
+
+- Test is still not built. Building it freezes test, and its new rows need your review first. Modal is now taught in train (29_movie-card), which removes 2a's blocker.
+- Dev is rebuilt only after you review the new dev drafts in the review page.
+- Gallery surface ids (`gallery-*`) stay constant per family, as in 2a. 2c's synthetic rows vary surface ids.
+- 2b varies text and data, not structure: each new family has one fingerprint. Design diversity is 2c's job.
+- Deferred after review: some train families still pair loosely related values (26 show and episode, 28 event and time left, 17 event and location, 19 seats and total). They're coherent enough for training and not eval data. Dev/test families share subtrees with train families (for example a row of three value-over-caption stats). The fingerprint guard can't see that, so read dev/test as partial generalisation, not a clean design hold-out.
+
+## Non-goals
+
+- The synthetic generator (2c), multi-turn families, and any training run
+
+## Test command
+
+```bash
+cd glimmer-tune && uv run pytest
+```
+
+---
+
+# 2c: catalog-driven synthetic surfaces
+
+Status: draft, 2026-11-01, not yet approved. Decision: [ADR 0009](../docs/adr/0009-synthetic-surfaces-from-the-catalog-with-skeletons.md). Research facts are from the 2026-11-01 SDK research (SDK = `.venv/lib/python3.13/site-packages/a2ui/`).
+
+Staged so that you see coverage and samples before anything is generated at full size, and so that a real SFT run fits before 2026-11-30:
+
+- **2c-1:** single-turn new surfaces. Catalog model, skeletons, growth, values, data model, validation and round trip, deterministic intents, dedup, coverage report, linter, review mode, mixed export. **Checkpoint:** coverage report and 10 rendered samples go to you before full-size generation.
+- **2c-2:** update turns (data-only, components without root, `update=true`, `deleteSurface`) and text-only rows, with their export row shapes.
+- **2c-3:** optional intent rewording with `meta/muse-spark-1.3`, plus the drop filter.
+
+The rest of this section specifies 2c-1 in full. 2c-2 and 2c-3 are outlined at the end and get their own criteria before they're built.
+
+## Facts this rests on
+
+- `build_catalog_helpers([sdk.catalog])` gives per-component slot order, required props, enums and checkability. It's the same table the Express compiler uses, so positional order comes from it, never from our own JSON walk (`schema_helper.py:122-250`).
+- Function return types come from the catalog JSON. A boolean return is a check, a string return is a value function, and void is an action. `length` and `numeric` need `min` or `max`, through an `anyOf` the helper doesn't carry.
+- `Tabs.tabs` and `ChoicePicker.options` must be fully literal: the compiler rejects any `$path` inside them, though the schema allows it.
+- The traps in Slider: `value` is required but `min` comes before `max`, so the form is `Slider(_, min, max, $/v)`. `weight` follows the specific props, and `checks` is always last.
+- Decompile drops `theme` and `accessibility`, sorts data keys alphabetically, and writes data lines before components. A `null` data value can't round-trip. The generator never emits any of these.
+- `sdk_check` catches dangling refs, orphans, cycles, bad enums, missing required props and type errors. It doesn't catch a binding with no data value. Our `structure.unresolved_bindings` does.
+- The scorer compares data paths and event names literally. Component ids are aligned by position, so ids are free.
+
+## Files
+
+| Path | What |
+|---|---|
+| `a2ui_eval/synth/catalog_model.py` | `CatalogModel(sdk)`: components with ordered slots (name, required, kind: `text`/`dynamic`/`static-enum`/`static-literal`/`child`/`children`/`action`/`checks`/`map-list`, enum), and functions with arguments and role (`check`/`value`/`action`). Built only from `build_catalog_helpers` plus the catalog JSON. |
+| `a2ui_eval/synth/skeletons/*.yaml` | About 20 archetypes. Each has an id, a domain list, a coarse tree whose nodes are fixed components or open slots with constraints (allowed component kinds, depth and width budget), and plausibility tags (form, list, detail, dialog). |
+| `a2ui_eval/synth/vocab/*.yaml` | Domain vocabularies (travel, banking, fitness, retail, health, events, education, home, work, media): titles, labels, body sentences, entity records, event names, icons per concept |
+| `a2ui_eval/synth/grow.py` | Fills open slots with components that fit, within budget, steered by coverage weights |
+| `a2ui_eval/synth/fill.py` | Values for every chosen prop: literals that match the type and enum, or bindings (`binding_ratio`). Optional-slot patterns, checks, actions, `formatString`. |
+| `a2ui_eval/synth/datamodel.py` | Builds a data model that gives every bound path a plausible value, with nested maps and lists and template items. Paths come from labels, deterministically ("Card holder" → `/cardHolder`). Input paths may start empty, as gallery forms do. |
+| `a2ui_eval/synth/pipeline.py` | One surface: skeleton → grow → fill → data → v0.9 JSON → `sdk_check` and binding check → round trip → intent → dedup. `synthesize(n, seed, split, config) -> rows`. |
+| `a2ui_eval/synth/intents.py` | Deterministic intent drafts at three detail levels (terse, medium, specific), from the tree. Each states what the scorer needs (see Intents). |
+| `a2ui_eval/synth/lint.py` | Plausibility linter (see Linter) |
+| `a2ui_eval/synth/coverage.py` | Counts, coverage weights, and the report (JSON plus a Markdown table) |
+| `a2ui_eval/synth/structhash.py` | Dedup hash: the fingerprint plus enum props, optional-slot pattern, action kind and check kinds |
+| `a2ui_eval/data_cli.py` | `synth --split {train,dev} --count N --seed S`, `coverage`, `lint --gallery`. `export --mix 0.7` adds synthetic train rows to gallery rows, oversampling the gallery. |
+| `a2ui_eval/export.py` | Accepts synthetic cases. The split guard checks the skeleton's split. The fingerprint and intent guards also run against dev/test seeds and gallery drafts. |
+| `a2ui_eval/review.py`, `review/src/main.ts` | `--synthetic <cases.jsonl> --sample 50 --seed S`: renders a sample, and records approve/reject with a reason in `data/synth/review.jsonl` |
+| `data/splits.yaml` | New `skeletons:` (train/dev/held_out lists) and `banned_archetypes:` (test family → description, plus a matcher name in `lint.py`) |
+| `data/synth/{train,dev}/cases.jsonl`, `data/synth/coverage.json`, `data/synth/README.md` | Generated output, and the per-pattern coverage table |
+| `tests/test_synth_*.py` | Tests (see Criteria) |
+
+Case shape: as in Case schema, plus `source: "synthetic"`, `skeleton`, `domain`, `detail` (`terse`/`medium`/`specific`), `patterns` (the coverage keys the row hits) and `generator_seed`. `family` is `synth/<skeleton>`, so existing code keeps working.
+
+## Behaviour
+
+- **Size:** depth 2–5 and 5–40 components, both drawn per row from configurable ranges.
+- **Coverage-weighted sampling:** each choice (component, optional-slot pattern, binding kind, check, action kind) is weighted by how far its count is from the target N (default 30, configurable). Weights are recomputed per row, deterministically.
+- **Coverage keys** (what "every pattern" means):
+  - each component, and each (component, property)
+  - **optional-slot patterns** per component. A pattern is the set of optional slots that are set, ignoring `weight` and `checks`. Cover every pattern, or the first 16 in a fixed order when there are more. Count trailing-omission and middle-`_` shapes separately.
+  - bindings: absolute, relative inside `_template`, nested map path, list index (`/a/0`), `formatString` interpolation, and value functions (`formatNumber`, `formatCurrency`, `formatDate`, `pluralize`)
+  - lists: `_template` with relative bindings, and static child arrays, in Row, Column and List
+  - checks: `required`, `email`, `regex` with a message, `length` and `numeric` with integer bounds (one-sided and both), several checks on one field, and `and`/`or`/`not` on a Button
+  - actions: `Event` with and without context, context referencing form field paths, and `openUrl`
+- **Validation:** a row is written only if `sdk_check` passes, `unresolved_bindings` is empty, and `compile(decompile(m)) == m`. Rejections are counted by reason. A round-trip mismatch is logged with the messages, as a possible SDK bug.
+- **Dedup:** at most `k` rows (default 3) per struct hash. A row whose plain fingerprint equals a dev/test seed's or draft's is dropped.
+- **Determinism:** the same seed and config give byte-identical output.
+
+## Intents
+
+The intent for each row states the purpose (from the skeleton and domain), the components that matter, every literal text, the event names, and the data paths under the 2b rule: input values, list sources, event context, and values bound by data. Display-only paths follow the label rule, so the model can derive them. There are three detail levels:
+- **terse:** purpose plus the identifiers the scorer needs
+- **medium:** adds the components and their order
+- **specific:** adds variants, alignment and formats
+
+Every level names all required identifiers. A self-check verifies this: every event name, stated path and literal text in the reference appears in the intent.
+
+## Linter
+
+These rules run on the folded v0.9 surface:
+- every Button has an action
+- a form (a skeleton tagged `form`, or two or more inputs) has a submit Event whose context references every input path
+- every input value is bound to the data model
+- Modal has a trigger Button and non-empty content, and Tabs has two or more tabs, each with content
+- Icon names are in the catalog enum
+- heading text is at most 60 characters, and body text is at least 3 words
+- a List or `_template` source is a non-empty list
+- no lorem ipsum
+
+Each rule has an id. The linter also runs `--gallery` on every single-turn converted seed. Seeds that fail a rule by upstream design are listed in a committed allowlist with the reason, and the target is 100% after the allowlist.
+
+## Criteria → tests (2c-1)
+
+| # | Criterion | Test |
+|---|---|---|
+| S1 | `CatalogModel` lists every catalog component and function, with the SDK's slot order and required set. Slider's order is `label, min, max, value`. Tabs.tabs and ChoicePicker.options are `map-list` and literal-only. | `test_synth_catalog.py::test_matches_sdk_helper`, `::test_slider_order`, `::test_map_lists_literal` |
+| S2 | Adding a fake component or prop to a copy of the catalog shows up in the model and as a coverage gap. Nothing is hard-coded. | `test_synth_catalog.py::test_reads_catalog_changes` |
+| S3 | Every emitted row passes `sdk_check`, has no unresolved bindings, and round-trips (`compile(decompile(m)) == m`). Its `reference_express` is the canonical decompile, with no keyword args for props. | `test_synth_pipeline.py::test_rows_valid` (200 rows, several seeds) |
+| S4 | A tree that fails validation or the round trip is rejected with a reason and never written. A Tabs title binding is one such forced case. | `test_synth_pipeline.py::test_rejects_invalid`, `::test_rejects_round_trip_mismatch` |
+| S5 | Same seed and config give byte-identical output. A different seed gives different output. | `test_synth_pipeline.py::test_deterministic` |
+| S6 | Coverage: after a run of the configured size, every component, (component, prop), optional-slot pattern, binding kind, list kind, check kind and action kind reaches N. The test runs at small N. | `test_synth_coverage.py::test_every_key_reached`, plus one test per category: `::test_components`, `::test_slot_patterns`, `::test_bindings`, `::test_lists`, `::test_checks`, `::test_actions` |
+| S7 | Regression for the v1/v0.9 TextField slot bug: a generated TextField with `validationRegexp` set compiles to `validationRegexp`, never `variant`. Every generated component's compiled props equal the props the generator meant to set. | `test_synth_pipeline.py::test_textfield_slots_v0_9`, `::test_intended_props_compile` |
+| S8 | The linter passes on 100% of synthetic rows, and on 100% of gallery seeds after the allowlist. Each rule fires on a hand-made bad surface. | `test_synth_lint.py::test_gallery_passes`, `::test_synthetic_passes`, `::test_rule_fires[rule]` |
+| S9 | Every intent names every event name, literal text and required path of its reference, at every detail level | `test_synth_intents.py::test_required_identifiers_present[detail]` |
+| S10 | Dedup keeps at most `k` rows per struct hash. A row whose fingerprint equals a dev/test seed or draft is dropped. | `test_synth_pipeline.py::test_dedup_cap`, `::test_eval_fingerprint_dropped` |
+| S11 | Splits: each skeleton is in exactly one of train/dev/held_out. `synth --split dev` uses only dev skeletons. No synthetic row goes to test. Every banned archetype's matcher rejects a surface built to mirror its test design, and passes the other skeletons. | `test_synth_splits.py::test_skeleton_partition`, `::test_split_routing`, `::test_no_test_rows`, `::test_banned_archetypes[family]` |
+| S12 | `export --mix 0.7` gives about 70% synthetic rows (within 1 row of the target), oversamples gallery rows by repeating them, and is deterministic. The split guard rejects a synthetic row from a non-train skeleton. C11–C14 still hold. | `test_export.py::test_mix_ratio`, `::test_mix_rejects_dev_skeleton`, existing export tests |
+| S13 | Synthetic review mode serves a deterministic sample of `--sample` rows rendered as v0.9, and records `{id, verdict, reason}`. Reject needs a reason. | `test_review.py::test_synthetic_sample`, `::test_synthetic_verdict_requires_reason` |
+| S14 | The coverage report lists every key with its count, and the Markdown table is written to `data/synth/README.md` | `test_synth_coverage.py::test_report_table` |
+| S15 | All earlier tests pass | full suite |
+
+Checked by hand, not by the suite: a reject rate below 10% on a 50-row reviewed sample. First target: 3–5k train rows and about 200 dev rows across 6 or more dev skeletons.
+
+## Decisions
+
+- Targets are positional only (canonical decompile). There are no keyword-argument targets.
+- Text-only replies are templated (2c-2). Intent rewording uses `meta/muse-spark-1.3` (2c-3), logged per row. Muse Glimmer is never used for data generation.
+- No skeleton mirrors a test design (ADR 0009). Test stays gallery-only.
+- Synthetic surface ids vary (`<domain>-<skeleton>-<n>`). Gallery ids stay constant.
+- Images, audio and video use `https://example.com/...` URLs. They're never fetched.
+- The generator never emits `theme`, `accessibility`, `null` data values, or bindings inside `Tabs.tabs`/`ChoicePicker.options`, because none of them round-trip.
+- `and`/`or`/`not` inside checks: the research didn't test this. S6's check category confirms it compiles; if it doesn't, it's removed from the coverage keys and the change is recorded here.
+- Dev reports gallery rows and synthetic rows separately.
+
+## Non-goals (2c-1)
+
+- Update turns, delete turns, text-only rows (2c-2) and LLM rewording (2c-3)
+- Training runs
+- Generating the full-size set before you've seen the coverage report and 10 samples
+
+## 2c-2 and 2c-3 outline
+
+- **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.
+- **2c-3:** reword each intent into 1–3 phrasings, drop any rewording that loses a required identifier (S9's check), and log the model per row. Keys come from `explorer/.env` without printing them. Tests stub the model.
+
+## Test command
+
+```bash
+cd glimmer-tune && uv run pytest
+```
