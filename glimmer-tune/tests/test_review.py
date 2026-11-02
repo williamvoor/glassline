@@ -92,3 +92,39 @@ def test_expected_values_on_compiled_v0_9(sdk):
     )
     assert {next(iter(k for k in m if k != "version")) for m in reference} == {"createSurface", "updateComponents", "updateDataModel"}
     assert expected_values(reference) == ["Ad Spend", "40", "Terms of service", "+40% from last week", "showTerms"]
+
+
+def _client(tmp_path, built_after_source: bool):
+    import os
+
+    client = tmp_path / "review"
+    (client / "src").mkdir(parents=True)
+    (client / "dist").mkdir()
+    src, built = client / "src" / "main.ts", client / "dist" / "index.html"
+    src.write_text("x")
+    built.write_text("x")
+    old, new = 1_000_000_000, 1_000_000_100
+    os.utime(src, (old, new if not built_after_source else old))
+    os.utime(built, (old, old if not built_after_source else new))
+    return client
+
+
+def test_build_problem_missing_dist(tmp_path):
+    from a2ui_eval.review import build_problem
+
+    (tmp_path / "review" / "src").mkdir(parents=True)
+    assert "missing" in build_problem(tmp_path / "review")
+
+
+def test_build_problem_stale_dist_names_newer_source(tmp_path):
+    """Regression: a dist built before build B posted to /api/rows, so every synthetic verdict got 'not found'."""
+    from a2ui_eval.review import build_problem
+
+    problem = build_problem(_client(tmp_path, built_after_source=False))
+    assert problem is not None and "main.ts" in problem and "npm run build" in problem
+
+
+def test_build_problem_fresh_dist(tmp_path):
+    from a2ui_eval.review import build_problem
+
+    assert build_problem(_client(tmp_path, built_after_source=True)) is None

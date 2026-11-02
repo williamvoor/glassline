@@ -245,6 +245,21 @@ def make_handler(draft: Path, dist: Path, synthetic: SyntheticReview | None = No
     return Handler
 
 
+_BUILD_INPUTS = ("src", "index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json")
+
+
+def build_problem(client: Path) -> str | None:
+    """Why `client/dist` can't be served, or None. `dist` is git-ignored and never rebuilt
+    automatically, so a stale bundle silently talks to an API the server no longer has."""
+    built = client / "dist" / "index.html"
+    fix = f"run `npm install && npm run build` in {client}"
+    if not built.exists():
+        return f"{built.parent} is missing; {fix}"
+    inputs = [p for name in _BUILD_INPUTS for p in ((client / name).rglob("*") if (client / name).is_dir() else [client / name])]
+    newer = sorted(p.relative_to(client).as_posix() for p in inputs if p.is_file() and p.stat().st_mtime > built.stat().st_mtime)
+    return f"{built.parent} is older than {', '.join(newer)}; {fix}" if newer else None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--draft", type=Path, default=DRAFT)
@@ -255,8 +270,8 @@ def main() -> None:
     ap.add_argument("--verdicts", type=Path, default=VERDICTS)
     args = ap.parse_args()
     review = SyntheticReview(args.synthetic, args.sample, args.seed, args.verdicts) if args.synthetic else None
-    if not (DIST / "index.html").exists():
-        raise SystemExit(f"{DIST} is missing; run `npm install && npm run build` in review/")
+    if problem := build_problem(DIST.parent):
+        raise SystemExit(problem)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.draft, DIST, review))
     print(f"reviewing {args.synthetic or args.draft} at http://127.0.0.1:{args.port}")
     server.serve_forever()
