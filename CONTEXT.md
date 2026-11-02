@@ -45,6 +45,10 @@ _Avoid_: Panel, widget, card
 A component the agent writes that refers to a Result instead of carrying data; it is expanded into displayable components from that Result's rows. The agent never types data values itself.
 _Avoid_: Template, helper
 
+**Brief**:
+A short instruction written by the model that ran the queries, telling the model that writes the Surface which Result answers which part of the question and how to show it. It names Results by ID and carries no data values.
+_Avoid_: Prompt, intent (an intent is a user's own request, as used in training data), plan
+
 **Visual**:
 A chart, table or metric on a Surface, built by a Macro from one Result. Every Visual shows the SQL behind it.
 _Avoid_: Widget, graphic
