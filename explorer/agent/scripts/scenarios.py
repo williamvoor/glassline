@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 
 import effort_check as ec
 from explorer_agent.config import load_settings
-from explorer_agent.macros import _DATE, _bare_numbers
+from explorer_agent.macros import _DATE
 from explorer_agent.sql import GuardError, SqlFail, SqlOk, SqlRunner, guard, open_pool
 
 EXPLORER_ROOT = ec.REPO_ROOT / "explorer"
@@ -262,10 +262,12 @@ def stated(value: Any, texts: list[str]) -> bool:
     return False
 
 
-def invented_numbers(prose: str) -> list[str]:
-    """Numbers in the prose other than zeros, dates and years (spec, `prose_no_numbers`)."""
+def invented_numbers(typed: list[str]) -> list[str]:
+    """Numbers the model typed itself, other than zeros (spec, `prose_no_numbers`). `typed` is what
+    the agent logged as bare numbers: dates and years are already left out, and values filled
+    from Results through Cite never appear in it."""
     out = []
-    for n in _bare_numbers(unescape(prose)):
+    for n in typed:
         try:
             if float(n.replace(",", "")) == 0:
                 continue
@@ -328,7 +330,7 @@ def score(
         w.label for role, w in scenario.entries() if role.startswith("wrong")
         and not missing_values(scenario, w, references[role], rows)
     ]
-    out: dict[str, Any] = {"reasons": [], "missing": [], "not_stated": [], "invented": [],
+    out: dict[str, Any] = {"reasons": [], "review": [], "missing": [], "not_stated": [], "invented": [],
                            "matched_wrong": matched_wrong, "flags": flags}
     reasons = out["reasons"]
     failure = turn.get("failure", "none")
@@ -367,19 +369,19 @@ def score(
                     out["not_stated"] = unstated[0]
                     reasons.append("not_stated")
         if scenario.expect_empty and any(_is_number(v) and v != 0 for row in rows for v in row.values()):
-            reasons.append("not_empty")
+            out["review"].append("not_empty")  # context or a fuzzy match? Only a person can tell.
         prose_problem = False
         if scenario.expect_empty and not prose.strip():
             prose_problem = True
         if scenario.prose_no_numbers:
-            out["invented"] = invented_numbers(turn.get("prose") or "")
+            out["invented"] = invented_numbers(turn.get("bare_numbers") or [])
             prose_problem = prose_problem or bool(out["invented"])
         if prose_problem:
             reasons.append("prose")
 
     if reasons:
         status = "fail"
-    elif matched_wrong and not scenario.smoke:
+    elif (matched_wrong or out["review"]) and not scenario.smoke:
         status = "needs_review"
     else:
         status = "pass"
@@ -592,6 +594,8 @@ def report(records: list[dict[str, Any]]) -> str:
                 lines.append(f"  - numbers in the prose: {', '.join(sc['invented'])}")
             if sc["matched_wrong"]:
                 lines.append(f"  - matched wrong: {'; '.join(sc['matched_wrong'])}")
+            if sc.get("review"):
+                lines.append(f"  - for a person to check: {', '.join(sc['review'])}")
             flags = [k for k, v in sc["flags"].items() if v]
             if flags:
                 lines.append(f"  - flags: {', '.join(flags)}")

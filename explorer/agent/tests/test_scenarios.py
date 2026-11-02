@@ -22,9 +22,10 @@ def ref(sql="SELECT 1", expect=("v",)) -> dict:
     return {"sql": sql, "expect": list(expect)}
 
 
-def turn(prose="Answer.", failure="none", metrics=(), tables=(), charts=(), sql=(), model_calls=()) -> dict:
+def turn(prose="Answer.", failure="none", metrics=(), tables=(), charts=(), sql=(), model_calls=(), typed=()) -> dict:
     return {
         "prose": prose, "failure": failure, "model_calls": list(model_calls),
+        "bare_numbers": list(typed),  # what the agent logged as typed by the model
         "surface": {"metrics": [list(m) for m in metrics], "tables": list(tables), "charts": list(charts),
                     "sql": [{"summary": "", "sql": q} for q in sql]},
     }
@@ -292,20 +293,31 @@ EMPTY = dict(forbid_visual=["chart"], expect_empty=True, prose_no_numbers=True)
     ("t", "rows", "status", "reason"),
     [
         (turn(prose="There is no Department of Magic in the data."), [], "pass", None),
-        (turn(prose="It had 0 contracts and $0.00 in 2024-25 (FY2024-25)."), [], "pass", None),
+        (turn(prose="It had 0 contracts and $0.00 in FY2024-25.", typed=["0", "0.00"]), [], "pass", None),
         (turn(prose="Nothing found.", metrics=[("Value", "$0")]), [{"v": 0}, {"v": None}], "pass", None),
-        (turn(prose="Here are the results.", tables=TABLE), [{"v": 55700946072.24}], "fail", "not_empty"),
+        # Rows can't tell context from a silent fuzzy match: a person reads it (needs_review).
+        (turn(prose="Here are the results.", tables=TABLE), [{"v": 55700946072.24}], "needs_review", "not_empty"),
         (turn(prose="Nothing.", charts=[{"values": []}]), [], "fail", "forbidden_visual"),
-        (turn(prose="I searched 2 name patterns."), [], "fail", "prose"),
+        (turn(prose="I searched 2 name patterns.", typed=["2"]), [], "fail", "prose"),
         (turn(prose="   "), [], "fail", "prose"),
     ],
-    ids=["not_found", "zeros_and_dates", "zero_metric", "fuzzy_match_table", "chart", "number", "empty_prose"],
+    ids=["not_found", "typed_zeros", "zero_metric", "rows_not_empty", "chart", "typed_number", "empty_prose"],
 )
 def test_empty_checks(t, rows, status, reason):
     r = sc.score(scenario(**EMPTY), {}, t, rows)
     assert r["status"] == status
     if reason:
-        assert reason in r["reasons"]
+        assert reason in r["reasons"] + r["review"]
+
+
+# Regression (first live run, 2026-11-02): a correct not-found answer failed. Its "125 agencies"
+# came from the database through Cite, not typed by the model, and its rows held that context count.
+def test_live_not_found_answer_is_not_failed():
+    t = turn(prose="There are 125 agencies in 2024-25 and 0 matching Magic.", typed=["0"],
+             metrics=[("Agencies in 2024-25", "125"), ("Matching Magic", "0")])
+    r = sc.score(scenario(**EMPTY), {}, t, [{"match_count": 125, "magic_matches": 0}])
+    assert r["reasons"] == [] and r["invented"] == []
+    assert (r["status"], r["review"]) == ("needs_review", ["not_empty"])
 
 
 def test_smoke_passes_unless_the_turn_fails():
@@ -483,6 +495,8 @@ def test_report_shows_prose_and_p90():
     assert long.strip() in text  # smoke prose in full, for a person to read
     assert text.count("  - prose: ") == 3  # smoke, needs_review and fail; passing runs show none
     assert sc.summary(records)["wall_p90"] == 9.0
+    records[1]["score"]["review"] = ["not_empty"]
+    assert "for a person to check: not_empty" in sc.report(records)
 
 
 async def test_a_failed_earlier_turn_ends_the_scenario(monkeypatch):

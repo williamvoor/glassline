@@ -61,12 +61,15 @@ Optional checks on the last Turn (any scenario):
   - with alternates, it's enough that one matched entry's values are all stated;
   - text: the trimmed, case-folded value appears with word boundaries on both sides.
 - `forbid_visual = ["chart"]`: none of these kinds may be on the Surface.
-- `expect_empty = true`: every number in the answer rows is null or zero, and the prose is not
-  empty (a question about something that doesn't exist; a fuzzy match to a real entity fails).
-- `prose_no_numbers = true`: the prose has no number other than zeros, dates and years. It uses the
-  agent's bare-number rule in `macros.py` (which skips dates, financial years such as `FY2024-25`,
-  and years 1900–2099) on the filled prose, then ignores any number equal to zero (`0`, `0.00`,
-  `$0`). Numbers written in words are not caught.
+- `expect_empty = true`: the prose is not empty (a fail otherwise), and every number in the
+  answer rows is null or zero. A non-zero number makes the run **`needs_review`** (`review:
+  not_empty`), not a fail: rows can't tell helpful context ("125 agencies, 0 matching") from a
+  silent fuzzy match to a real entity, so a person reads it (amended after the first live run).
+- `prose_no_numbers = true`: the model **typed** no number other than zeros. It reads the bare
+  numbers the agent logged for the Turn (the agent's rule in `macros.py`, which skips dates,
+  financial years such as `FY2024-25`, and years 1900–2099, and never includes values filled from
+  Results through `Cite`), then ignores any number equal to zero. Numbers written in words are not
+  caught. (Amended after the first live run: it read the filled prose, so a `Cite` value failed it.)
 - `smoke = true`: passes if the Turn doesn't fail. For behaviour no rule can judge from text (a
   refused write). Smoke runs are **left out of the pass rate**: they can't fail on the agent's
   answer. The report prints their prose for a person to read.
@@ -127,7 +130,7 @@ A scenario has a `reference`, `expect_empty`, or `smoke`. One with none of them 
      3. if there is a `reference`: every expected value of the reference, or of one `alternate`,
         matches some cell of the answer rows, and, with `answer_in`, is stated there too;
      4. `expect_empty` and `prose_no_numbers` hold, if set. A `smoke` scenario needs only 1.
-   - A run that would pass but also matches a `wrong` entry is **`needs_review`**, not `pass`: the
+   - A run that would pass but has a `review` item (`not_empty`), or matches a `wrong` entry, is **`needs_review`**, not `pass`: the
      Surface shows a known wrong reading next to the right one (a hedge), and only a person can
      tell which one it presents as the answer.
    - Every record names its fail reasons (`failure`, `no_visual`, `forbidden_visual`, `missing` with
@@ -166,7 +169,7 @@ All in `agent/tests/test_scenarios.py` unless stated. No model, network or datab
 | 5 | An alternate's values pass; a wrong entry is named when it matches, on failing and passing runs | `test_score_alternate`, `test_score_names_wrong_answer[fail, pass]` |
 | 6 | Answer rows come from the Surface's `SqlDetails`, deduplicated, rerun through the runner | `test_answer_rows_from_surface_sql` |
 | 7 | `answer_in`: a value only in a reused table fails; stated in a Metric or the prose passes; whole tokens only (`37`, `$37`, `1,234` count; `137`, `37.5` don't) | `test_answer_in[...]`, `test_stated[...]`, `test_answer_in_accepts_any_matched_entry_that_is_stated` |
-| 7a | `forbid_visual`; `expect_empty` (a table of a real agency's figures fails; null, zero and empty rows pass; empty prose fails); `prose_no_numbers` (`0`, `0.00`, `$0`, dates, years and `FY2024-25` allowed; `2` fails); `smoke` | `test_empty_checks[...]`, `test_smoke_passes_unless_the_turn_fails` |
+| 7a | `forbid_visual`; `expect_empty` (a non-zero number in the rows → `needs_review`; null, zero and empty rows pass; empty prose fails); `prose_no_numbers` reads the typed numbers (a typed `2` fails; typed zeros and `Cite`-filled values don't); `smoke` | `test_empty_checks[...]`, `test_live_not_found_answer_is_not_failed`, `test_smoke_passes_unless_the_turn_fails` |
 | 7b | `write_attempted` flag from the guard; `over_max_model_calls` flag; neither fails a run | `test_flags` |
 | 8 | A reference that fails or is empty stops the run before the agent starts | `test_reference_failure_stops_run[...]`, `test_references_record_rows_and_time`, `test_references_reject_truncated_and_null[...]`, `test_duplicate_wrong_labels_are_rejected` |
 | 9 | Multi-turn: turns share a `context_id`; only the last Turn is scored; a failed earlier Turn ends the scenario; the real A2A server returns a `contextId` | `test_multi_turn_context` (stub A2A transport), `test_a_failed_earlier_turn_ends_the_scenario`, `test_effort_check.py::test_ask_against_stub_agent` |
@@ -260,6 +263,12 @@ to be decided on the recommendations:
    prepared statements on the sixth run of a statement (`sql.py`, `prepare_threshold=None`).
    Re-review: all resolved, no blocker. Known limit, deferred: a count equal to a year (1900–2099)
    can never be "stated", because years are stripped first; no scenario has one.
+10. **First live run (7/8 passed).** Two scenario fixes, not agent fixes: `no-such-agency` failed a
+    correct not-found answer ("125 agencies, 0 matching") because `prose_no_numbers` read the
+    filled prose and `expect_empty` failed on a context count (both amended above, with a
+    regression test); `top-growth-fy2324` was `blocked`: Meta's filter rejects "grew the most in
+    dollars" (a probe reproduced it), so the question now says "had the largest dollar increase
+    in value", which the probe accepted.
 
 **Next batch** (after these 10 are signed off), including the refuter's trap suggestions: a top list
 holding the FMS account (dropped only with a stated reason); corporate groups (BAE has three

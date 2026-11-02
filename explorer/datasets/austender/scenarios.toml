@@ -50,7 +50,8 @@ expect = ["total_value"]
 id = "top-growth-fy2324"
 reviewed = true
 categories = ["amendments", "ranked-list"]
-turns = ["Which 10 contracts published in 2023-24 grew the most in dollars through amendments, from what to what?"]
+# "grew the most in dollars" is blocked by Meta's content filter (probed 2026-11-02); this wording is not.
+turns = ["Which 10 contracts published in 2023-24 had the largest dollar increase in value through amendments, from what to what?"]
 visual = ["table"]
 
 [scenario.reference]
