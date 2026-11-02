@@ -57,8 +57,12 @@ The v0.9 messages a Case expects, and their canonical Express decompile, which i
 _Avoid_: Gold, answer, label
 
 **Detail level**:
-How much of the Reference an Intent spells out: terse, medium or specific. The Reference sets only what its Intent asks for.
+How much of a Synthetic row's Intent spells out, in the user's words: terse (purpose and content), medium (adds where each piece goes) or specific (adds styling). Whatever the Intent leaves unsaid follows the House style.
 _Avoid_: Verbosity, difficulty
+
+**House style**:
+The fixed look a Synthetic row's Reference takes wherever its Intent says nothing about styling. A specific Intent states only the departures from it.
+_Avoid_: Defaults, theme
 
 **Gallery row**:
 A Case made from a Family's Template.

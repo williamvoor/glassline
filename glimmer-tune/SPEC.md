@@ -674,6 +674,169 @@ S2 (the coverage half), S3, S4, S5, S6, S7, S9, S10, S11, S14 and S15. S4's forc
   - **Terse states layout in plain words.** "Side by side" means a Row, "in a card" means a Card, and stacked is the default Column. A terse target is then fully determined by its intent.
   - **Fit filter:** needs are inferred from the blocks (a list needs an entity, a field block needs fields of a fitting kind). A skeleton can also add an optional `requires:` list for semantic needs, such as `money_field` for checkout.
   - **Held out** skeletons are a reserve. They are never used for training or dev, and are generated only to probe generalisation later. "Family" means gallery designs only (`glimmer-tune/CONTEXT.md`).
+- Decided in A2 grilling (2026-11-01, after 2d). These amend the items above and 2d's "2c-1 intents" note:
+  - **House style replaces "the target follows the intent".** Terse and medium targets carry a fixed, deterministic set of default props, worked out from content and role (for example: an actions row is `justify: end`, the submit button is `primary`). The target is still fully determined by the intent plus the house style. Specific intents state only departures from it. Reason: gallery references keep their props when the intent doesn't ask for them (2d), so a no-props synthetic target would teach the opposite habit. The explorer's users never name props, so the unprompted look is the product.
+  - **Detail levels in the user's words.** Terse states the purpose and all content and values, with layout words only where the layout isn't the default ("side by side", "in a card"). Medium adds the placement and grouping of every piece ("a heading at the top, then the three fields, with two buttons side by side at the bottom"). Specific adds styling in everyday words ("a large heading", "the buttons spread out", "a password field").
+  - **Events.** Event names stay `snake_case(label)` (true for all 320 vocabulary actions) and are never stated. Form submits send every input, as now. Other buttons are bare, or, for a list item, send the item, keyed and pathed by the label rule. The intent says that in words ("pick this flight"). The random display-path context (`fill.py` `event_context`) is removed.
+  - **Enum phrase table.** A committed table maps each enum value to its everyday phrase. A few words real users say are allowed ("avatar", "caption", "fill the width"). Pure-engineering distinctions (spaceAround vs spaceEvenly, h4 vs h5, and the like) get no phrase. Those values never appear in synthetic targets, and their coverage keys come off the target list, which SPEC lists. The user approves the table before it is built.
+  - **Icons** are stated as humanised names ("a calendar icon", "a back arrow"), with an override table for odd names. Ambiguous pairs (one description fitting two icons) are checked and resolved in the table.
+  - **House style source:** the gallery's majority habits, role by role. Screen title `## `, section heading `### ` (markdown marks, never `h1`–`h5`, as in the gallery), secondary text `caption`, Row `align: center`, actions Row `justify: end`, Image `fit: cover`, other props unset. One departure from the gallery majority: the submit Button is `primary`.
+  - **Coverage:** house-style values count toward coverage. The terse and medium floors (25% each) stay, and the row count rises until coverage is met. Checkpoint (b) reports the count it took. Above 6000 rows, we revisit.
+  - **Phrasing variety:** at least 3 hand-written phrasings per detail level, picked at random. The LLM rewording in 2c-3 stays optional.
+  - **Cut order if time runs short before 2026-11-30:** first the size tail, then the milestone 3 runner (compare base and tuned by hand). Never fall back to gallery-only training.
+  - **Self-checks (decided by Claude at the user's request):** a terse or medium target holds no enum value outside the house style; a specific intent holds the phrase for every departure (S9 extended); every synthetic event equals `snake_case(label)`. The house style, the phrase table and the icon table are each one module, with tests.
+  - **Checkpoint (b) is re-issued after A2 (Q10 confirmed):** a coverage report plus 10 samples, with 3 samples per detail level, approved before full-size generation.
+
+## 2c-1 A2: house style, intents in the user's words, fit and size
+
+Status: **in build** (2026-11-01). It implements every decision in the two grilling blocks above (build A and A2), plus 2d step 4. ADR 0011 records why. It replaces the "Intents" and "Intents (made concrete)" sections for synthetic rows wherever the two disagree.
+
+### Files
+
+- `a2ui_eval/synth/style.py` (**new**): the house style (`house_style(node) -> dict[prop, value | None]`), the set of *style props*, and the phrase table for departures.
+- `a2ui_eval/synth/phrases.py` (**new**): the icon phrase table, the regex phrase per field kind, date-format rendering, and the opening sentences for each detail level.
+- `a2ui_eval/synth/fill.py`: style values are drawn from the house style or the phrase table (never an unphrased value); events follow the event rules; template list items may hold an item button.
+- `a2ui_eval/synth/grow.py`: the item button; the size target draws from the tail.
+- `a2ui_eval/synth/intents.py`: rewritten describer; S9 amended.
+- `a2ui_eval/synth/pipeline.py`: the detail choice, the house-style normalisation, the fit filter and the size tail.
+- `a2ui_eval/synth/skeleton.py`: an optional `requires:` key.
+- `a2ui_eval/synth/coverage.py`: `SynthConfig` gains `tail` and `detail_floor`.
+- `tests/test_synth_style.py`, `tests/test_synth_phrases.py` (**new**), plus amendments to the existing `test_synth_*` tests.
+
+### Style props and the house style
+
+A *style prop* is one of: `Text.variant`, the heading mark on a title or section Text, `Image.fit`, `Image.variant`, `Row.justify`, `Row.align`, `Column.justify`, `Column.align`, `List.align`, `Button.variant`, `ChoicePicker.displayStyle` and `weight`. Every other prop is content or follows from content, and is stated (or derived) at every level: `TextField.variant` from the field kind, `ChoicePicker.variant` from "pick one" or "pick any", `List.direction: horizontal` from "scrolling sideways", and `Divider.axis` (vertical inside a Row, else unset).
+
+The house style, by role:
+
+| Where | House value |
+|---|---|
+| title Text | text starts with `## `, no variant |
+| section Text | text starts with `### `, no variant |
+| kv_label, stat_label | `variant: caption` |
+| every other Text | unset |
+| every Row | `align: center` |
+| actions Row | `justify: end` (and `align: center`) |
+| other Row, Column, List | justify and align unset |
+| Image | `fit: cover`, variant unset |
+| submit Button | `variant: primary` |
+| other Button | unset |
+| ChoicePicker | displayStyle unset |
+| weight | unset |
+
+Departures and their phrases (used only at `specific`). A value with no phrase is never generated:
+
+| Prop | Value → phrase |
+|---|---|
+| title mark | `# ` → "a big title" |
+| section mark | `#### ` → "a small section heading" |
+| Text.variant (non-heading) | caption → "in small print"; h4 → "in large text"; unset on a label → "the label in regular text" |
+| Image.fit | contain → "shown whole, uncropped"; fill → "squashed to fill its frame" |
+| Image.variant | icon → "icon-sized"; avatar → "as an avatar"; smallFeature → "small"; largeFeature → "large"; header → "as a banner across the top" |
+| Row.justify | start → "on the left"; center → "centred"; end → "on the right"; spaceBetween → "spread to both ends"; spaceEvenly → "evenly spaced" |
+| Row.align | start → "lined up at the top"; end → "lined up at the bottom"; stretch → "all the same height" |
+| Column.justify | center → "centred top to bottom"; end → "pushed to the bottom"; spaceBetween → "spread out top to bottom" |
+| Column.align, List.align | start → "left-aligned"; center → "centred"; end → "right-aligned"; stretch → "full width" |
+| Button.variant | primary (not submit) → "as the main button"; borderless → "as a plain text button"; unset on submit → "as an ordinary button" |
+| ChoicePicker.displayStyle | chips → "as chips"; checkbox → "as tick boxes" |
+| weight | 1 → "taking up the spare room"; 2 → "taking twice the room" |
+
+Never generated: `h1`–`h3` and `h5` as Text variants, `body`, `Image fit: none` and `scaleDown`, `mediumFeature`, `spaceAround`, justify `stretch`, Column justify `start` and `spaceEvenly`, and Button `default`. Their coverage keys are unaffected, because `prop:` keys are per slot, not per value.
+
+### Detail levels and the mix
+
+- **terse:** purpose, then every piece in tree order: its content and values, plus a layout word wherever the structure isn't a plain stack ("side by side", "in a card", "a group of", "tabs", "a pop-up", "a line").
+- **medium:** the same pieces, in sentences that place each one ("at the top", "below that", "at the bottom", "inside the card").
+- **specific:** medium plus the phrase for every departure from the house style.
+
+Every level is enough to rebuild the target, given the house style and the derivation rules below. The pipeline fills the tree with variety, then decides:
+1. If the tree has a departure whose prop or pattern coverage key is in deficit, and the specific share would stay at or under `1 - 2 × detail_floor` (50%), the row is specific.
+2. Otherwise every style prop is reset to the house style, and the row is terse or medium, whichever has fewer rows so far.
+
+Each level has at least 3 openings and 2 joining styles, picked by the row's rng.
+
+### What an intent never states, and how the target derives it
+
+| In the target | Rule |
+|---|---|
+| input, list, bound-value and media paths | the label rule: `path_for_label(label)`, with ` icon`, ` image`, ` video`, ` audio`, ` count`, ` earliest` and ` latest` suffixes as now; nested values are under `path_for_label(section)`, and the intent says "in the <section> part of the data"; template paths `key_for_label(column)`; static bound items `<list>/<i>/<key>` |
+| event names | `snake_case(button label)` (true for all 320 vocabulary actions) |
+| event context | the form button sends every input, keyed by `key_for_label(label)`, and the intent says "that submits the form". An item button in a template list sends `{key_for_label(first column): {path: key_for_label(first column)}}`, and the intent says "that sends this item's <column>". Every other button is bare. The random display-path context is gone. |
+| ChoicePicker option values | `key_for_label(option label)` |
+| regexes (validationRegexp and the regex check) | from the field kind, via its phrase ("letters, numbers and basic punctuation only", "must look like an email address", …) |
+| formatDate formats | the intent shows the value rendered ("shown like \"Wed, Mar 4\"") |
+| formatString bodies | interpolation: `"<label>: ${path}"`, stated as "\"<label>: \" then the value"; pluralize: stated as "shown as \"3 flights\"" |
+| check conditions | from the message, which is quoted |
+| icon names | the icon phrase table (59 names, every phrase unique) |
+
+Bound values are stated as "<label> from the data (now X)". Literal values are quoted.
+
+### Item button
+
+A template list item gets an item Button (label from an unused topic action) with a probability that rises with the deficit of `action:event_context` (base 0.2, 0.6 in deficit). A static item never gets one.
+
+### Fit filter
+
+A skeleton's needs are inferred from its required blocks (`field`, `kv` and `stats` need fields of a fitting kind; `list` needs an entity with a non-boolean column; `choices` needs a choice group; `submit` and `actions` need actions). An optional `requires:` list adds semantic needs from a fixed set: `money_field`, `date_field`, `secret_field`, `plural_entity`. Unknown requirements fail loading. The pipeline only draws topics that meet the skeleton's needs. A skeleton with no fitting topic in a domain doesn't use that domain. `checkout_summary` requires `money_field`.
+
+### Size tail
+
+`SynthConfig.tail = (0.15, (25, 40))`: 15% of draws aim at 25–40 components, the rest at 5–24. The accepted rows must have 10–20% at 25–40 components.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| A1 | In every terse and medium row, every style prop equals the house style | `test_synth_style.py::test_terse_medium_follow_house_style` |
+| A2 | In every specific row, every departure's phrase appears in the intent, and no unphrased value appears anywhere | `test_synth_style.py::test_specific_states_departures`, `::test_no_unphrased_values` |
+| A3 | Over a run of 300: terse ≥ 25%, medium ≥ 25%, specific ≤ 50% | `test_synth_pipeline.py::test_detail_floors` |
+| A4 | No synthetic intent, outside its quoted strings, has a catalog component name, a 2d prop word, a `/path`, a backtick or an event name | `test_synth_intents.py::test_synth_intents_in_user_register[detail]` |
+| A5 | S9 as amended: every literal text and data value appears, with the phrased forms in the table above; paths and event names are not checked | `test_synth_intents.py::test_required_identifiers_present[detail]` (amended), `::test_phrased_literal_missing_is_a_gap` |
+| A6 | Every path in the target is derived by the rules above from a label, section or column stated in the intent | `test_synth_intents.py::test_paths_follow_label_rule` |
+| A7 | Every event name is `snake_case(label)`, every event context is a form context or an item-button context | `test_synth_style.py::test_event_rules` |
+| A8 | Every style value has a phrase or is listed as never generated; every Icon enum name has a phrase; phrases are unique per prop and across icons | `test_synth_phrases.py::test_tables_complete`, `::test_phrases_unique` |
+| A9 | Over 300 rows, each level shows at least 3 different openings | `test_synth_intents.py::test_openings_vary` |
+| A10 | `requires:` is parsed; an unknown need fails loading; the pipeline never pairs a skeleton with a topic that lacks its needs | `test_synth_skeletons.py::test_requires`, `test_synth_pipeline.py::test_fit_filter` |
+| A11 | 10–20% of accepted rows have 25–40 components | `test_synth_pipeline.py::test_size_tail` |
+| A12 | `action:event_context` is reached in a 600-row coverage run | `test_synth_coverage.py` (amended) |
+| A13 | The existing suite passes | `uv run pytest` |
+
+### Decisions (A2 build)
+
+- Style variety is generated as now (coverage-weighted), but only from phrased values. Normalising to the house style happens after the detail choice and before validation, so dedup, fingerprints and coverage see the final target.
+- `DETAILS` keeps its order. The `detail` field on rows stays.
+- Bound icons are stated as "a <phrase> icon from the data"; the data value is the catalog name.
+- The purpose opening names the screen kind (form, dialog, list, media or detail) as now, in one of the openings.
+- Checkpoint (b) is re-run after the refute: a coverage report on 3000 train and 200 dev rows, plus 10 samples with 3 per level. Above 6000 rows needed, we revisit.
+- **Amended during the build (2026-11-02), before the refute:**
+  - Skeleton-fixed props (`props:` in a skeleton) are style props like any other: stated at specific, reset to the house style at terse and medium.
+  - `SynthConfig.always_set` gains `Row: align` and `Image: fit`, since the house style always sets them. Patterns without them leave the coverage universe.
+  - Other values never generated, because they are the catalog default with no visible difference: `TextField.variant: shortText` (text, email, date and time fields leave the variant unset), `List.direction: vertical`, and `Divider.axis` outside a Row (a Divider sets `axis: vertical` only inside a Row).
+  - A fill with no allowed pattern is a `FillError` (`no_pattern`), not a fallback that could break the rules. The form button may still fall back to a modal trigger. A form whose only buttons are item buttons is a `FillError`.
+  - Nested sequences of two or more pieces are put in parentheses at every level, so where a group ends is never ambiguous.
+  - formatDate is shown on one fixed example date (2026-03-04), not on the bound value, so a template list's format is stated once.
+  - **Bug fixed (regression test first):** bound static-list siblings drew their own format arguments (date pattern, decimals, grouping, currency). They now share them per column (`test_synth_plausibility.py::test_static_list_siblings_share_format_args`).
+  - **Divider in a Row:** no train skeleton put a divider inside a Row, so `prop:Divider.axis` became unreachable. `dashboard_grid` gains an optional divider between its two cards, and open slots inside a Row pull dividers by that key.
+  - **Size tail:** with draws alone, only 2–5% of rows reached 25 components, because only 4 train skeletons can grow that large. It is now a quota. While accepted tail rows are under 15%, the next draw aims at the tail, may grow open slots to twice their count, prefers skeletons that have reached the tail before, and is rejected (`tail_miss`) if it falls short. After 5 tail draws (`TAIL_PROBES`), a skeleton stays a tail candidate only while at least 10% of its tail draws hit (`TAIL_MIN_RATE`). (Round 1 regression: one early hit kept `search_results` a candidate forever, `test_tail_quota_drops_rare_hitters`.) The cost is about 20% more attempts. **Tail rows come almost only from faq_sections, detail_sheet, checkout_summary and tabbed_detail.** A regression test covers a skeleton that can never reach the tail (`test_tail_quota_skips_small_skeletons`).
+  - A12 is checked by the existing 400-row coverage run (`test_every_key_reached`), not a separate 600-row run.
+- **Refute round 1 (2026-11-02): FAIL, all BLOCKER/MAJOR fixed with a regression test first.**
+  - The tail quota is capped as well as floored: every accepted row of 25 or more components counts, and at quota an untargeted draw that lands in the tail is rejected (`tail_over`). This holds on dev too (`test_size_tail_dev`).
+  - A `validationRegexp` is stated as "accepts <phrase>", and a regex check as "checked for <phrase>" after its message. The regex phrases are now nouns ("an email address", "digits only", …).
+  - Every formatNumber is stated with "as a number", so a bare one differs from a raw value. S9 requires it.
+  - `ChoicePicker.filterable` is set only when true (4 or more options). `false` is never generated.
+  - A node's phrases are bracketed right after its own words ("… (taking up the spare room)"). A kv or icon row with phrases of its own reads "the pair (…): A next to B", and a stat reads "a stat (…): …". The tabs list, the records list and static items are bracketed as a group.
+  - S9 also requires a CheckBox's state ("ticked", "not ticked" or "left empty") and, for every event, a quoted label whose snake_case is the event name (this covers icon buttons).
+  - Medium and specific get a second joining style ("…, followed by …, and finally …").
+  - Openings use the right article ("an events app").
+  - Build B (built in parallel, `docs/spec-build-b.md`) is merged into the working tree, and the S8 linter runs in the pipeline after validation (`Reject("lint")`). On 400 train and 150 dev rows: 0 train and 2 dev rejections, both `body_words`.
+  - Deferred: the fit filter ignores the minimum counts of open slots, which only costs attempts. Rejected: "an email field" stays, because users say it and it is true.
+  - **Noted:** the detail mix runs at the cap, about 25/25/50. A departure key is almost always hungry, so it is "coverage-steered" only in that it is capped. Specific rows also carry many weights. Both should be judged on the checkpoint (b) samples.
+
+### Non-goals
+
+- Gallery rows don't change.
+- No LLM rewording (2c-3).
+- No new skeletons or vocabulary.
 
 ## 2c-2 and 2c-3 outline
 
