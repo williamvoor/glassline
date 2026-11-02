@@ -143,3 +143,58 @@ def write_overlay_dataset(root: Path, overlay: str = BS_OVERLAY) -> Path:
     (d / "glossary.md").write_text("- term: meaning\n", encoding="utf-8")
     (d / "comments.toml").write_text(overlay, encoding="utf-8")
     return d
+
+
+# Phase 2b: a valid submit_draft for the `bs` schema. Missing comments in bs: mixed.name,
+# mixed.created, fresh, fresh.x, slow.n; mixed.amount gets a proposed rewrite.
+BS_DATASET_TOML = (
+    'name = "bs"\ndescription = "Bootstrap fixture."\nallowed_schemas = ["bs"]\n'
+    'glossary = "glossary.md"\nnotes = "notes.md"\n\n[currency]\ncode = "AUD"\nsymbol = "$"\n'
+)
+
+
+def valid_args() -> dict:
+    return {
+        "files": {"dataset_toml": BS_DATASET_TOML, "notes_md": "- Prefer bs.mixed.\n",
+                  "glossary_md": "- **grade**: a 1-7 score.\n"},
+        "comments": [
+            {"object": "bs.mixed", "column": "name", "comment": "Name code, 'a' or 'b'; NULL when unknown."},
+            {"object": "bs.mixed", "column": "created", "comment": "Creation date."},
+            {"object": "bs.mixed", "column": "amount", "comment": "Amount in Australian dollars."},
+            {"object": "bs.fresh", "column": "", "comment": "A small table that was never analysed."},
+            {"object": "bs.fresh", "column": "x", "comment": "An integer."},
+            {"object": "bs.slow", "column": "n", "comment": "Row number."},
+        ],
+        "claims": [
+            {"text": "bs.mixed has 100 rows", "file": "notes.md", "sql": "SELECT count(*) FROM bs.mixed",
+             "expect": {"kind": "scalar", "value": 100, "abs_tol": 0, "rel_tol": 0}},
+            {"text": "grade is 1 to 7", "file": "glossary.md", "sql": "SELECT DISTINCT grade::text FROM bs.mixed",
+             "expect": {"kind": "set", "values": ["1", "2", "3", "4", "5", "6", "7"]}},
+            {"text": "Name code, 'a' or 'b'", "file": "comments", "sql": "",
+             "expect": {"kind": "none"}},
+        ],
+    }
+
+
+@pytest.fixture
+async def bs_report(ro_pool):
+    from explorer_bootstrap.report import build_report
+
+    return (await build_report(ro_pool, ["bs"], database={"host": "h", "name": "d"}, minmax=False)).to_dict()
+
+
+@pytest.fixture
+def bs_report_sync(pg):
+    """The bs report for sync tests (which can't use the async ro_pool)."""
+    import asyncio
+
+    from explorer_bootstrap.report import build_report
+
+    async def build():
+        pool = await _open(pg.ro_dsn, 5000)
+        try:
+            return (await build_report(pool, ["bs"], database={"host": "h", "name": "d"}, minmax=False)).to_dict()
+        finally:
+            await pool.close()
+
+    return asyncio.run(build())

@@ -156,3 +156,66 @@ def test_overlay_text_line(pg, monkeypatch, capsys, tmp_path):
         code, out, _ = _run(capsys, "report", *argv, "--no-minmax")
         assert code == 0
         assert not [line for line in out.splitlines() if line.startswith("Comment overlay")]
+
+
+# Phase 2b: L1, L2
+@pytest.mark.db
+def test_draft_verify_export(pg, monkeypatch, capsys, tmp_path):
+    from explorer_agent.testing.stub_model import ScriptedCompletion, tool_calls
+
+    from conftest import valid_args
+
+    monkeypatch.setenv("BOOTSTRAP_DATABASE_URL", pg.ro_dsn)
+    args = valid_args()
+    args["claims"][0]["expect"]["value"] = 99  # will fail
+    model = ScriptedCompletion([
+        tool_calls(("run_sql", {"sql": "SELECT count(*) AS n FROM bs.mixed", "purpose": "count rows"})),
+        tool_calls(("submit_draft", args)),
+    ])
+    monkeypatch.setattr(cli, "COMPLETION", model)
+    out_file = tmp_path / "draft.json"
+    code, out, err = _run(capsys, "draft", "--schemas", "bs", "--out", str(out_file), "--timeout-ms", "1000")
+    assert code == 0, err
+    assert "run_sql (count rows)" in out and "[failed]" in out and "[verified]" in out and "Files validate" in out
+    text = out_file.read_text(encoding="utf-8")
+    data = json.loads(text, parse_constant=lambda c: pytest.fail(f"invalid JSON constant {c}"))
+    assert text == json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    for secret in (RO_PASSWORD, "explorer_ro"):
+        assert secret not in text and secret not in out
+    assert str(tmp_path) not in text  # no local paths in the draft (the terminal names the file it wrote)
+    assert [c["result"]["state"] for c in data["claims"]] == ["failed", "verified", "needs_review"]
+    assert data["usage"]["totals"]["calls"] == 2
+
+    root = tmp_path / "datasets"
+    root.mkdir()
+    code, out, _ = _run(capsys, "export", "--draft", str(out_file), "--name", "bs", "--target", "toml",
+                        "--root", str(root))
+    assert code == 1 and "claim 1 is failed" in out and not (root / "bs").exists()
+
+    code, out, _ = _run(capsys, "verify", "--draft", str(out_file))
+    assert code == 1 and "block export" in out
+    data["claims"][0]["expect"]["value"] = 100  # the person fixes the claim
+    out_file.write_text(json.dumps(data), encoding="utf-8")
+    code, out, _ = _run(capsys, "verify", "--draft", str(out_file))
+    assert code == 0 and "[failed]" not in out
+
+    code, out, _ = _run(capsys, "export", "--draft", str(out_file), "--name", "bs", "--target", "sql",
+                        "--root", str(root))
+    assert code == 0 and "Apply comments.sql" in out
+    assert (root / "bs" / "comments.sql").is_file()
+
+
+def test_model_allowlist(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("BOOTSTRAP_DATABASE_URL", "postgresql://u:p@127.0.0.1:1/db")
+    code, _, err = _run(capsys, "draft", "--schemas", "bs", "--out", str(tmp_path / "d.json"), "--model", "openai/gpt")
+    assert code == 2 and "model must be one of" in err
+    monkeypatch.setenv("BOOTSTRAP_MODEL", "meta/muse-spark-1.3-contributor")
+    code, _, err = _run(capsys, "draft", "--schemas", "bs", "--out", str(tmp_path / "d.json"))
+    assert code == 2 and "model must be one of" in err
+
+
+def test_bad_draft_file(capsys, tmp_path):
+    bad = tmp_path / "d.json"
+    bad.write_text("{}", encoding="utf-8")
+    code, _, err = _run(capsys, "export", "--draft", str(bad), "--name", "x", "--target", "toml")
+    assert code == 2 and "not a version 1 draft" in err

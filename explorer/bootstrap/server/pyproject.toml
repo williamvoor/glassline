@@ -1,7 +1,7 @@
 [project]
 name = "explorer-bootstrap"
 version = "0.1.0"
-description = "Dev tool for adding a Postgres dataset to the explorer: report (phase 1)"
+description = "Dev tool for adding a Postgres dataset to the explorer: report, draft, export"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

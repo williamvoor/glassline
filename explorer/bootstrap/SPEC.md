@@ -196,3 +196,198 @@ from.
 ### Test command
 
 Same as phase 1.
+
+## Phase 2b: draft, claims, validation and export (library + CLI)
+
+Status: **approved** (2026-11-02; decided by the builder on the user's delegation). Related:
+ADR 0020 (Wonder only here), ADR 0023 (the draft arrives as a tool call). Phase 2c (HTTP server
+and Lit UI) wraps these functions; nothing in 2b depends on it. The CLI flow below is enough for
+the live run against `vicprop/` before the UI exists.
+
+### Files
+
+```
+server/src/explorer_bootstrap/
+  settings.py      BOOTSTRAP_* settings, the model allowlist, prices from prices.toml
+  prices.toml      per-model USD per 1M tokens: input, cached_input, output
+  draft_schema.py  the submit_draft tool schema and validate_draft_args()
+  prompts/draft.md the instructions (generic: nothing about any one dataset)
+  draft.py         build_draft_prompt(), run_draft() (the tool loop), Usage and cost
+  claims.py        verify_claim(), verify_claims(), export_blockers()
+  drafts.py        Draft dataclasses, to/from JSON, validate_files(), context size
+  export.py        export_dataset(), render_comments_toml(), render_comments_sql()
+  __main__.py      `draft`, `verify`, `export` subcommands
+server/tests/      test_draft.py, test_claims.py, test_drafts.py, test_export.py, test_cli.py (extended)
+```
+
+### Settings (env, after the repo root `.env`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BOOTSTRAP_MODEL` | `meta/muse-wonder-1.0` | Only `meta/muse-wonder-1.0` or `meta/muse-spark-1.3`; anything else is a usage error (exit 2) |
+| `BOOTSTRAP_REASONING_EFFORT` | `low` | Sent as `reasoning_effort`: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `none` is rejected (Wonder doesn't accept it) |
+| `BOOTSTRAP_MAX_TOOL_ITERATIONS` | `12` | Model calls per draft, including the submit |
+| `BOOTSTRAP_MAX_TOKENS` | `32000` | `max_tokens` per call |
+| `BOOTSTRAP_CALL_TIMEOUT_S` | `300` | Per model call (`asyncio.timeout`) |
+| `BOOTSTRAP_SQL_ROW_CAP` | `200` | Rows fetched per `run_sql` / claim query |
+| `BOOTSTRAP_ROWS_TO_MODEL` | `20` | Rows shown to the model per `run_sql` |
+
+The CLI's `--model` and `--effort` override the first two. Prices live in `prices.toml`, not code;
+a test checks them against LiteLLM's pinned cost map (Wonder $4.00 / $0.20 / $20.00, Spark
+$1.25 / $0.15 / $4.25 per 1M input / cached input / output).
+
+### The draft (model loop)
+
+- **Prompt**, built once per draft, stable prefix first: `prompts/draft.md` (instructions and the
+  output rules), then the report JSON (compact: sorted keys, no spaces). The user message is a
+  fixed sentence. No dates, IDs or paths. `prompt_cache_key = "bootstrap-<dataset or schemas>"`.
+  Same report → byte-identical prompt (test).
+- **Tools:** `run_sql(sql, purpose)` and `submit_draft(...)`. `run_sql` goes through
+  `SqlRunner` (guard on, the report's schemas as the allowlist, read-only, timeout, row cap) and
+  returns `{columns, rows (first ROWS_TO_MODEL, JSON-safe), row_count, truncated}` or
+  `{error: {sqlstate, message}}`. Never `list_tables`/`describe_table`: the report has it all.
+- **Loop:** call with both tools (no `tool_choice`, no `response_format`). Tool calls in one
+  reply run in parallel. A valid `submit_draft` ends the loop; if a reply also has `run_sql`
+  calls, they're ignored. An invalid one gets a tool error listing the problems (at most 20) and
+  the loop goes on. A reply with no tool calls gets one fixed nudge ("Call submit_draft with the
+  draft."). The cap counts every model call; reaching it without a valid draft is a
+  `DraftError`. A model exception is a `DraftError` with the exception's class name and its
+  message stripped of anything that looks like a key (never the env).
+- **Events:** `run_draft` takes an `on_event` callback: `{"type": "sql", "purpose", "sql"}`,
+  `{"type": "call", "usage": {...}}`, `{"type": "invalid_draft", "problems"}`. The CLI prints
+  them; phase 2c streams them.
+- **Usage and cost**, per call and totals: prompt, cached, completion, reasoning tokens,
+  latency, cost = (prompt − cached) × input + cached × cached_input + completion × output.
+  Reasoning tokens are assumed to be inside `completion_tokens` (OpenAI convention;
+  UNVERIFIED for Meta, noted in the README). Logged per call, without message content.
+
+### `submit_draft` arguments (JSON schema; all keys required, `additionalProperties: false`)
+
+```
+files:    {dataset_toml: str, notes_md: str, glossary_md: str}
+comments: [{object: "schema.table", column: str ("" = the object itself), comment: str}]
+claims:   [{text: str, file: enum(dataset.toml, notes.md, glossary.md, comments), sql: str,
+            expect: anyOf(
+              {kind: enum(scalar), value: number, abs_tol: number, rel_tol: number},
+              {kind: enum(set), values: [str]},
+              {kind: enum(none)})}]
+```
+
+Depth 5, no `oneOf`, no recursion. `validate_draft_args` checks the shape, plus: every comment
+names an object (and column) in the report; no duplicate (object, column); comments are
+non-blank; tolerances ≥ 0; `set` values are unique; `dataset_toml` has no `[comments]` table
+(export adds it). Problems are short strings naming the field path.
+
+A comment for something that has a comment in the report is a **rewrite**; anything else is
+**new**. The draft records `kind` (`new`/`rewrite`) and `accepted` (new: true, rewrite: false), so
+rewrites are never applied silently.
+
+### Claims
+
+`verify_claim` runs the claim's SQL through `SqlRunner` (same rules as `run_sql`) and returns a
+state, the actual result (first 20 rows, JSON-safe) and a message:
+
+| Expectation | verified | failed | error |
+|---|---|---|---|
+| `scalar` | 1 row × 1 column, a number (not bool), `abs(actual − value) ≤ max(abs_tol, rel_tol × abs(value))` | the number is outside | SQL fails, wrong shape, NULL or not a number |
+| `set` | 1 column, not truncated, set of values (as text: strings as is, others via JSON) equals `values` | sets differ (message lists missing and extra, up to 10 each) | SQL fails, more than one column, truncated |
+| `none` | never | never | SQL given and it fails |
+
+`none` is otherwise `needs_review` (SQL blank → not run). Never `verified` without a passing
+comparison. Every claim is verified, also after a failure in an earlier one. `export_blockers`
+lists claims whose state is `failed` or `error`, or that were never checked, and that aren't
+`dismissed`.
+
+### The draft file (`draft.json`)
+
+`{"draft_version": 1, "model", "effort", "report": <report JSON>, "files": {...},
+"comments": [{object, column, comment, kind, accepted}], "claims": [{text, file, sql, expect,
+dismissed: false, result: {state, actual, message}}], "usage": {calls: [...], totals}}`.
+Strict JSON, sorted keys, indent 2, no secrets or local paths. The person may edit it by hand
+(files, comment text, `accepted`, claim SQL/expectation, `dismissed`) and then run `verify`.
+
+### Validation (`validate_files(draft)`)
+
+Writes the three files to a temporary directory and runs `load_dataset`; returns `errors` (the
+`ConfigError` text, with the temp path replaced by `<dataset>`) and, when valid,
+`context_chars`: the Dataset context the explorer would build with the **accepted comments
+applied** (report objects → `TableInfo`, accepted comments → `CommentOverlay`, `apply_overlay`,
+`render_schema_section`, `dataset_context`). Also an error: `allowed_schemas` not a subset of the
+report's schemas; `[comments]` present; an accepted comment (possibly edited by hand) that
+names no reported object or column, repeats one, or is blank; `notes` or `glossary` not exactly `"notes.md"` /
+`"glossary.md"` (the names export writes).
+
+### Export (`export_dataset(draft, name, target, root)`)
+
+- Refuses (an `ExportError` listing every reason) when: `name` doesn't match `[a-z][a-z0-9_]*`;
+  `root/name` exists; `validate_files` has errors; `export_blockers` isn't empty; `target` isn't
+  `toml` or `sql`.
+- Writes `dataset.toml` (with `notes = "notes.md"`, `glossary = "glossary.md"` as drafted),
+  `notes.md`, `glossary.md`, and the accepted comments:
+  - `toml`: `comments.toml` in the overlay format (entries sorted by object, columns in report
+    column order; TOML strings escaped), and appends `[comments]\noverlay = "comments.toml"\n` to
+    `dataset.toml`.
+  - `sql`: `comments.sql`, one `COMMENT ON {TABLE|VIEW|MATERIALIZED VIEW|FOREIGN TABLE} … IS …;`
+    per object (kind from the report) and `COMMENT ON COLUMN … IS …;` per column, identifiers
+    double-quoted, literals single-quoted with `'` doubled, wrapped in `BEGIN;`/`COMMIT;`. The
+    tool never runs it.
+- Writes into a temporary sibling directory, then renames it to `root/name`, so a failure
+  leaves nothing behind. Never commits, never runs DDL.
+
+### CLI
+
+```
+uv run python -m explorer_bootstrap draft  (--dataset-dir P | --schemas a,b) --out draft.json [--model M] [--effort E]
+uv run python -m explorer_bootstrap verify --draft draft.json          # reruns every claim, rewrites the file
+uv run python -m explorer_bootstrap export --draft draft.json --name N --target toml|sql [--root DIR]
+```
+
+`draft` builds the report (same code as `report`, min/max on), runs the loop, verifies every
+claim, validates, writes `draft.json`, and prints progress, the claims table, validation and
+the usage/cost totals. `--root` defaults to `explorer/datasets`. Exit codes: 0 ok; 1 `export`
+refused, or `verify` finished with blockers; 2 usage, config, connection, model or runtime
+error. Messages never show the DSN or keys.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| D1 | Loop: `run_sql` → result → `submit_draft` ends it; kwargs carry model, both tools, `prompt_cache_key`, `reasoning_effort`, `max_tokens`, no `response_format`/`tool_choice` | `test_draft.py::test_loop_happy_path` |
+| D2 | The model's SQL that writes or reads an unchosen schema is refused by `guard` and returned as a tool error; the loop continues | `test_draft.py::test_guard_refuses_model_sql` (db) |
+| D3 | Invalid `submit_draft` → tool error with the problems, then a valid one succeeds; no tool calls → nudge; cap → `DraftError`; model exception → `DraftError` without secrets | `test_draft.py::test_invalid_then_valid`, `::test_nudge`, `::test_cap`, `::test_model_error` |
+| D4 | Prompt byte-identical for the same report; no per-run values | `test_draft.py::test_prompt_is_stable` |
+| D5 | Usage and cost totals from stub usage; prices match LiteLLM's map | `test_draft.py::test_usage_and_cost`, `::test_prices_match_litellm` |
+| D6 | `validate_draft_args`: each rule above | `test_drafts.py::test_validate_draft_args` (parametrised) |
+| D7 | rewrite vs new, `accepted` defaults | `test_drafts.py::test_comment_kinds` |
+| C1 | Claim states per the table, incl. NaN/NULL scalar, bool, truncated set, failing SQL in a `none` claim, and a failing claim not stopping the rest | `test_claims.py` (db, parametrised) |
+| C2 | Blockers: failed/error block unless dismissed; needs_review doesn't | `test_claims.py::test_export_blockers` |
+| V1 | `validate_files`: a valid draft gives no errors and the exact context size (equals the agent's computation over a Dataset dir exported with the overlay); bad TOML, missing key, `[comments]`, unchosen schema → errors without temp paths | `test_drafts.py::test_validate_files` (db) |
+| E1 | Export refuses: bad name, existing dir, invalid files, blockers; nothing is written | `test_export.py::test_export_refusals` |
+| E2 | The same draft exports to both targets with the same comments: `comments.toml` loads as an overlay, `comments.sql` applied as the owner gives the same comments in the database | `test_export.py::test_both_targets_same_comments` (db) |
+| E3 | The overlay export works through the read-only role: the explorer starts with `DATASET_DIR=<export>` (subprocess, as `test_main` does) | `test_export.py::test_explorer_starts_with_overlay_export` (db) |
+| E4 | Quoting: quotes, backslashes, newlines, DEL, non-BMP characters and odd identifiers round-trip through `comments.sql` (applied in the database) and `comments.toml` (`load_overlay`) | `test_export.py::test_sql_and_toml_quoting`, `::test_overlay_file_loads_with_tricky_text` (db) |
+| L1 | CLI `draft` with a stub model writes a strict, secret-free `draft.json`; `verify` and `export` exit codes | `test_cli.py::test_draft_verify_export` (db; the stub is injected through a module-level `COMPLETION` hook, never the network) |
+| L2 | Model allowlist and settings parsing | `test_cli.py::test_model_allowlist`, `test_draft.py::test_settings` |
+
+### Decisions
+
+- ADR 0023: the draft comes back as a `submit_draft` tool call, validated by us.
+- The draft is one model loop; there's no separate step per file.
+- No pre-run cost estimate in 2b (it's a UI feature in 2c); actual cost is logged.
+- Existing notes and glossary (with `--dataset-dir`) are not sent to the model; the report is.
+- `set` comparisons are on text; the prompt tells the model to cast to text in claim SQL.
+- `comments` claims refer to drafted comments; their checking works the same way.
+- `draft.json` is the hand-off between CLI steps and later the UI. Not a stable public format.
+- A comment is a rewrite when the report shows a comment for it (after any existing overlay). The
+  context size and both export targets build on the **database's** comments plus the accepted
+  draft comments: an existing overlay of a `--dataset-dir` Dataset is not carried into the new
+  directory. Bootstrapping is for new Datasets; redrafting one with an overlay is out of scope.
+- Unexpected exceptions: in a tool call they become a tool error (the draft goes on); anywhere
+  else in the CLI they exit 2 with the exception's class name only. Exit 1 means only "refused".
+- A `run_sql` call in the same reply as `submit_draft` is not run; it gets an "ignored" tool reply
+  (every tool call needs a reply).
+- Out of 2b: HTTP server, UI, pre-run estimate, the live run.
+
+### Test command
+
+Same as phase 1 (`uv run pytest`; Docker; never the network or a model).
