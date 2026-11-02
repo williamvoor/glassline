@@ -11,8 +11,12 @@ One database plus the configuration and hand-written notes that describe it to t
 _Avoid_: Database (for the whole bundle), source, domain
 
 **Data dictionary**:
-The descriptions of every table and column in the Allowed schemas, stored in the database itself. The agent's only description of the data.
+The descriptions of every table and column in the Allowed schemas, from the database's own comments, with any Comment overlay taking precedence. The agent's only description of the data.
 _Avoid_: Schema prompt, docs
+
+**Comment overlay**:
+Descriptions of tables and columns kept with the Dataset's configuration instead of in the database, each replacing the database's description of the same table or column.
+_Avoid_: Comment file, external comments
 
 **Dataset context**:
 The Dataset's notes, glossary and Data dictionary, as given to the agent. Identical for every question.

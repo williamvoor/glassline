@@ -73,6 +73,59 @@ def test_prompt_is_identical_across_processes(pg, fmt_name):
     assert len(outputs[0]) > 10_000
 
 
+# Builds the prompt from a dataset directory with a Comment overlay, the way __main__ does.
+OVERLAY_BUILD_SCRIPT = """
+import asyncio, os, sys
+from pathlib import Path
+from explorer_agent.config import load_dataset
+from explorer_agent.prompt import build_system_prompt, dataset_context
+from explorer_agent.schema import SchemaCatalog, render_schema_section
+from explorer_agent.sql import open_pool
+from explorer_agent.ui import UiPipeline
+
+async def main():
+    ds = load_dataset(Path(sys.argv[2]))
+    pool = open_pool(os.environ["EXPLORER_TEST_DSN"])
+    await pool.open(wait=True)
+    try:
+        section = render_schema_section(await SchemaCatalog(pool, ds.allowed_schemas, ds.comment_overlay).objects())
+    finally:
+        await pool.close()
+    sys.stdout.write(build_system_prompt(UiPipeline(sys.argv[1]).format, dataset_context(ds, section)))
+
+asyncio.run(main())
+"""
+
+OVERLAY_FILE = (
+    '["mart.supplier"]\ncomment = "OVERLAY supplier"\n'
+    + '\n["mart.contract".columns]\nnotice_id = "OVERLAY notice"\n'
+    + '\n["mart.agency"]\ncomment = "OVERLAY agency"\n'
+)
+
+
+# O7
+@pytest.mark.db
+def test_overlay_prompt_is_identical_across_processes(pg, tmp_path):
+    (tmp_path / "dataset.toml").write_text(
+        'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "g.md"\nnotes = "n.md"\n'
+        '[comments]\noverlay = "comments.toml"\n[currency]\ncode = "AUD"\nsymbol = "$"\n'
+    )
+    (tmp_path / "g.md").write_text("glossary\n")
+    (tmp_path / "n.md").write_text("notes\n")
+    (tmp_path / "comments.toml").write_text(OVERLAY_FILE)
+    outputs = []
+    for seed in ("0", "4242"):
+        env = {**os.environ, "PYTHONHASHSEED": seed, "EXPLORER_TEST_DSN": pg.ro_dsn}
+        done = subprocess.run(
+            [sys.executable, "-c", OVERLAY_BUILD_SCRIPT, "express", str(tmp_path)],
+            env=env, capture_output=True, check=True, timeout=120,
+        )
+        outputs.append(done.stdout)
+    assert outputs[0] == outputs[1]
+    text = outputs[0].decode()
+    assert "OVERLAY supplier" in text and "OVERLAY notice" in text and "OVERLAY agency" in text
+
+
 # P2
 @pytest.mark.parametrize("fmt_name", FORMATS)
 def test_layer_order(fmt_name):

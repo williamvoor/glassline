@@ -21,7 +21,7 @@ from psycopg_pool import PoolTimeout
 from explorer_agent.config import ConfigError, Settings, load_settings
 from explorer_agent.llm import LlmLoop, LoopConfig
 from explorer_agent.prompt import build_system_prompt, dataset_context
-from explorer_agent.schema import SchemaCatalog, render_schema_section
+from explorer_agent.schema import SchemaCatalog, overlay_problems, render_schema_section
 from explorer_agent.server import build_app
 from explorer_agent.sql import SqlRunner, StartupError, open_pool
 from explorer_agent.ui import UiPipeline
@@ -55,8 +55,13 @@ async def _serve(settings: Settings) -> None:
         schemas = settings.dataset.allowed_schemas
         runner = SqlRunner(pool, schemas, settings.sql_timeout_ms, settings.sql_row_cap)
         await runner.check_privileges()
-        catalog = SchemaCatalog(pool, schemas)
-        section = render_schema_section(await catalog.objects())
+        overlay = settings.dataset.comment_overlay
+        catalog = SchemaCatalog(pool, schemas, overlay)
+        objects = await catalog.objects()
+        problems = overlay_problems(objects, overlay)
+        if problems:
+            raise ConfigError(f"comment overlay {overlay.path}: {'; '.join(problems)}")
+        section = render_schema_section(objects)
         pipeline = UiPipeline.from_settings(settings)
         prompt = build_system_prompt(pipeline.format, dataset_context(settings.dataset, section))
         log.info(

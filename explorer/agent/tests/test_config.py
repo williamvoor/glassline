@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from explorer_agent.config import ConfigError, load_settings
+from explorer_agent.config import ConfigError, load_dataset, load_settings
 
 EXPLORER_ROOT = Path(__file__).resolve().parents[2]
 SECRET_DSN = "postgresql://explorer_ro:s3cret-pw@db.example:5434/austender"
@@ -159,3 +159,88 @@ def test_table_row_cap_reaches_the_tables(tmp_path):
     grid = next(c for m in ui.messages if "updateComponents" in m
                 for c in m["updateComponents"]["components"] if c["component"] == "DataGrid")
     assert len(grid["rows"]) == 10
+
+
+# Comment overlay (SPEC §13)
+OVERLAY_TOML = (
+    'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "glossary.md"\nnotes = "notes.md"\n'
+    '[comments]\noverlay = "comments.toml"\n[currency]\ncode = "EUR"\nsymbol = "€"\n'
+)
+GOOD_OVERLAY = (
+    '["mart.contract"]\ncomment = "One row per contract."\n'
+    '["mart.contract".columns]\nnotice_id = "Notice number."\n'
+    '["mart.agency".columns]\nagency_key = "Agency key."\n'
+)
+
+
+def write_overlay_dataset(tmp_path, overlay, toml=OVERLAY_TOML):
+    d = write_dataset(tmp_path, toml=toml)
+    if overlay is not None:
+        (d / "comments.toml").write_text(overlay, encoding="utf-8")
+    return d
+
+
+# O1
+def test_no_overlay_by_default(tmp_path):
+    write_dataset(tmp_path)
+    assert load_settings(env_for(tmp_path), tmp_path).dataset.comment_overlay is None
+
+
+# O2
+def test_overlay_loads(tmp_path):
+    d = write_overlay_dataset(tmp_path, GOOD_OVERLAY)
+    overlay = load_dataset(d).comment_overlay
+    assert overlay is not None and overlay.path == d / "comments.toml"
+    assert set(overlay.entries) == {"mart.contract", "mart.agency"}
+    assert overlay.entries["mart.contract"].comment == "One row per contract."
+    assert dict(overlay.entries["mart.contract"].columns) == {"notice_id": "Notice number."}
+    assert overlay.entries["mart.agency"].comment is None
+
+
+# O3
+@pytest.mark.parametrize(
+    ("toml", "overlay", "message"),
+    [
+        (OVERLAY_TOML.replace('[comments]\noverlay = "comments.toml"\n', 'comments = "x"\n'), None,
+         "[comments] must be a table"),
+        (OVERLAY_TOML.replace('overlay = "comments.toml"', 'overlay = "comments.toml"\nfile = "y"'), None,
+         "unknown key file"),
+        (OVERLAY_TOML.replace('overlay = "comments.toml"', "overlay = 3"), None, "comments.overlay must be"),
+        (OVERLAY_TOML.replace('overlay = "comments.toml"\n', ''), None, "missing key comments.overlay"),
+        (OVERLAY_TOML, None, "comment overlay file not found"),
+        (OVERLAY_TOML, '["mart.contract"\ncomment = "x"\n', "is not valid TOML"),
+        (OVERLAY_TOML, '[mart.contract]\ncomment = "x"\n', 'quoted "schema.table"'),
+        (OVERLAY_TOML, '["raw.release"]\ncomment = "x"\n', "not in an allowed schema"),
+        (OVERLAY_TOML, '"mart.contract" = "x"\n', "must be a table"),
+        (OVERLAY_TOML, '["mart.contract"]\ndescription = "x"\n', "unknown key 'description'"),
+        (OVERLAY_TOML, '["mart.contract"]\n', "neither comment nor columns"),
+        (OVERLAY_TOML, '["mart.contract"]\ncomment = "  "\n', "comment must be a non-empty string"),
+        (OVERLAY_TOML, '["mart.contract"]\ncomment = 3\n', "comment must be a non-empty string"),
+        (OVERLAY_TOML, '["mart.contract"]\ncolumns = "x"\n', "columns must be a table"),
+        (OVERLAY_TOML, '["mart.contract".columns]\nnotice_id = ""\n', "column 'notice_id'"),
+        (OVERLAY_TOML, '["mart.contract".columns]\nnotice_id = 1\n', "column 'notice_id'"),
+        (OVERLAY_TOML, '["mart.contract"]\ncolumns = {}\n', "neither comment nor columns"),
+        (OVERLAY_TOML, '["mart.contract".columns]\n', "neither comment nor columns"),
+        (OVERLAY_TOML.replace('overlay = "comments.toml"', 'overlay = " "'), None, "comments.overlay must be"),
+        (OVERLAY_TOML, b'["mart.contract"]\ncomment = "\xff"\n', "not valid UTF-8"),
+    ],
+)
+def test_overlay_errors(tmp_path, toml, overlay, message):
+    d = write_overlay_dataset(tmp_path, None, toml=toml)
+    if isinstance(overlay, bytes):
+        (d / "comments.toml").write_bytes(overlay)
+    elif overlay is not None:
+        (d / "comments.toml").write_text(overlay, encoding="utf-8")
+    with pytest.raises(ConfigError) as e:
+        load_dataset(d)
+    assert message in str(e.value)
+    # errors in the overlay file name it; errors in [comments] name dataset.toml
+    expected = "comments.toml" if overlay is not None or "file not found" in message else "dataset.toml"
+    assert expected in str(e.value)
+
+
+def test_overlay_error_never_quotes_comment_text(tmp_path):
+    d = write_overlay_dataset(tmp_path, '["mart.contract"]\ncomment = "SECRET-ish text"\ncolumns = 3\n')
+    with pytest.raises(ConfigError) as e:
+        load_dataset(d)
+    assert "SECRET-ish" not in str(e.value)

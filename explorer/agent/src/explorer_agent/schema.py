@@ -8,9 +8,11 @@ not depend on the data (no row estimates) and must be deterministic.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from psycopg_pool import AsyncConnectionPool
+
+from explorer_agent.config import CommentOverlay
 
 KINDS = {"r": "table", "p": "table", "v": "view", "m": "materialized view", "f": "foreign table"}
 
@@ -57,9 +59,12 @@ class TableInfo:
 
 
 class SchemaCatalog:
-    def __init__(self, pool: AsyncConnectionPool, allowed_schemas: Iterable[str]):
+    def __init__(
+        self, pool: AsyncConnectionPool, allowed_schemas: Iterable[str], overlay: CommentOverlay | None = None
+    ):
         self.pool = pool
         self.allowed_schemas = sorted(allowed_schemas)
+        self.overlay = overlay
 
     async def objects(self) -> list[TableInfo]:
         return await self._load(None)
@@ -80,7 +85,7 @@ class SchemaCatalog:
         by_table: dict[tuple[str, str], list[ColumnInfo]] = {}
         for schema, table, col, typ, nullable, comment in columns:
             by_table.setdefault((schema, table), []).append(ColumnInfo(col, typ, nullable, comment))
-        return [
+        found = [
             TableInfo(
                 schema=schema,
                 name=table,
@@ -91,6 +96,38 @@ class SchemaCatalog:
             )
             for schema, table, kind, comment, est in objects
         ]
+        return apply_overlay(found, self.overlay)
+
+
+def apply_overlay(objects: Iterable[TableInfo], overlay: CommentOverlay | None) -> list[TableInfo]:
+    """The one place the Comment overlay (ADR 0019) replaces database comments. Order is kept."""
+    if overlay is None:
+        return list(objects)
+    out = []
+    for t in objects:
+        entry = overlay.entries.get(t.qualified_name)
+        if entry is None:
+            out.append(t)
+            continue
+        columns = tuple(
+            replace(c, comment=entry.columns[c.name]) if c.name in entry.columns else c for c in t.columns
+        )
+        out.append(replace(t, comment=entry.comment or t.comment, columns=columns))
+    return out
+
+
+def overlay_problems(objects: Iterable[TableInfo], overlay: CommentOverlay | None) -> list[str]:
+    """Overlay entries naming a table or column that isn't in `objects` (drift after a schema change)."""
+    if overlay is None:
+        return []
+    known = {t.qualified_name: {c.name for c in t.columns} for t in objects}
+    problems = []
+    for name in sorted(overlay.entries):
+        if name not in known:
+            problems.append(f"unknown table {name}")
+            continue
+        problems.extend(f"unknown column {name}.{col}" for col in sorted(overlay.entries[name].columns) if col not in known[name])
+    return problems
 
 
 def _one_line(text: str) -> str:

@@ -86,3 +86,22 @@ def test_library_loggers_are_quiet_at_debug():
             assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING, name
     finally:
         logging.getLogger().setLevel(logging.WARNING)
+
+
+# O8
+@pytest.mark.db
+def test_overlay_drift_fails_startup(pg, tmp_path):
+    (tmp_path / "dataset.toml").write_text(
+        'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "g.md"\nnotes = "n.md"\n'
+        '[comments]\noverlay = "comments.toml"\n[currency]\ncode = "AUD"\nsymbol = "$"\n'
+    )
+    (tmp_path / "g.md").write_text("glossary\n")
+    (tmp_path / "n.md").write_text("notes\n")
+    (tmp_path / "comments.toml").write_text(
+        '["mart.gone"]\ncomment = "x"\n["mart.contract".columns]\nnotice_id = "ok"\nno_such_col = "x"\n'
+    )
+    done = run_main({"DATABASE_URL": pg.ro_dsn, "DATASET_DIR": str(tmp_path)})
+    assert_one_line_failure(
+        done, "comment overlay", "unknown table mart.gone", "unknown column mart.contract.no_such_col",
+        secret="explorer_ro:",
+    )

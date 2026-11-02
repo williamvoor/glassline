@@ -21,6 +21,27 @@ exits 1.
 - The client (`../client`) calls the agent directly (ADR 0007). For a UI without a model or
   database, use the stub server: `uv run python -m explorer_agent.testing.stub_server --port 10002`.
 
+### Comment overlay
+
+For a database we can't add comments to, a Dataset can keep table and column descriptions in a
+Comment overlay file (ADR 0019, `../SPEC.md` §13). Name it in `dataset.toml`:
+
+```toml
+[comments]
+overlay = "comments.toml"      # relative to dataset.toml
+```
+
+```toml
+["mart.contract"]              # quote "schema.table"
+comment = "One row per contract notice."
+["mart.contract".columns]
+notice_id = "Contract notice number. Primary key."
+```
+
+Each entry replaces the database's comment for that table or column. Everything else keeps its
+database comment. The overlay is read once at startup, so **an edit takes effect on restart**.
+An entry that names a table or column that doesn't exist in the allowed schemas stops startup.
+
 ## Test
 
 ```bash

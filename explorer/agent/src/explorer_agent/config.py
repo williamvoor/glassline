@@ -30,6 +30,20 @@ class Currency:
 
 
 @dataclass(frozen=True)
+class OverlayEntry:
+    comment: str | None
+    columns: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class CommentOverlay:
+    """The Comment overlay (ADR 0019): entries keyed by "schema.table", replacing database comments."""
+
+    path: Path
+    entries: Mapping[str, OverlayEntry]
+
+
+@dataclass(frozen=True)
 class Dataset:
     name: str
     description: str
@@ -37,6 +51,7 @@ class Dataset:
     notes: str
     glossary: str
     currency: Currency
+    comment_overlay: CommentOverlay | None = None
 
 
 @dataclass(frozen=True)
@@ -124,17 +139,72 @@ def load_dataset(dataset_dir: Path) -> Dataset:
     currency = key("currency")
     if not isinstance(currency, dict):
         raise ConfigError(f"{toml_path}: [currency] must be a table")
+    allowed = tuple(sorted(set(schemas)))
+    overlay = None
+    if "comments" in data:
+        comments = data["comments"]
+        if not isinstance(comments, dict):
+            raise ConfigError(f"{toml_path}: [comments] must be a table")
+        extra = sorted(set(comments) - {"overlay"})
+        if extra:
+            raise ConfigError(f"{toml_path}: [comments] has unknown key {extra[0]}")
+        path = key("overlay", comments, "comments.")
+        if not isinstance(path, str) or not path.strip():
+            raise ConfigError(f"{toml_path}: comments.overlay must be a file name")
+        overlay = load_overlay(dataset_dir / path, allowed)
     return Dataset(
         name=str(key("name")),
         description=str(key("description")),
-        allowed_schemas=tuple(sorted(set(schemas))),
+        allowed_schemas=allowed,
         notes=_read_text(dataset_dir / str(key("notes")), "notes"),
         glossary=_read_text(dataset_dir / str(key("glossary")), "glossary"),
         currency=Currency(
             code=str(key("code", currency, "currency.")),
             symbol=str(key("symbol", currency, "currency.")),
         ),
+        comment_overlay=overlay,
     )
+
+
+def _comment_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def load_overlay(path: Path, allowed_schemas: tuple[str, ...]) -> CommentOverlay:
+    """Parse and statically check a Comment overlay file. Messages never quote a comment's text."""
+    if not path.is_file():
+        raise ConfigError(f"comment overlay file not found: {path}")
+    try:
+        data = tomllib.loads(_read_text(path, "comment overlay"))
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path} is not valid TOML: {e}") from None
+    entries: dict[str, OverlayEntry] = {}
+    for name, value in data.items():
+        schema, dot, table = name.partition(".")
+        if not dot or not schema or not table:
+            raise ConfigError(
+                f'{path}: entry {name!r} must be a quoted "schema.table" key, e.g. ["mart.my_table"]'
+            )
+        if schema not in allowed_schemas:
+            raise ConfigError(f"{path}: entry {name!r} is not in an allowed schema")
+        if not isinstance(value, dict):
+            raise ConfigError(f"{path}: entry {name!r} must be a table")
+        extra = sorted(set(value) - {"comment", "columns"})
+        if extra:
+            raise ConfigError(f"{path}: entry {name!r} has unknown key {extra[0]!r}")
+        comment = value.get("comment")
+        if comment is not None and not _comment_text(comment):
+            raise ConfigError(f"{path}: entry {name!r}: comment must be a non-empty string")
+        columns = value.get("columns", {})
+        if not isinstance(columns, dict):
+            raise ConfigError(f"{path}: entry {name!r}: columns must be a table")
+        for col, text in columns.items():
+            if not _comment_text(text):
+                raise ConfigError(f"{path}: entry {name!r}: column {col!r} must have a non-empty string comment")
+        if comment is None and not columns:
+            raise ConfigError(f"{path}: entry {name!r} has neither comment nor columns")
+        entries[name] = OverlayEntry(comment=comment, columns=dict(columns))
+    return CommentOverlay(path=path, entries=entries)
 
 
 def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:

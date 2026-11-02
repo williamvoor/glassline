@@ -1,9 +1,11 @@
 from decimal import Decimal
+from pathlib import Path
 
 from austender import mart
 
 import pytest
 
+from explorer_agent.config import CommentOverlay, OverlayEntry
 from explorer_agent.results import ResultStore
 from explorer_agent.schema import SchemaCatalog
 from explorer_agent.sql import SqlRunner
@@ -152,3 +154,20 @@ async def test_preview_cuts_nested_text(toolbox):
     row = out["rows_preview"][0]
     assert len(row["j"]["k"]) == PREVIEW_TEXT_LIMIT + 1
     assert len(row["a"][0]) == PREVIEW_TEXT_LIMIT + 1
+
+
+# O6: the overlay reaches list_tables and describe_table
+@pytest.mark.db
+async def test_tools_see_overlay(ro_pool):
+    overlay = CommentOverlay(
+        Path("comments.toml"), {"mart.contract": OverlayEntry("OVERLAY contract", {"notice_id": "OVERLAY notice"})}
+    )
+    box = ToolBox(SqlRunner(ro_pool, ("mart",), 5000, 100), SchemaCatalog(ro_pool, ["mart"], overlay), ResultStore(), 3)
+    listed = {t["name"]: t["description"] for t in (await box.call("list_tables", {}))["tables"]}
+    assert listed["mart.contract"] == "OVERLAY contract"
+    assert listed["mart.agency"] and listed["mart.agency"] != "OVERLAY contract"
+    out = await box.call("describe_table", {"name": "mart.contract"})
+    assert out["description"] == "OVERLAY contract"
+    cols = {c["name"]: c["description"] for c in out["columns"]}
+    assert cols["notice_id"] == "OVERLAY notice"
+    assert sum(1 for d in cols.values() if d and d.startswith("OVERLAY")) == 1
