@@ -838,6 +838,22 @@ A skeleton's needs are inferred from its required blocks (`field`, `kv` and `sta
 - No LLM rewording (2c-3).
 - No new skeletons or vocabulary.
 
+## Checkpoint (b), re-issued (2026-11-02)
+
+- 3640 train and 200 dev synthetic rows: every coverage key reaches N=30 (0 below). The tail share is 15.0%. The detail mix at full size is terse 1593, medium 1593 and specific 454: once coverage is met, departures stop being hungry, so specific falls to about 12% (the 25/25/50 seen in 300-row tests is a small-run effect).
+- `export --mix 0.7 --max-seq-len 8192`: 5199 rows (3639 synthetic plus all 1560 gallery rows once), tokens max 6882, p50 5388, p95 5958. 1 synthetic train row dropped for matching a synthetic dev fingerprint.
+- Two bugs found while reading the samples, each fixed with a regression test first (`test_synth_plausibility.py`): pluralize stripped a bare "s" ("1 itinerarie", "1 classe": 29 rows), and bound media of one kind shared one label-rule path, so a surface repeated one file (176 rows). Irregular plurals no longer get pluralize, and a second bound media of a kind shows its own literal URL.
+- Known and not fixed (design, not bugs): coherence is word-level. Any topic action can be the submit button, media is labelled with the topic name, and titles don't always fit the screen kind.
+- **Approved by the user (2026-11-02):** 10 of 10 in review mode (`--sample 10 --seed 2026`, verdicts in `data/synth/review.jsonl`). The word-level coherence limits are accepted for SFT run 1.
+
+## SFT run 1: decisions (user, 2026-11-02)
+
+- **Mix:** about 3640 synthetic train rows, so that `export --mix 0.7` uses every one of the 1560 gallery rows exactly once (no repeats, none cut).
+- **Training loop:** our own small loop, not the cookbook script's same-file holdout. It saves a sampler checkpoint about every 25 steps and scores the separate dev split (gallery and synthetic reported apart). The checkpoint is picked by dev score, not loss.
+- **Hyperparameters:** LoRA rank 16, LR 5e-5, batch 16, 1 epoch. `--max-seq-len` is set explicitly from the export's token report.
+- **The system prompt is frozen before launch.** Changing `build_system_prompt` later invalidates the adapter.
+- Prep notes (not committed): the Fireworks prep document in the session scratchpad. Training is free for jobs started before 2026-12-01 Pacific; eval sampling is billed.
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.
