@@ -4,22 +4,80 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Explorer</title>
+    <link rel="icon" href="data:," />
     <!-- The basic catalog's Icon renders Material Symbols ligatures; without the font they show as words. -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <style>
-      body { margin: 0; background: white; color: #202124; font-family: system-ui, sans-serif; }
-      explorer-app { display: block; max-width: 960px; margin: 0 auto; padding: 16px; }
-      explorer-app form { display: flex; gap: 8px; position: sticky; bottom: 0; background: white; padding: 8px 0; }
-      explorer-app input { flex: 1; padding: 8px; font-size: 1rem; }
-      explorer-app .turn { border-top: 1px solid #ddd; padding: 12px 0; }
-      explorer-app .question { font-weight: 600; }
-      explorer-app .status { color: #666; font-style: italic; }
-      explorer-app .error { color: #b00020; }
+      :root {
+        --fg: #1f2328; --muted: #656d76; --line: #d8dee4; --soft: #f6f8fa; --accent: #0b57d0;
+        --error: #b3261e; --error-bg: #fdecea; --warn-bg: #fff8e1;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: white; color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+      button { font: inherit; cursor: pointer; }
+      button:disabled { cursor: default; opacity: 0.55; }
+
+      explorer-app { display: flex; flex-direction: column; min-height: 100vh; }
+      explorer-app header {
+        position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 10px max(16px, calc((100% - 960px) / 2)); background: white; border-bottom: 1px solid var(--line);
+      }
+      explorer-app header .title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+      explorer-app header h1 { margin: 0; font-size: 1.1rem; }
+      explorer-app header .dataset { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      explorer-app header button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+      explorer-app .banner {
+        margin: 12px auto 0; width: min(960px, calc(100% - 32px)); padding: 10px 12px; border-radius: 6px;
+        background: var(--warn-bg); border: 1px solid #f0d58c;
+      }
+      explorer-app .banner button { margin-left: 8px; }
+      explorer-app main { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 8px 16px 24px; }
+
+      explorer-app .empty { padding: 48px 0 24px; color: var(--muted); }
+      explorer-app .examples { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 16px; }
+      explorer-app .examples button {
+        padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--fg); text-align: left;
+      }
+      explorer-app .examples button:hover { border-color: var(--accent); }
+
+      explorer-app .turn { padding: 16px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 64px; }
+      explorer-app .question {
+        display: inline-block; max-width: 85%; margin-bottom: 8px; padding: 8px 12px; border-radius: 10px;
+        background: var(--soft); font-weight: 600; white-space: pre-wrap;
+      }
+      explorer-app .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+      explorer-app .spinner {
+        width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      explorer-app .elapsed { font-variant-numeric: tabular-nums; }
+      explorer-app .error {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px;
+        border-radius: 6px; background: var(--error-bg); color: var(--error);
+      }
+      explorer-app .error button { padding: 4px 10px; border: 1px solid var(--error); border-radius: 6px; background: white; color: var(--error); }
+      explorer-app .meta { margin-top: 8px; color: var(--muted); font-size: 0.85em; }
+      explorer-app .meta summary { cursor: pointer; }
+      explorer-app .steps { margin: 4px 0 0; padding-left: 20px; }
+
+      explorer-app .composer {
+        position: sticky; bottom: 0; z-index: 2; display: flex; gap: 8px; align-items: flex-end;
+        padding: 12px max(16px, calc((100% - 960px) / 2)); background: white; border-top: 1px solid var(--line);
+        box-shadow: 0 -4px 12px rgb(0 0 0 / 0.04);
+      }
+      explorer-app .composer textarea {
+        flex: 1; resize: vertical; min-height: 44px; max-height: 40vh; padding: 10px 12px; font: inherit;
+        border: 1px solid var(--line); border-radius: 8px;
+      }
+      explorer-app .composer textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+      explorer-app .composer button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--accent); color: white; }
+
       table.data-grid { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
       table.data-grid th, table.data-grid td { padding: 4px 8px; border-bottom: 1px solid #eee; }
       table.data-grid caption { caption-side: bottom; color: #666; font-size: 0.85em; text-align: left; }
       details.sql-details { margin: 4px 0 12px; color: #444; }
-      details.sql-details pre { background: #f6f8fa; padding: 8px; overflow-x: auto; }
+      details.sql-details pre { background: var(--soft); padding: 8px; overflow-x: auto; }
     </style>
   </head>
   <body>

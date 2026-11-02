@@ -10,7 +10,14 @@ export type AskEvent =
   | {kind: 'status'; text: string}
   | {kind: 'final'; contextId: string; prose: string; a2ui: Record<string, unknown>[]};
 
+/** What the client shows about the agent's dataset (from the agent card). */
+export interface AgentInfo {
+  description: string;
+  examples: string[];
+}
+
 export interface AgentConnection {
+  info: AgentInfo;
   ask(text: string, contextId?: string): AsyncGenerator<AskEvent, void, undefined>;
 }
 
@@ -49,7 +56,14 @@ export async function connect(
     fetchImpl: withExtensionHeader(fetchImpl),
   });
 
+  const card = await client.getAgentCard();
+  const info: AgentInfo = {
+    description: card.description ?? '',
+    examples: (card.skills ?? []).flatMap(skill => skill.examples ?? []),
+  };
+
   return {
+    info,
     async *ask(text, contextId) {
       const message: Message = {
         kind: 'message',

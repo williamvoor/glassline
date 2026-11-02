@@ -49,8 +49,18 @@ describe('a2a wrapper', () => {
       'v0.9': {supportedCatalogIds: [EXPLORER_CATALOG_ID]},
     });
 
+    expect(agent.info).toEqual({description: 'x', examples: []});
     expect(events[0]).toEqual({kind: 'status', text: 'Running SQL'});
     expect(events[1]).toMatchObject({kind: 'final', contextId: 'c', prose: 'Prose.'});
     expect((events[1] as {a2ui: unknown[]}).a2ui).toHaveLength(1);
+  });
+
+  it('reads the dataset description and example questions from the agent card', async () => {
+    const withExamples = {...card, description: 'Demo contracts', skills: [
+      {id: 'ask', name: 'Ask', description: 'd', tags: [], examples: ['Top suppliers?', 'Spend by year?']},
+    ]};
+    const fakeFetch: typeof fetch = async () => Response.json(withExamples);
+    const agent = await connect(AGENT, {}, fakeFetch);
+    expect(agent.info).toEqual({description: 'Demo contracts', examples: ['Top suppliers?', 'Spend by year?']});
   });
 });
