@@ -568,7 +568,8 @@ _MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?"
 # Dates and years say what a figure covers; they aren't data the model could have retyped, and
 # counting them buried the real typed figures in the log (ADR 0013).
 _DATE = re.compile(
-    rf"\b\d{{4}}-\d{{2}}-\d{{2}}\b"  # 2014-01-01
+    rf"\b(?i:FY)\s?\d{{2}}(?:\d{{2}})?(?:[-–/]\d{{2}}(?:\d{{2}})?)?\b"  # FY2024-25, FY24-25, FY 2024
+    rf"|\b\d{{4}}-\d{{2}}-\d{{2}}\b"  # 2014-01-01
     rf"|\b(?:19|20)\d{{2}}[-–/](?:\d{{4}}|\d{{2}})\b"  # 2023-24, 2023–2024
     rf"|\b\d{{1,2}}\s+{_MONTH}(?:\s+\d{{4}})?"  # 1 Jul 2024, 30 June
     rf"|\b{_MONTH}\s+\d{{1,2}}(?:,\s*\d{{4}})?\b"  # July 1, 2024

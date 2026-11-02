@@ -474,3 +474,10 @@ def test_chart_field_references_are_escaped():
     assert [t["field"] for t in enc["tooltip"]] == ["agency\\.name", "kind\\.x", "value\\[aud\\]"]
     assert spec["data"]["values"][0] == {"agency.name": "A", "kind.x": "k", "value[aud]": 1.0}
     assert enc["x"]["title"] == "Agency.name"  # titles are labels, not field references
+
+
+# Regression (scenario review 2026-11-02): "FY2024-25" was counted as typed numbers, because "\b"
+# doesn't fire between "FY" and the digits.
+@pytest.mark.parametrize("text", ["FY2024-25", "FY24-25", "fy2023–24"])
+def test_fy_prefixed_years_are_not_bare_numbers(ctx, text):
+    assert fill_prose(f"In {text}, about 6.6% went overseas.").bare_numbers == ["6.6"]
