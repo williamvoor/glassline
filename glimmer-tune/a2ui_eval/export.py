@@ -106,6 +106,7 @@ def export_sft(
     skeleton_splits: dict[str, str] | None = None,
     share: float | None = None,
     seed: int = 0,
+    catalog_check: Any = None,
 ) -> tuple[list[dict[str, Any]], ExportReport]:
     """`extra_fingerprints`: eval designs with no cases yet (the dev/test seeds themselves).
 
@@ -113,6 +114,8 @@ def export_sft(
     fingerprint (or intent) as a synthetic dev row is dropped like any other overlap.
     A synthetic train case is checked against `skeleton_splits[case["skeleton"]]`, a gallery
     case against `splits[case["family"]]`. `share` mixes the two sources (see `mix_cases`).
+    `catalog_check` (a `CatalogCheck`) refuses any target with an operator or a name outside
+    the catalog: training must never show the model invented Express.
     """
     train_cases = list(train_cases)
     skeleton_splits = skeleton_splits or {}
@@ -125,6 +128,10 @@ def export_sft(
     )
     if leaked:
         raise ExportError(f"train cases from families not in the train split: {leaked}")
+    if catalog_check is not None:
+        outside = [f"{c['id']} ({catalog_check.findings(c['reference_express'])[0].detail})" for c in train_cases if catalog_check.findings(c["reference_express"])]
+        if outside:
+            raise ExportError(f"{len(outside)} train targets reach outside the catalog: {outside[:10]}")
 
     eval_cases = list(eval_cases)
     eval_prints = {c["fingerprint"] for c in eval_cases} | set(extra_fingerprints)

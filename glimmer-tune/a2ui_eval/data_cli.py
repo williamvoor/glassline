@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .catalog_check import CatalogCheck
 from .export import ExportError, approx_tokens, export_sft
 from .fingerprint import fingerprint
 from .generate import GenerationError, generate_family, load_splits, load_templates, read_jsonl, write_jsonl
@@ -167,6 +168,7 @@ def cmd_export(args) -> None:
         skeleton_splits,
         args.mix,
         args.seed,
+        catalog_check=CatalogCheck(sdk),
     )
     write_jsonl(args.out, rows)
     print(json.dumps(report.to_dict(), indent=2))

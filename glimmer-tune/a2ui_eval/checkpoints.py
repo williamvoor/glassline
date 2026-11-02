@@ -14,10 +14,12 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from .catalog_check import CatalogCheck, kinds
 from .export import is_synthetic
 from .generate import read_jsonl
 from .refs import RefIndex
@@ -95,12 +97,28 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def scorer_version() -> dict[str, Any]:
+    """The git commit the scorer ran from, and whether the checkout had uncommitted changes.
+    Saved with every result so a later scorer fix can rescore saved predictions traceably."""
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+        status = subprocess.run(["git", "status", "--porcelain", "--", "a2ui_eval"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {"commit": None, "dirty": None}
+    return {"commit": head, "dirty": bool(status.strip())}
+
+
 def selection_ci(
-    rows: list[dict[str, Any]], samples: int = BOOTSTRAP["samples"], level: float = BOOTSTRAP["level"], seed: int = BOOTSTRAP["seed"]
+    rows: list[dict[str, Any]],
+    samples: int = BOOTSTRAP["samples"],
+    level: float = BOOTSTRAP["level"],
+    seed: int = BOOTSTRAP["seed"],
+    key: str = "slot_f1",
 ) -> list[float]:
-    """Percentile bootstrap interval for `selection`. Rows are resampled with replacement within
-    each source, keeping its row count, so each resample is weighted like `selection` itself."""
-    by_source = [v for v in ([r["slot_f1"] for r in rows if r["source"] == s] for s in SOURCES) if v]
+    """Percentile bootstrap interval for `selection` (or, with `key`, another row score). Rows are
+    resampled with replacement within each source, keeping its row count, so each resample is
+    weighted like `selection` itself."""
+    by_source = [v for v in ([r[key] for r in rows if r["source"] == s] for s in SOURCES) if v]
     if not by_source:
         return [0.0, 0.0]
     rng = random.Random(seed)
@@ -113,10 +131,10 @@ def _percentiles(stats: list[float], samples: int, level: float) -> list[float]:
     return [stats[int(tail * samples)], stats[min(samples - 1, int((1 - tail) * samples))]]
 
 
-def _by_family(rows: list[dict[str, Any]]) -> list[list[float]]:
+def _by_family(rows: list[dict[str, Any]], key: str = "slot_f1") -> list[list[float]]:
     fams: dict[str, list[float]] = {}
     for r in rows:
-        fams.setdefault(r["family"], []).append(r["slot_f1"])
+        fams.setdefault(r["family"], []).append(r[key])
     return [fams[f] for f in sorted(fams)]
 
 
@@ -133,11 +151,15 @@ def _cluster_ci(clusters: list[list[float]], samples: int, level: float, seed: i
 
 
 def family_ci(
-    rows: list[dict[str, Any]], samples: int = BOOTSTRAP["samples"], level: float = BOOTSTRAP["level"], seed: int = BOOTSTRAP["seed"]
+    rows: list[dict[str, Any]],
+    samples: int = BOOTSTRAP["samples"],
+    level: float = BOOTSTRAP["level"],
+    seed: int = BOOTSTRAP["seed"],
+    key: str = "slot_f1",
 ) -> list[float]:
-    """Interval for the row mean slot F1 when rows come from few families: rows of one family
-    are correlated, so whole families are resampled with replacement."""
-    return _cluster_ci(_by_family(rows), samples, level, seed)
+    """Interval for the row mean slot F1 (or `key`) when rows come from few families: rows of one
+    family are correlated, so whole families are resampled with replacement."""
+    return _cluster_ci(_by_family(rows, key), samples, level, seed)
 
 
 def compare_ci(
@@ -181,10 +203,12 @@ def score_predictions(
 
     sdk = sdk or ExpressSDK(CATALOG)
     index = RefIndex(sdk.catalog_json)
+    check = CatalogCheck(sdk)
     rows = []
     for p in predictions:
         text = None if p["finish"] == "error" else p.get("text")
         r = score_response(sdk, index, cases[p["id"]], text, p["finish"])
+        outside = kinds(check.response(text))
         rows.append(
             {
                 "id": p["id"],
@@ -195,6 +219,8 @@ def score_predictions(
                 "truncated": r["truncated"],
                 "slot_f1": r["slot"]["f1"],
                 "slot_f1_blind": r["slot_blind"]["f1"],
+                "outside_catalog": bool(outside),
+                "outside_catalog_kinds": outside,
                 **({"family": cases[p["id"]]["family"]} if split == "test" else {}),
             }
         )
@@ -202,11 +228,11 @@ def score_predictions(
     for source in SOURCES:
         own = [r for r in rows if r["source"] == source]
         if own:
-            sources[source] = {"rows": len(own), **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1", "slot_f1_blind")}}
+            sources[source] = {"rows": len(own), **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1", "slot_f1_blind", "outside_catalog")}}
     if split == "test":
-        ci, how = family_ci(rows), {"clustered_by": "family"}
+        ci, ci_blind, how = family_ci(rows), family_ci(rows, key="slot_f1_blind"), {"clustered_by": "family"}
     else:
-        ci, how = selection_ci(rows), {"stratified_by": list(SOURCES)}
+        ci, ci_blind, how = selection_ci(rows), selection_ci(rows, key="slot_f1_blind"), {"stratified_by": list(SOURCES)}
     return {
         "checkpoint": checkpoints.pop(),
         "split": split,
@@ -215,7 +241,9 @@ def score_predictions(
         "selection": _mean([s["slot_f1"] for s in sources.values()]),
         "selection_blind": _mean([s["slot_f1_blind"] for s in sources.values()]),
         "selection_ci": ci,
+        "selection_blind_ci": ci_blind,
         "bootstrap": {**BOOTSTRAP, **how},
+        "scorer": scorer_version(),
     }
 
 

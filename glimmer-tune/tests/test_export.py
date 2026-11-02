@@ -126,3 +126,15 @@ def test_cli_export_guards_against_drafts_and_seeds(sdk, index, train, tmp_path,
     seeds = load_seeds()
     seed_prints = {fingerprint(s.messages, index) for f, s in seeds.items() if f in ("27_stats-card", "36_modal")}
     assert seed_prints <= data_cli.eval_seed_fingerprints(index)
+
+
+def test_rejects_targets_outside_the_catalog(sdk, train, dev):
+    """Item 2's linter rule: no training target may hold an operator or an unknown call."""
+    from a2ui_eval.catalog_check import CatalogCheck
+
+    check = CatalogCheck(sdk)
+    rows, _ = export_sft(train, dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=check)
+    assert len(rows) == len(train)
+    bad = [{**train[0], "reference_express": train[0]["reference_express"] + '\nx = Icon($a ? "b" : "c")'}] + train[1:]
+    with pytest.raises(ExportError, match=r"outside the catalog.*train/09_login-form/0000"):
+        export_sft(bad, dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=check)

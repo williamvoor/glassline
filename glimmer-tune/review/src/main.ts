@@ -23,9 +23,26 @@ interface Row {
   domain?: string;
   detail?: string;
   lint?: string[];
-  verdict?: 'approve' | 'reject' | null;
+  verdict?: 'approve' | 'reject' | PredictionVerdict | null;
   reason?: string;
+  // Prediction review mode (`prediction_mode: true`): a checkpoint's answer beside the reference.
+  prediction_mode?: boolean;
+  prediction_text?: string | null;
+  prediction_v09?: Record<string, unknown>[];
+  prediction_error?: string;
+  finish?: string;
+  scores?: {slot_f1_blind: number; slot_f1: number; compiles: boolean};
+  outside_catalog_kinds?: string[];
+  note?: string;
 }
+
+type PredictionVerdict = 'ok' | 'model' | 'reference' | 'scorer';
+const PREDICTION_VERDICTS: [PredictionVerdict, string, string][] = [
+  ['ok', 'OK', '1'],
+  ['model', 'Model error', '2'],
+  ['reference', 'Reference problem', '3'],
+  ['scorer', 'Scorer artefact', '4'],
+];
 
 type Filter = 'all' | 'todo' | 'dev' | 'test';
 
@@ -89,12 +106,12 @@ export class ReviewApp extends LitElement {
     if (i < 0 || i >= this.rows.length) return;
     this.index = i;
     this.draft = this.rows[i].intent;
-    this.reason = this.rows[i].reason ?? '';
+    this.reason = this.rows[i].reason ?? this.rows[i].note ?? '';
   }
 
   private async save(reviewed: boolean): Promise<boolean> {
     const row = this.row;
-    if (row?.synthetic) return true; // nothing to edit; verdicts are saved by `verdict`
+    if (row?.synthetic || row?.prediction_mode) return true; // nothing to edit; verdicts are saved by `verdict`
     if (!row || !this.draft.trim()) return false;
     if (row.intent === this.draft && row.reviewed === reviewed) return true;
     this.saving = true;
@@ -154,9 +171,40 @@ export class ReviewApp extends LitElement {
     if (next !== undefined) this.select(next);
   }
 
+  /** Prediction mode: records why the row scores as it does, with an optional note, and moves on. */
+  private async judge(kind: PredictionVerdict) {
+    const row = this.row;
+    if (!row) return;
+    this.saving = true;
+    try {
+      const res = await fetch('/api/verdict', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: row.id, verdict: kind, note: this.reason}),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? res.statusText);
+      this.rows = this.rows.map(r => (r.id === row.id ? {...r, verdict: body.verdict, note: body.note, reviewed: true} : r));
+      this.error = '';
+    } catch (e) {
+      this.error = `Not saved: ${e}`;
+      return;
+    } finally {
+      this.saving = false;
+    }
+    await this.step(1);
+  }
+
   private onKey = (e: KeyboardEvent) => {
     const tag = (e.target as HTMLElement)?.tagName;
     const inText = tag === 'TEXTAREA' || tag === 'INPUT';
+    if (this.row?.prediction_mode) {
+      const pick = PREDICTION_VERDICTS.find(([, , key]) => key === e.key);
+      if (!inText && pick) void this.judge(pick[0]);
+      else if (!inText && e.key === 'j') void this.step(1);
+      else if (!inText && e.key === 'k') void this.step(-1);
+      return;
+    }
     if (this.row?.synthetic) {
       if (!inText && e.key === 'a') void this.verdict('approve');
       else if (!inText && e.key === 'j') void this.step(1);
@@ -174,15 +222,19 @@ export class ReviewApp extends LitElement {
   };
 
   private renderSurface(row: Row) {
-    if (row.render_error) return html`<div class="error">${row.render_error}</div>`;
+    return this.renderMessages(row.v09, row.render_error);
+  }
+
+  private renderMessages(messages: Record<string, unknown>[], error?: string) {
+    if (error) return html`<div class="error">${error}</div>`;
     // A fresh processor per row: many rows share one surface ID.
     const processor = new MessageProcessor<ComponentApi>([basicCatalog]);
     try {
-      processor.processMessages(row.v09 as unknown as A2uiMessage[]);
+      processor.processMessages(messages as unknown as A2uiMessage[]);
     } catch (e) {
       return html`<div class="error">Renderer: ${String(e)}</div>`;
     }
-    const create = row.v09.find(m => 'createSurface' in m)?.createSurface as {surfaceId?: string} | undefined;
+    const create = messages.find(m => 'createSurface' in m)?.createSurface as {surfaceId?: string} | undefined;
     const surface = create?.surfaceId ? processor.model.surfacesMap.get(create.surfaceId) : undefined;
     return surface
       ? html`<a2ui-surface .surface=${surface}></a2ui-surface>`
@@ -194,7 +246,7 @@ export class ReviewApp extends LitElement {
     let family = '';
     return html`<aside>
       <header>
-        <div class="progress">${done} / ${this.rows.length} ${this.rows[0]?.synthetic ? 'reviewed' : 'approved'}</div>
+        <div class="progress">${done} / ${this.rows.length} ${this.rows[0]?.synthetic || this.rows[0]?.prediction_mode ? 'reviewed' : 'approved'}</div>
         <select @change=${(e: Event) => (this.filter = (e.target as HTMLSelectElement).value as Filter)}>
           <option value="all">All rows</option>
           <option value="todo">Not approved</option>
@@ -204,12 +256,12 @@ export class ReviewApp extends LitElement {
       </header>
       ${this.visible().map(i => {
         const r = this.rows[i];
-        const heading = r.family !== family ? html`<div class="family">${r.split} · ${r.family}</div>` : nothing;
+        const heading = !r.prediction_mode && r.family !== family ? html`<div class="family">${r.split} · ${r.family}</div>` : nothing;
         family = r.family;
         return html`${heading}
           <div class="item ${i === this.index ? 'current' : ''}" @click=${() => this.save(this.row!.reviewed).then(ok => ok && this.select(i))}>
-            <span class="mark">${r.synthetic ? (r.verdict === 'reject' ? '✗' : r.verdict === 'approve' ? '✓' : '') : r.reviewed ? '✓' : ''}</span>
-            <span class="text">${r.id.split('/').pop()} ${r.intent}</span>
+            <span class="mark">${r.prediction_mode ? (r.verdict ? r.verdict[0].toUpperCase() : '') : r.synthetic ? (r.verdict === 'reject' ? '✗' : r.verdict === 'approve' ? '✓' : '') : r.reviewed ? '✓' : ''}</span>
+            <span class="text">${r.prediction_mode ? `${r.scores?.slot_f1_blind.toFixed(2)} · ${r.family} ` : ''}${r.id.split('/').pop()} ${r.intent}</span>
             ${this.duplicateOf(i) ? html`<span class="dup" title="Same UI as ${this.duplicateOf(i)}">dup</span>` : nothing}
           </div>`;
       })}
@@ -247,9 +299,41 @@ export class ReviewApp extends LitElement {
       </main>`;
   }
 
+  private renderPrediction(row: Row) {
+    const s = row.scores;
+    return html`${this.renderList()}
+      <main>
+        <div class="meta">
+          <strong>${row.id}</strong>
+          <span class="badge">blind F1 ${s?.slot_f1_blind.toFixed(3)} · literal ${s?.slot_f1.toFixed(3)}</span>
+          <span class="badge ${s?.compiles ? 'ok' : 'warn'}">${s?.compiles ? 'compiles' : 'does not compile'}</span>
+          ${(row.outside_catalog_kinds ?? []).map(k => html`<span class="badge warn">outside catalog: ${k}</span>`)}
+          ${row.verdict ? html`<span class="badge ok">${row.verdict}</span>` : html`<span class="badge">not reviewed</span>`}
+        </div>
+        <p class="intent">${row.intent}</p>
+        <div class="actions">
+          <input type="text" placeholder="Note (optional)" .value=${this.reason} @input=${(e: Event) => (this.reason = (e.target as HTMLInputElement).value)} />
+          ${PREDICTION_VERDICTS.map(([kind, label, key]) => html`<button class=${kind === 'ok' ? 'primary' : ''} ?disabled=${this.saving} @click=${() => this.judge(kind)}>${label} (${key})</button>`)}
+          <button ?disabled=${this.saving} @click=${() => this.step(-1)}>← Prev</button>
+          <button ?disabled=${this.saving} @click=${() => this.step(1)}>Skip →</button>
+          <span class="hint">1–4 verdict · j/k next/prev</span>
+        </div>
+        ${this.error ? html`<div class="error">${this.error}</div>` : nothing}
+        <div class="pair">
+          <section><h3>Reference</h3><div class="canvas">${this.renderSurface(row)}</div></section>
+          <section><h3>Model (${row.finish})</h3><div class="canvas">${this.renderMessages(row.prediction_v09 ?? [], row.prediction_error)}</div></section>
+        </div>
+        <div class="pair">
+          <details open><summary>Reference Express</summary><pre>${row.reference_express}</pre></details>
+          <details open><summary>Model Express</summary><pre>${row.prediction_text ?? '(no response)'}</pre></details>
+        </div>
+      </main>`;
+  }
+
   override render() {
     const row = this.row;
     if (!row) return html`<aside></aside><main>${this.error ? html`<div class="error">${this.error}</div>` : 'Loading…'}</main>`;
+    if (row.prediction_mode) return this.renderPrediction(row);
     if (row.synthetic) return this.renderSynthetic(row);
     const text = norm(this.draft);
     const dup = this.duplicateOf(this.index);

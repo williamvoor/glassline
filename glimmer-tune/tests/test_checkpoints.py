@@ -369,3 +369,64 @@ def test_blind_selection_is_wired_from_slot_blind_as_a_macro_mean(dev_rows):
     assert out["selection_blind"] == pytest.approx((1.0 + 0.5) / 2)  # macro mean, not the row mean 2/3
     assert out["selection"] == pytest.approx((row["slot_f1"] + 0.5) / 2)
     assert out["selection"] < out["selection_blind"]
+
+
+# --- blind interval and scorer version (run 2 prep, item 1) -----------------------------------
+
+
+def test_selection_ci_takes_the_score_key():
+    """The same stratified bootstrap serves the name-blind score: rows carry both keys."""
+    from a2ui_eval.checkpoints import selection_ci
+
+    rows = [{"source": "gallery", "slot_f1": 0.0, "slot_f1_blind": 1.0}] * 4 + [{"source": "synthetic", "slot_f1": 0.0, "slot_f1_blind": 0.5}] * 6
+    assert selection_ci(rows) == pytest.approx([0.0, 0.0])
+    assert selection_ci(rows, key="slot_f1_blind") == pytest.approx([0.75, 0.75])
+
+
+def test_score_output_carries_blind_ci_and_scorer_version(dev_rows):
+    """Result files name the scorer's git commit, so saved predictions can be rescored traceably."""
+    import re
+
+    cases = _cases()
+    picked = [r for r in dev_rows if r["subset"]]
+    preds = [
+        {"id": r["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])}
+        if i % 2
+        else {"id": r["id"], "checkpoint": "s025", "finish": "error", "text": None}
+        for i, r in enumerate(picked)
+    ]
+    out = score_predictions(preds, dev_rows, DATA)
+    lo, hi = out["selection_blind_ci"]
+    assert lo < out["selection_blind"] < hi
+    assert re.fullmatch(r"[0-9a-f]{40}", out["scorer"]["commit"])
+    assert isinstance(out["scorer"]["dirty"], bool)
+
+
+def test_scorer_version_without_git(monkeypatch):
+    """Outside a git checkout the version is recorded as unknown, not a crash."""
+    from a2ui_eval import checkpoints
+
+    def boom(*a, **k):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(checkpoints.subprocess, "run", boom)
+    assert checkpoints.scorer_version() == {"commit": None, "dirty": None}
+
+
+def test_score_reports_outside_catalog_per_row_and_source(dev_rows):
+    """Item 2: invented operators and names are flagged on every row, and rated per source."""
+    cases = _cases()
+    g = [r["id"] for r in dev_rows if r["source"] == "gallery"][:2]
+    s = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:1]
+    bad = '<a2ui>\nroot = Icon($done ? "check" : "close")\n</a2ui>'
+    preds = [
+        {"id": g[0], "checkpoint": "s025", "text": bad, "finish": "stop"},
+        {"id": g[1], "checkpoint": "s025", "text": None, "finish": "error"},
+        {"id": s[0], "checkpoint": "s025", "text": wrap(cases[s[0]]["reference_express"]), "finish": "stop"},
+    ]
+    out = score_predictions(preds, dev_rows, DATA)
+    rows = {r["id"]: r for r in out["rows"]}
+    assert rows[g[0]]["outside_catalog"] is True and rows[g[0]]["outside_catalog_kinds"] == ["operator"]
+    assert rows[g[1]]["outside_catalog"] is False and rows[s[0]]["outside_catalog"] is False
+    assert out["sources"]["gallery"]["outside_catalog"] == pytest.approx(0.5)
+    assert out["sources"]["synthetic"]["outside_catalog"] == 0.0

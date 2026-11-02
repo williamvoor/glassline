@@ -212,7 +212,79 @@ def synthetic_views(review: SyntheticReview) -> list[dict[str, Any]]:
     return out
 
 
-def make_handler(draft: Path, dist: Path, synthetic: SyntheticReview | None = None):
+PREDICTION_VERDICTS = ("ok", "model", "reference", "scorer")  # what a low score is due to
+
+
+@dataclass(frozen=True)
+class PredictionReview:
+    """A checkpoint's answers on gallery dev, worst first by name-blind slot F1 (`checkpoints score` output)."""
+
+    predictions: Path
+    scores: Path
+    verdicts: Path
+
+
+def _gallery_scored(review: PredictionReview) -> list[dict[str, Any]]:
+    rows = [r for r in json.loads(review.scores.read_text(encoding="utf-8"))["rows"] if r["source"] == "gallery"]
+    return sorted(rows, key=lambda r: (r["slot_f1_blind"], r["slot_f1"], r["id"]))
+
+
+def record_prediction_verdict(review: PredictionReview, row_id: Any, verdict: Any, note: Any) -> dict[str, Any]:
+    """Upserts `{id, verdict, note}`; the latest verdict per id wins. Refuses unknown ids and verdicts."""
+    if verdict not in PREDICTION_VERDICTS:
+        raise ReviewError(f"verdict must be one of {PREDICTION_VERDICTS}")
+    if row_id not in {r["id"] for r in _gallery_scored(review)}:
+        raise ReviewError(f"unknown row id {row_id!r}")
+    record = {"id": row_id, "verdict": verdict, "note": note.strip() if isinstance(note, str) else ""}
+    records = read_verdicts(review.verdicts)
+    records[row_id] = record
+    write_rows(review.verdicts, list(records.values()))
+    return record
+
+
+def prediction_views(review: PredictionReview) -> list[dict[str, Any]]:
+    from .checkpoints import dev_cases
+    from .score import close_stopped_block
+
+    sdk = v09_sdk()
+    cases = {c["id"]: c for c in dev_cases()}
+    preds = {p["id"]: p for p in read_rows(review.predictions)}
+    verdicts = read_verdicts(review.verdicts)
+    out = []
+    for score in _gallery_scored(review):
+        case, pred, verdict = cases[score["id"]], preds[score["id"]], verdicts.get(score["id"])
+        view: dict[str, Any] = {k: case.get(k) for k in ("id", "family", "split", "intent", "reference_express")}
+        view.update(
+            prediction_mode=True,
+            reviewed=verdict is not None,
+            verdict=verdict["verdict"] if verdict else None,
+            note=verdict["note"] if verdict else "",
+            expected=expected_values(case["reference"]),
+            prediction_text=pred.get("text"),
+            finish=pred["finish"],
+            scores={k: score.get(k) for k in ("slot_f1_blind", "slot_f1", "compiles")},
+            outside_catalog_kinds=score.get("outside_catalog_kinds", []),
+        )
+        try:
+            view["v09"] = sdk.compile_express(case["reference_express"])
+        except Exception as e:
+            view["v09"], view["render_error"] = [], str(e)
+        view["prediction_v09"] = []
+        if pred.get("text") is None:
+            view["prediction_error"] = f"no response ({pred['finish']})"
+        else:
+            try:
+                _, blocks = sdk.unwrap(close_stopped_block(pred["text"], pred["finish"], sdk))
+                view["prediction_v09"] = [m for b in blocks for m in sdk.compile(b)]
+                if not blocks:
+                    view["prediction_error"] = "no <a2ui> block"
+            except Exception as e:
+                view["prediction_v09"], view["prediction_error"] = [], str(e)
+        out.append(view)
+    return out
+
+
+def make_handler(draft: Path, dist: Path, synthetic: SyntheticReview | None = None, predictions: PredictionReview | None = None):
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(dist), **kwargs)
@@ -227,14 +299,18 @@ def make_handler(draft: Path, dist: Path, synthetic: SyntheticReview | None = No
 
         def do_GET(self):
             if self.path == "/api/rows":
+                if predictions:
+                    return self._json(HTTPStatus.OK, prediction_views(predictions))
                 return self._json(HTTPStatus.OK, synthetic_views(synthetic) if synthetic else view_rows(draft))
             return super().do_GET()
 
         def do_POST(self):
-            if self.path != ("/api/verdict" if synthetic else "/api/rows"):
+            if self.path != ("/api/verdict" if synthetic or predictions else "/api/rows"):
                 return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if predictions:
+                    return self._json(HTTPStatus.OK, record_prediction_verdict(predictions, body.get("id"), body.get("verdict"), body.get("note")))
                 if synthetic:
                     return self._json(HTTPStatus.OK, record_verdict(synthetic, body.get("id"), body.get("verdict"), body.get("reason")))
                 row = update_row(draft, body.get("id"), body.get("intent"), body.get("reviewed"))
@@ -268,12 +344,20 @@ def main() -> None:
     ap.add_argument("--sample", type=int, default=50)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--verdicts", type=Path, default=VERDICTS)
+    ap.add_argument("--predictions", type=Path, help="review a checkpoint's gallery dev answers, worst first (needs --scores)")
+    ap.add_argument("--scores", type=Path, help="the `checkpoints score` output for --predictions")
     args = ap.parse_args()
     review = SyntheticReview(args.synthetic, args.sample, args.seed, args.verdicts) if args.synthetic else None
+    preds = None
+    if args.predictions:
+        if not args.scores:
+            raise SystemExit("--predictions needs --scores")
+        verdicts = args.verdicts if args.verdicts != VERDICTS else args.scores.with_suffix(".review.jsonl")
+        preds = PredictionReview(args.predictions, args.scores, verdicts)
     if problem := build_problem(DIST.parent):
         raise SystemExit(problem)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.draft, DIST, review))
-    print(f"reviewing {args.synthetic or args.draft} at http://127.0.0.1:{args.port}")
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.draft, DIST, review, preds))
+    print(f"reviewing {args.predictions or args.synthetic or args.draft} at http://127.0.0.1:{args.port}")
     server.serve_forever()
 
 
