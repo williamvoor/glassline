@@ -542,7 +542,7 @@ Later decisions (2026-10-31, after the first macros):
 
 ## 13. Amendment: Comment overlay (2026-11-02)
 
-Status: **draft for approval**. Decision: ADR 0019. Terms: **Data dictionary**, **Comment
+Status: **approved** (2026-11-02). Decision: ADR 0019. Terms: **Data dictionary**, **Comment
 overlay** (`../CONTEXT.md`). Until now the Data dictionary was the database's `COMMENT ON`s only,
 so a database we can read but not alter couldn't be described. A Dataset may now name a Comment
 overlay file whose entries replace the database's comment for the same table or column.
