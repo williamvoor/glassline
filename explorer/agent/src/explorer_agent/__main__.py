@@ -57,7 +57,7 @@ async def _serve(settings: Settings) -> None:
         await runner.check_privileges()
         catalog = SchemaCatalog(pool, schemas)
         section = render_schema_section(await catalog.objects())
-        pipeline = UiPipeline(settings.format, settings.dataset.currency.symbol)
+        pipeline = UiPipeline.from_settings(settings)
         prompt = build_system_prompt(pipeline.format, dataset_context(settings.dataset, section))
         log.info(
             "system prompt: %d chars, sha256 %s, format %s, dataset %s",

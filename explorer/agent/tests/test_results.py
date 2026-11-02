@@ -1,4 +1,5 @@
 import datetime as dt
+import json
 import uuid
 from decimal import Decimal
 
@@ -36,3 +37,12 @@ def test_column_kinds():
                   column_types=["numeric", "date", "text"], rows=[], truncated=False)
     assert r.is_numeric("a") and not r.is_numeric("c")
     assert r.is_temporal("b") and not r.is_temporal("a")
+
+
+# Regression: array and JSON columns kept nested Decimals, so json.dumps of the tool result raised
+# and the Turn failed (e.g. SELECT ARRAY[1.2::numeric], or array_agg over a numeric column).
+def test_nested_values_are_stored_json_safe():
+    r = _add(store := ResultStore(), amounts=[Decimal("1.2"), None], doc={"v": Decimal("2"), "d": [dt.date(2024, 7, 1)]})
+    row = store.get(r.id).rows[0]
+    assert row == {"amounts": [1.2, None], "doc": {"v": 2.0, "d": ["2024-07-01"]}}
+    json.dumps(row)

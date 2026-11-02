@@ -141,3 +141,21 @@ def test_malformed_database_url_is_a_config_error(tmp_path):
     with pytest.raises(ConfigError, match="DATABASE_URL") as e:
         load_settings(env_for(tmp_path, DATABASE_URL="explorer_ro:s3cret@localhost/db"), tmp_path)
     assert "s3cret" not in str(e.value)
+
+
+
+# Regression: TABLE_ROW_CAP was read but never reached the macros, so tables always showed 200 rows.
+def test_table_row_cap_reaches_the_tables(tmp_path):
+    from explorer_agent.results import ResultStore
+    from explorer_agent.ui import UiPipeline
+
+    write_dataset(tmp_path)
+    settings = load_settings(env_for(tmp_path, TABLE_ROW_CAP="10"), tmp_path)
+    store = ResultStore()
+    store.add(sql="s", purpose="p", columns=["n"], column_types=["integer"],
+              rows=[{"n": i} for i in range(50)], truncated=False)
+    ui = UiPipeline.from_settings(settings).build(
+        '<a2ui>\nroot = Column([t])\nt = DataTable("r1", "T")\n</a2ui>', store, "turn-1")
+    grid = next(c for m in ui.messages if "updateComponents" in m
+                for c in m["updateComponents"]["components"] if c["component"] == "DataGrid")
+    assert len(grid["rows"]) == 10

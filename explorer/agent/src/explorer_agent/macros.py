@@ -268,6 +268,11 @@ def _chart_values(
     return rows, domain
 
 
+def _field(column: str) -> str:
+    """A Vega-Lite field reference: "." and "[]" would otherwise read as a nested path."""
+    return re.sub(r"([.\[\]\\])", r"\\\1", column)
+
+
 def _plotted_extents(values: list[dict[str, Any]], x: str, y: str, stacked: bool) -> list[float]:
     """The sizes the axis must show: each value, or for stacked bars each stack's total (the
     positive and the negative parts stack separately)."""
@@ -310,11 +315,11 @@ def _chart(
         axis_format, suffix = (",.1f" if unit else ",.0f"), f" ({_ctx().currency_symbol}{unit})"
 
     temporal = result.is_temporal(x)
-    x_enc: dict[str, Any] = {"field": x, "type": "temporal" if temporal else "ordinal", "title": column_label(x)}
+    x_enc: dict[str, Any] = {"field": _field(x), "type": "temporal" if temporal else "ordinal", "title": column_label(x)}
     if not temporal:
         x_enc["sort"] = "-y" if sort_by_value and not horizontal else ("-x" if sort_by_value else None)
     y_enc: dict[str, Any] = {
-        "field": y,
+        "field": _field(y),
         "type": "quantitative",
         "title": column_label(y) + suffix,
         "axis": {"format": axis_format},
@@ -323,11 +328,11 @@ def _chart(
         x_enc["type"] = "nominal"
     encoding: dict[str, Any] = {"y": x_enc, "x": y_enc} if horizontal else {"x": x_enc, "y": y_enc}
     if color:
-        encoding["color"] = {"field": color, "type": "nominal", "title": column_label(color), "sort": domain}
+        encoding["color"] = {"field": _field(color), "type": "nominal", "title": column_label(color), "sort": domain}
     encoding["tooltip"] = [
-        {"field": x, "type": x_enc["type"]},
-        *([{"field": color, "type": "nominal"}] if color else []),
-        {"field": y, "type": "quantitative", "format": axis_format},
+        {"field": _field(x), "type": x_enc["type"]},
+        *([{"field": _field(color), "type": "nominal"}] if color else []),
+        {"field": _field(y), "type": "quantitative", "format": axis_format},
     ]
     spec = {
         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",

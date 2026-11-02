@@ -24,6 +24,7 @@ from pydantic import TypeAdapter
 from explorer_agent.catalog import explorer_catalog
 from explorer_agent.macros import (
     DEFAULT_CURRENCY_SYMBOL,
+    TABLE_ROW_CAP,
     FilledProse,
     fill_prose,
     fill_surface_text,
@@ -140,11 +141,21 @@ def _rewrite_surface(message: dict[str, Any], surface_id: str) -> dict[str, Any]
 
 
 class UiPipeline:
-    def __init__(self, fmt_name: str = "express", currency_symbol: str = DEFAULT_CURRENCY_SYMBOL):
+    def __init__(
+        self,
+        fmt_name: str = "express",
+        currency_symbol: str = DEFAULT_CURRENCY_SYMBOL,
+        table_row_cap: int = TABLE_ROW_CAP,
+    ):
         self._currency_symbol = currency_symbol
+        self._table_row_cap = table_row_cap
         self._expander = macro_expander()
         self.inference_catalog = self._expander.transform_to_inference_catalog(explorer_catalog())
         self.format = make_format(fmt_name, self.inference_catalog)
+
+    @classmethod
+    def from_settings(cls, settings: Any) -> UiPipeline:
+        return cls(settings.format, settings.dataset.currency.symbol, settings.table_row_cap)
 
     def build(self, reply: str, store: ResultStore, surface_id: str) -> UiResult:
         # Any SDK error here comes from what the model wrote (syntax, dangling references, bad
@@ -159,7 +170,9 @@ class UiPipeline:
 
         prose: FilledProse | None = None
         try:
-            with macro_context(store, currency_symbol=self._currency_symbol) as ctx:
+            with macro_context(
+                store, currency_symbol=self._currency_symbol, table_row_cap=self._table_row_cap
+            ) as ctx:
                 prose = fill_prose(prose_raw)
                 prose_ok = not ctx.errors
                 bare = prose.bare_numbers + fill_surface_text(c for m in typed for c in _components(m))

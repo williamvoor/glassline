@@ -24,6 +24,11 @@ TEMPORAL_TYPES = frozenset(
 
 
 def to_json_safe(value: Any) -> Any:
+    """A value json.dumps accepts. Arrays and JSON columns are converted all the way down."""
+    if isinstance(value, (list, tuple)):
+        return [to_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: to_json_safe(v) for k, v in value.items()}
     if isinstance(value, Decimal):
         return float(value)
     if isinstance(value, (dt.date, dt.datetime, dt.time)):

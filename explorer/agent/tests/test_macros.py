@@ -454,3 +454,23 @@ def test_horizontal_negative_chart_currency_compact():
     assert spec["encoding"]["x"]["axis"]["format"] == ",.1f"
     assert spec["encoding"]["tooltip"][-1]["format"] == ",.1f"
     assert [v["value"] for v in spec["data"]["values"]] == [-2.5, 0.3]
+
+
+
+# Regression: Vega-Lite reads "." and "[]" in a field as a nested path, so a column aliased
+# "agency.name" plotted as undefined. Field references are escaped; the data keys are not.
+def test_chart_field_references_are_escaped():
+    store = ResultStore()
+    store.add(sql="s", purpose="p", columns=["agency.name", "value[aud]", "kind.x"],
+              column_types=["text", "numeric", "text"],
+              rows=[{"agency.name": "A", "value[aud]": 1.0, "kind.x": "k"}], truncated=False)
+    with macro_context(store):
+        spec = by_type(expand("BarChart", result_id="r1", x="agency.name", y="value[aud]", title="T",
+                              color="kind.x"), "VegaChart")[0]["spec"]
+    enc = spec["encoding"]
+    assert enc["x"]["field"] == "agency\\.name"
+    assert enc["y"]["field"] == "value\\[aud\\]"
+    assert enc["color"]["field"] == "kind\\.x"
+    assert [t["field"] for t in enc["tooltip"]] == ["agency\\.name", "kind\\.x", "value\\[aud\\]"]
+    assert spec["data"]["values"][0] == {"agency.name": "A", "kind.x": "k", "value[aud]": 1.0}
+    assert enc["x"]["title"] == "Agency.name"  # titles are labels, not field references
