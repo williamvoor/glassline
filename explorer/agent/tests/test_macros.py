@@ -216,7 +216,7 @@ def test_prose_placeholders_are_filled_and_escaped(ctx):
 
 def test_bare_numbers_typed_in_prose_are_reported(ctx):
     filled = fill_prose("In 2024, {r1[1].supplier} won 1,234 contracts worth $3.4B.")
-    assert filled.bare_numbers == ["2024", "1,234", "3.4"]
+    assert filled.bare_numbers == ["1,234", "3.4"]
 
 
 def test_a_bad_prose_placeholder_goes_back_to_the_model(ctx):
@@ -316,3 +316,18 @@ def test_strict_validation_rejects_a_bad_custom_component():
     ]
     with pytest.raises(Exception, match="(?i)valid"):
         processor.process_messages(bad)
+
+
+@pytest.mark.parametrize(
+    "date",
+    ["2024", "FY 2023-24", "2023–24", "2014-01-01", "1 Jul 2024", "30 June 2025", "July 1, 2024", "June 2025"],
+)
+def test_dates_are_not_bare_numbers(ctx, date):
+    # Dates and years are scope, not data; logging them drowned out the real typed figures.
+    filled = fill_prose(f"In {date}, {{r1[1].supplier}} won about 6.6% of value.")
+    assert filled.bare_numbers == ["6.6"]
+
+
+def test_date_range_from_the_live_runs_is_not_bare_numbers(ctx):
+    filled = fill_prose("FY 2024-25 (1 Jul 2024–30 Jun 2025): overseas got about 6.6%, from ~$8m to ~$1.57bn.")
+    assert filled.bare_numbers == ["6.6", "8", "1.57"]

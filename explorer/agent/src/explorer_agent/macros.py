@@ -471,26 +471,47 @@ def fill_prose(prose: str) -> FilledProse:
 
 
 def fill_surface_text(components: Iterable[dict[str, Any]]) -> list[str]:
-    """Fills placeholders in the `Text` the model wrote on the Surface, in place (ADR 0013).
+    """Fills placeholders in the `Text` and `Tabs` titles the model wrote on the Surface, in place
+    (ADR 0013).
 
-    Run before macro expansion, so only the model's own Text is touched: macro-built Text holds
-    formatted values from Results. Errors go to the context's error list, naming the component.
-    Returns the numbers the model typed in that Text.
+    Run before macro expansion, so only the model's own strings are touched: macro-built Text
+    holds formatted values from Results. Errors go to the context's error list, naming the
+    component. Returns the numbers the model typed in those strings.
     """
     ctx = _ctx()
     bare: list[str] = []
+
+    def fill(holder: dict[str, Any], key: str, name: str, cid: Any) -> None:
+        text = holder.get(key)
+        if not isinstance(text, str):
+            return  # a data binding
+        holder[key] = _fill(text, on_error=lambda e: ctx.errors.append(f"{name} {cid!r}: {e}"))
+        bare.extend(_bare_numbers(text))
+
     for comp in components:
-        text = comp.get("text")
-        if comp.get("component") != "Text" or not isinstance(text, str):
-            continue  # a data binding, or not Text
-        cid = comp.get("id")
-        comp["text"] = _fill(text, on_error=lambda e, cid=cid: ctx.errors.append(f"Text {cid!r}: {e}"))
-        bare += _bare_numbers(text)
+        if comp.get("component") == "Text":
+            fill(comp, "text", "Text", comp.get("id"))
+        elif comp.get("component") == "Tabs":
+            for tab in comp.get("tabs") or []:
+                if isinstance(tab, dict):
+                    fill(tab, "title", "Tabs", comp.get("id"))
     return bare
 
 
+_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?"
+# Dates and years say what a figure covers; they aren't data the model could have retyped, and
+# counting them buried the real typed figures in the log (ADR 0013).
+_DATE = re.compile(
+    rf"\b\d{{4}}-\d{{2}}-\d{{2}}\b"  # 2014-01-01
+    rf"|\b(?:19|20)\d{{2}}[-–/](?:\d{{4}}|\d{{2}})\b"  # 2023-24, 2023–2024
+    rf"|\b\d{{1,2}}\s+{_MONTH}(?:\s+\d{{4}})?"  # 1 Jul 2024, 30 June
+    rf"|\b{_MONTH}\s+\d{{1,2}}(?:,\s*\d{{4}})?\b"  # July 1, 2024
+    rf"|\b(?:19|20)\d{{2}}\b(?![.,]\d)"  # 2024, but not 2024.5 or 2,024
+)
+
+
 def _bare_numbers(text: str) -> list[str]:
-    return _BARE_NUMBER.findall(_PLACEHOLDER_SHAPE.sub("", text))
+    return _BARE_NUMBER.findall(_DATE.sub(" ", _PLACEHOLDER_SHAPE.sub("", text)))
 
 
 MACROS = [BarChart, LineChart, DataTable, Metric, Cite]

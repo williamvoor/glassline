@@ -252,3 +252,26 @@ def test_prose_and_surface_bare_numbers_share_one_log_line(pipeline, fixture_sto
     assert [r.getMessage() for r in caplog.records if BARE_NUMBERS_LOG in r.getMessage()] == [
         BARE_NUMBERS_LOG + "812, 9, 10"
     ]
+
+
+def test_tabs_title_placeholder_is_filled(pipeline, fixture_store):
+    reply = (
+        '<a2ui>\nroot = Tabs([{title: "{r1[0].supplier}", child: a}, {title: "Rest", child: b}])\n'
+        'a = Text("A")\nb = Text("B")\n</a2ui>'
+    )
+    ui = pipeline.build(reply, fixture_store, "turn-1")
+    tabs = next(c for c in components(ui.messages) if c["component"] == "Tabs")
+    assert [t["title"] for t in tabs["tabs"]] == ["Supplier A", "Rest"]
+
+
+def test_tabs_title_placeholder_error_raises_ui_error(pipeline, fixture_store):
+    reply = '<a2ui>\nroot = Tabs([{title: "{r1[0].nope}", child: a}])\na = Text("A")\n</a2ui>'
+    with pytest.raises(UiError) as e:
+        pipeline.build(reply, fixture_store, "turn-1")
+    assert any("nope" in m and "'root'" in m for m in e.value.messages)
+
+
+def test_tabs_title_bare_number_is_logged(pipeline, fixture_store):
+    reply = '<a2ui>\nroot = Tabs([{title: "Top 5", child: a}])\na = Text("A")\n</a2ui>'
+    ui = pipeline.build(reply, fixture_store, "turn-1")
+    assert ui.bare_numbers == ["5"]
