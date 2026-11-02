@@ -185,6 +185,14 @@ def cmd_export_dev(args) -> None:
     print(json.dumps({"rows": len(rows), "subset": len(subset), "out": str(args.out or DEV_EXPORT)}))
 
 
+def cmd_export_test(args) -> None:
+    from .checkpoints import TEST_EXPORT, export_test
+
+    rows = export_test(checked_system_prompt(ExpressSDK(CATALOG)), args.data)
+    write_jsonl(args.out or TEST_EXPORT, rows)
+    print(json.dumps({"rows": len(rows), "families": len({r["family"] for r in rows}), "out": str(args.out or TEST_EXPORT)}))
+
+
 def cmd_lint(args) -> None:
     from .synth.catalog_model import CatalogModel
     from .synth.lint import lint_gallery, lint_rows, load_gallery_allowlist, stale_allowlist
@@ -292,6 +300,9 @@ def build_parser() -> argparse.ArgumentParser:
     ed.add_argument("--out", type=Path, default=None)
     ed.add_argument("--seed", type=int, default=0)
     ed.set_defaults(fn=cmd_export_dev)
+    et = sub.add_parser("export-test", help="test prompts for the one-time final evaluation (gallery only, with families)")
+    et.add_argument("--out", type=Path, default=None)
+    et.set_defaults(fn=cmd_export_test)
     v = sub.add_parser("vocab", help="write domain vocabularies with meta/muse-spark-1.3")
     which = v.add_mutually_exclusive_group(required=True)
     which.add_argument("--domain")

@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
 from .refs import Path, Ref, RefIndex, path_str
+from .structure import _INTERP
 
 ROOT = "root"
 Components = dict[str, dict[str, Any]]
@@ -134,14 +136,34 @@ def align(pred: Components, ref: Components, index: RefIndex, anchors: frozenset
         queue.append(found[0])
 
 
-def triples(comp: dict[str, Any], index: RefIndex, target_name: dict[str, str] | None = None) -> Counter[Triple]:
+PATH_MARK, EVENT_MARK = "<path>", "<event>"
+_CONTEXT_KEY = re.compile(r"(\.context\.)[^.\[]+")
+
+
+def blind_leaf(prop: str, value: Any) -> tuple[str, Any]:
+    """Name-blind form of one leaf (ADR 0021): data paths, event names and event context
+    keys become placeholders. Literal text, types, enums and calls stay as they are."""
+    prop = _CONTEXT_KEY.sub(r"\1*", prop)
+    last = prop.rsplit(".", 1)[-1]
+    if last in ("path", "@path"):
+        return prop, PATH_MARK
+    if prop == "event.name" or prop.endswith(".event.name"):
+        return prop, EVENT_MARK
+    if isinstance(value, str) and "${" in value:
+        return prop, _INTERP.sub("${" + PATH_MARK + "}", value)
+    return prop, value
+
+
+def triples(comp: dict[str, Any], index: RefIndex, target_name: dict[str, str] | None = None, blind: bool = False) -> Counter[Triple]:
     """Slot triples of one component. `target_name` maps child IDs to the names
     they are compared under (reference IDs); unmapped children get a marker
-    that never matches."""
+    that never matches. `blind` applies `blind_leaf` to every leaf."""
     ctype = str(comp.get("component"))
     refs = index.refs(comp)
     out: Counter[Triple] = Counter()
     for prop, value in leaf_values(comp, refs):
+        if blind:
+            prop, value = blind_leaf(prop, value)
         out[(ctype, prop, json.dumps(value, sort_keys=True))] += 1
     for r in refs:
         name = r.target if target_name is None else target_name.get(r.target, f"?unaligned:{r.target}")
@@ -220,6 +242,7 @@ class Alignment:
     unaligned_pred: list[str]
     unaligned_ref: list[str]
     per_type: dict[str, SlotScore]
+    blind_score: SlotScore
 
 
 def score_components(pred: Components, ref: Components, index: RefIndex, anchors: frozenset[str] = frozenset()) -> Alignment:
@@ -232,6 +255,10 @@ def score_components(pred: Components, ref: Components, index: RefIndex, anchors
 
     pred_t = {p: triples(c, index, names) for p, c in pred.items()}
     ref_t = {r: triples(c, index) for r, c in ref.items()}
+    blind = SlotScore(n_pred=sum(map(lambda t: sum(t.values()), pred_t.values())), n_ref=sum(map(lambda t: sum(t.values()), ref_t.values())))
+    for p, c in pred.items():
+        if p in mapping:
+            blind.tp += sum((triples(c, index, names, blind=True) & triples(ref[mapping[p]], index, blind=True)).values())
     for p, t in pred_t.items():
         s = SlotScore(n_pred=sum(t.values()))
         if p in mapping:
@@ -254,4 +281,5 @@ def score_components(pred: Components, ref: Components, index: RefIndex, anchors
         unaligned_pred=[p for p in pred if p not in mapping],
         unaligned_ref=[r for r in ref if r not in set(mapping.values())],
         per_type=per_type,
+        blind_score=blind,
     )

@@ -153,3 +153,219 @@ def test_score_output_carries_selection_ci(dev_rows, tmp_path, capsys):
     assert main(["score", str(p), "--out", str(tmp_path / "s.json"), "--dev", str(dev)]) == 0
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line["selection_ci"] == pytest.approx([lo, hi])
+
+
+# --- test split (one-time evaluation of the final candidate) ---------------------------------
+
+
+@pytest.fixture(scope="module")
+def test_rows():
+    from a2ui_eval.checkpoints import export_test
+
+    return export_test(PROMPT, DATA)
+
+
+def _test_cases():
+    return {c["id"]: c for c in read_jsonl(DATA / "test" / "cases.jsonl")}
+
+
+def test_export_test_rows(test_rows):
+    """Every frozen test case once, id-sorted, gallery source, its family, the frozen system text."""
+    from a2ui_eval.checkpoints import export_test
+
+    cases = _test_cases()
+    assert len(test_rows) == len(cases) == 136
+    assert [r["id"] for r in test_rows] == sorted(cases)
+    assert {r["source"] for r in test_rows} == {"gallery"}
+    assert not any(r["subset"] for r in test_rows)
+    for r in test_rows:
+        assert r["family"] == cases[r["id"]]["family"]
+        assert r["messages"] == [{"role": "system", "content": PROMPT}, {"role": "user", "content": cases[r["id"]]["intent"]}]
+    assert len({r["family"] for r in test_rows}) == 8
+    assert export_test(PROMPT, DATA) == test_rows
+
+
+def test_score_test_split_uses_test_references(test_rows, dev_rows):
+    """--split test scores against test references and rejects dev ids."""
+    cases = _test_cases()
+    ids = [r["id"] for r in test_rows][:2]
+    preds = [
+        {"id": ids[0], "checkpoint": "s250", "text": wrap(cases[ids[0]]["reference_express"]), "finish": "stop"},
+        {"id": ids[1], "checkpoint": "s250", "text": None, "finish": "error"},
+    ]
+    out = score_predictions(preds, test_rows, DATA, split="test")
+    assert out["selection"] == pytest.approx(0.5)
+    assert {r["family"] for r in out["rows"]} == {cases[i]["family"] for i in ids}
+    assert out["bootstrap"]["clustered_by"] == "family"
+    with pytest.raises(CheckpointError, match="unknown"):
+        score_predictions([{"id": dev_rows[0]["id"], "checkpoint": "s250", "text": None, "finish": "error"}], test_rows, DATA, split="test")
+
+
+def _fam(values: dict[str, list[float]]) -> list[dict]:
+    return [{"id": f"{f}/{i}", "family": f, "slot_f1": v} for f, vs in values.items() for i, v in enumerate(vs)]
+
+
+def test_family_ci_resamples_whole_families():
+    """Rows in a family are correlated, so families are resampled, not rows. Two families, one
+    all 1.0 and one all 0.0: a family resample can draw the same family twice, so the interval
+    spans 0..1. A row bootstrap would sit tightly around the mean."""
+    from a2ui_eval.checkpoints import family_ci
+
+    assert family_ci(_fam({"a": [1.0] * 20, "b": [0.0] * 20})) == pytest.approx([0.0, 1.0])
+    assert family_ci(_fam({"a": [0.6] * 3, "b": [0.6] * 9})) == pytest.approx([0.6, 0.6])
+    assert family_ci([]) == [0.0, 0.0]
+
+
+def test_family_ci_brackets_the_row_mean():
+    from a2ui_eval.checkpoints import _mean, family_ci
+
+    rows = _fam({f: [(i * 7 + k) % 10 / 10 for k in range(5 + i)] for i, f in enumerate("abcdefgh")})
+    lo, hi = family_ci(rows)
+    assert lo < _mean([r["slot_f1"] for r in rows]) < hi
+    assert family_ci(rows) == [lo, hi]
+
+
+def test_compare_ci_is_paired_by_row_and_clustered_by_family():
+    """The difference b - a is taken per row and families are resampled, so a constant
+    improvement gives a zero-width interval even when families differ a lot."""
+    from a2ui_eval.checkpoints import compare_ci
+
+    a = _fam({"a": [0.1, 0.2], "b": [0.8, 0.9, 0.7], "c": [0.4]})
+    b = [{**r, "slot_f1": r["slot_f1"] + 0.1} for r in a]
+    out = compare_ci(a, b)
+    assert out["diff"] == pytest.approx(0.1)
+    assert out["diff_ci"] == pytest.approx([0.1, 0.1])
+    with pytest.raises(CheckpointError, match="same rows"):
+        compare_ci(a, b[:-1])
+
+
+def test_score_and_compare_cli_on_test(test_rows, tmp_path, capsys):
+    """`score --split test` needs every test row; `compare` reads two score files."""
+    from a2ui_eval.checkpoints import main
+
+    cases = _test_cases()
+    test = tmp_path / "test.jsonl"
+    test.write_text("".join(json.dumps(r) + "\n" for r in test_rows))
+
+    def preds(ckpt, good):
+        p = tmp_path / f"{ckpt}.jsonl"
+        p.write_text("".join(
+            json.dumps({"id": r["id"], "checkpoint": ckpt, "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])}
+                       if good(i) else {"id": r["id"], "checkpoint": ckpt, "finish": "error", "text": None}) + "\n"
+            for i, r in enumerate(test_rows)))
+        return p
+
+    base, tuned = preds("s000", lambda i: i % 4 == 0), preds("s250", lambda i: i % 2 == 0)
+    assert main(["score", str(base), "--out", str(tmp_path / "s000.json"), "--split", "test", "--dev", str(test)]) == 0
+    assert main(["score", str(tuned), "--out", str(tmp_path / "s250.json"), "--split", "test", "--dev", str(test)]) == 0
+    capsys.readouterr()
+    assert main(["compare", str(tmp_path / "s000.json"), str(tmp_path / "s250.json")]) == 0
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert line["a"] == "s000" and line["b"] == "s250"
+    assert line["diff"] == pytest.approx(0.25)
+    lo, hi = line["diff_ci"]
+    assert lo < 0.25 < hi
+
+    partial = tmp_path / "partial.jsonl"
+    partial.write_text(base.read_text().splitlines()[0] + "\n")
+    assert main(["score", str(partial), "--out", str(tmp_path / "x.json"), "--split", "test", "--dev", str(test)]) == 1
+    assert "missing predictions for 135" in capsys.readouterr().err
+
+
+def test_family_ci_takes_the_row_mean_of_each_draw():
+    """Refuter B1: with unequal family sizes, the row mean of a draw differs from the mean of its
+    family means. Replays the seeded draws with explicit row-mean arithmetic."""
+    import random as _random
+
+    from a2ui_eval.checkpoints import family_ci
+
+    fams = {"a": [1.0], "b": [0.0] * 9, "c": [0.5, 0.5, 0.2]}
+    rows = _fam(fams)
+    clusters = [fams[f] for f in sorted(fams)]
+    rng, n = _random.Random(0), 2000
+    stats = []
+    for _ in range(n):
+        draw = rng.choices(clusters, k=len(clusters))
+        stats.append(sum(sum(c) for c in draw) / sum(len(c) for c in draw))
+    stats.sort()
+    for level in (0.5, 0.95):
+        tail = (1 - level) / 2
+        assert family_ci(rows, level=level) == pytest.approx([stats[int(tail * n)], stats[min(n - 1, int((1 - tail) * n))]])
+
+
+def _test_scores(tmp_path, test_rows, name, ids=None, split="test"):
+    rows = [{"id": r["id"], "family": r["family"], "slot_f1": 0.5} for r in test_rows if ids is None or r["id"] in ids]
+    if split != "test":
+        rows = [{k: v for k, v in r.items() if k != "family"} for r in rows]
+    path = tmp_path / f"{name}.json"
+    path.write_text(json.dumps({"checkpoint": name, "split": split, "selection": 0.5, "rows": rows}))
+    return path
+
+
+def test_score_test_needs_every_frozen_test_row_even_with_a_partial_export(test_rows, tmp_path, capsys):
+    """Refuter B2: the test guard is the frozen test cases, not the rows of the export passed in."""
+    from a2ui_eval.checkpoints import main
+
+    part = tmp_path / "part.jsonl"
+    part.write_text("".join(json.dumps(r) + "\n" for r in test_rows[:3]))
+    preds = tmp_path / "p.jsonl"
+    preds.write_text("".join(json.dumps({"id": r["id"], "checkpoint": "s250", "text": None, "finish": "error"}) + "\n" for r in test_rows[:3]))
+    assert main(["score", str(preds), "--out", str(tmp_path / "s.json"), "--split", "test", "--dev", str(part)]) == 1
+    assert "missing predictions for 133" in capsys.readouterr().err
+    assert not (tmp_path / "s.json").exists()
+
+
+def test_compare_cli_rejects_dev_partial_and_mismatched_files(test_rows, tmp_path, capsys):
+    from a2ui_eval.checkpoints import main
+
+    full = _test_scores(tmp_path, test_rows, "s000")
+    ids = {r["id"] for r in test_rows}
+    cases = [
+        (_test_scores(tmp_path, test_rows, "dev", split="dev"), "test score files"),
+        (_test_scores(tmp_path, test_rows, "part", ids=set(sorted(ids)[:3])), "every test row"),
+        (_test_scores(tmp_path, test_rows, "empty", ids=set()), "every test row"),
+    ]
+    for other, msg in cases:
+        assert main(["compare", str(full), str(other)]) == 1
+        assert msg in capsys.readouterr().err
+    assert main(["compare", str(full), str(_test_scores(tmp_path, test_rows, "s250"))]) == 0
+
+
+def test_score_reports_blind_next_to_literal(dev_rows):
+    """N7: rows, sources and the summary carry the name-blind score; selection is unchanged."""
+    cases = _cases()
+    g = [r["id"] for r in dev_rows if r["source"] == "gallery"][:2]
+    ref = cases[g[0]]["reference_express"]
+    preds = [
+        {"id": g[0], "checkpoint": "s025", "text": wrap(ref), "finish": "stop"},
+        {"id": g[1], "checkpoint": "s025", "text": None, "finish": "error"},
+    ]
+    out = score_predictions(preds, dev_rows, DATA)
+    assert [r["slot_f1_blind"] for r in out["rows"]] == [1.0, 0.0]
+    assert out["sources"]["gallery"]["slot_f1_blind"] == pytest.approx(0.5)
+    assert out["selection_blind"] == pytest.approx(0.5)
+    assert out["selection"] == pytest.approx(0.5)
+
+
+def test_blind_selection_is_wired_from_slot_blind_as_a_macro_mean(dev_rows):
+    """Refuter (N7): a renamed path makes blind > literal on a row, and unequal source counts
+    make the macro mean differ from the row mean."""
+    import re
+
+    cases = _cases()
+    gal = next(r["id"] for r in dev_rows if r["source"] == "gallery" and re.search(r"\$/\w+", cases[r["id"]]["reference_express"]))
+    syn = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:2]
+    ref = cases[gal]["reference_express"]
+    renamed = re.sub(r"\$/(\w+)", r"$/zz\1", ref)
+    preds = [
+        {"id": gal, "checkpoint": "s025", "text": wrap(renamed), "finish": "stop"},
+        {"id": syn[0], "checkpoint": "s025", "text": wrap(cases[syn[0]]["reference_express"]), "finish": "stop"},
+        {"id": syn[1], "checkpoint": "s025", "text": None, "finish": "error"},
+    ]
+    out = score_predictions(preds, dev_rows, DATA)
+    row = next(r for r in out["rows"] if r["id"] == gal)
+    assert row["slot_f1"] < 1.0 and row["slot_f1_blind"] == 1.0
+    assert out["sources"]["gallery"]["slot_f1_blind"] == 1.0
+    assert out["selection_blind"] == pytest.approx((1.0 + 0.5) / 2)  # macro mean, not the row mean 2/3
+    assert out["selection"] == pytest.approx((row["slot_f1"] + 0.5) / 2)
+    assert out["selection"] < out["selection_blind"]

@@ -115,6 +115,17 @@ def sample_one(api: Any, renderer: Any, sampler: Any, row: dict[str, Any], max_t
     return {"id": row["id"], "checkpoint": ckpt, "text": None, "finish": "error", "error": redact(f"{type(last).__name__}: {last}")[:200]}
 
 
+def sample_rows(deps: Deps, path: str, rows: list[dict[str, Any]], ckpt: str, workers: int, max_tokens: int) -> list[dict[str, Any]]:
+    """Greedy samples of `rows` from the sampler checkpoint at `path`, in row order. The sampler is
+    always closed. Works after the run's session is gone (the checkpoint is addressed by path)."""
+    sampler = deps.service.create_sampling_client(model_path=path, tokenizer=deps.tokenizer)
+    try:
+        with ThreadPoolExecutor(workers) as pool:
+            return list(pool.map(lambda r: sample_one(deps.api, deps.renderer, sampler, r, max_tokens, ckpt), rows))
+    finally:
+        sampler.close()
+
+
 def pick_checkpoint(rows: list[dict[str, Any]], ckpt: str) -> dict[str, Any]:
     """The newest promotable session checkpoint saved as `ckpt`. The SDK documents `name`
     (`.../checkpoints/run-<hex>-<ckpt>-<suffix>`); `checkpointName` is read when present."""
@@ -156,13 +167,7 @@ class Run:
 
     # sampling -------------------------------------------------------------
     def _sample(self, ckpt: str, path: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        d = self.deps
-        sampler = d.service.create_sampling_client(model_path=path, tokenizer=d.tokenizer)
-        try:
-            with ThreadPoolExecutor(self.cfg.workers) as pool:
-                return list(pool.map(lambda r: sample_one(d.api, d.renderer, sampler, r, self.cfg.max_tokens, ckpt), rows))
-        finally:
-            sampler.close()
+        return sample_rows(self.deps, path, rows, ckpt, self.cfg.workers, self.cfg.max_tokens)
 
     def _check_errors(self, ckpt: str, preds: list[dict[str, Any]], total: int) -> None:
         """Main thread only. Error rows score 0, so their count is recorded and capped."""

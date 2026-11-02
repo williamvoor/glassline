@@ -340,7 +340,7 @@ The rest of this section specifies 2c-1 in full. 2c-2 and 2c-3 are outlined at t
 - Decompile drops `theme` and `accessibility`, sorts data keys alphabetically, and writes data lines before components. The generator never emits `theme`, `accessibility` or `null` data values. (A probe on 2026-11-01 showed that a `null` data value does round-trip. The generator still avoids it, because a null field is never a plausible value.)
 - `DateTimeInput.min`/`max` validate only when bound. The schema puts each literal through a `oneOf` of `format: date/time/date-time`, and formats aren't enforced, so every literal string matches all three and fails. The generator therefore always binds `min`/`max` (probe, 2026-11-01).
 - `sdk_check` catches dangling refs, orphans, cycles, bad enums, missing required props and type errors. It doesn't catch a binding with no data value. Our `structure.unresolved_bindings` does.
-- The scorer compares data paths and event names literally. Component ids are aligned by position, so ids are free.
+- The scorer compares data paths and event names literally. Component ids are aligned by anchors, root, structure and text similarity (`align.py`), so ids are free.
 
 ## Files
 
@@ -945,6 +945,93 @@ Trainer tests use fake service, training, sampler and renderer objects. They nev
 ```bash
 cd glimmer-tune && uv run pytest
 cd glimmer-tune/trainer && uv run pytest
+```
+
+## Test evaluation (spec, 2026-11-02)
+
+The test split (136 gallery rows, 8 families, frozen in `c868bfa`) is spent **once**, on the final candidate and the base. It is not used to choose run settings or checkpoints. Run 1's `s250` is not that candidate until we decide there is no run 2.
+
+- `data_cli export-test` writes `exports/sft_test.jsonl`: one row per test case, id-sorted, `{id, source: "gallery", family, subset: false, messages: [system, user]}`, system text from the frozen file.
+- `python -m glimmer_trainer sample --run runs/<run> --ckpt <name> --cases <export> --out <pred.jsonl> [--limit N]` samples one saved checkpoint of a finished run, by the sampler path in its manifest. Sampling is greedy; max tokens is the manifest's `config.max_tokens` unless `--max-tokens` overrides it. Before creating any client it checks that `--out` doesn't exist, the checkpoint name is in the manifest, `--limit` is at least 1 and the cases file has rows. `--out` is opened with exclusive create, so it is never overwritten. It writes error rows and exits 1 if any row errored.
+- `checkpoints score <pred> --out <scores> --split test` needs a prediction for every one of the frozen test cases (`data/test/cases.jsonl`), whatever export `--dev` names. Rows carry `family`. `selection_ci` is a family-level bootstrap (whole families resampled with replacement, row mean of the draw; `bootstrap.clustered_by: "family"`), because rows of one family are correlated and 8 families is few.
+- `checkpoints compare <a.json> <b.json>` prints the paired difference b − a in mean row slot F1 and its family-level interval. Both files must have `split: "test"`, and each must cover exactly the frozen test ids.
+- Known limit: the interval covers family-level variation only, not sampling noise. Greedy sampling on the shared pool is not bit-exact (see the probe), and each test score comes from a single sampling pass.
+
+Procedure: `export-test`, sample `s000` and the candidate, score both with `--split test`, `compare` them, and record the result here.
+
+Probe (2026-11-02): `sample --limit 1` on dev row `dev/03_calendar-day/0005` against run 1's `s250` sampler path, after the session was deleted, returned a clean answer. So sampler checkpoints survive session deletion. The text differed from run 1's stored answer only in one component id (`actions_row` → `actions`), so greedy sampling on the shared pool is not bit-exact. Both score slot F1 0.765.
+
+Tests: `tests/test_checkpoints.py::test_export_test_rows`, `::test_score_test_split_uses_test_references`, `::test_family_ci_resamples_whole_families`, `::test_family_ci_brackets_the_row_mean`, `::test_compare_ci_is_paired_by_row_and_clustered_by_family`, `::test_score_and_compare_cli_on_test`; `::test_family_ci_takes_the_row_mean_of_each_draw`, `::test_score_test_needs_every_frozen_test_row_even_with_a_partial_export`, `::test_compare_cli_rejects_dev_partial_and_mismatched_files`; `trainer/tests/test_sample.py`.
+
+Refuter round (2026-11-02): FAIL with two blockers. The row-mean statistic was untested (a family-means mutant survived), and a partial `--dev` export bypassed the every-row guard. Both are fixed, with tests that fail on the old code or the mutant. The minor findings were fixed too: compare CLI rejection tests, max tokens from the manifest, exclusive create, `--limit` and empty-file checks, and redaction on client-creation failure.
+
+## Name-blind slot score (spec, 2026-11-02)
+
+Status: decided by the assistant on the user's delegation (2026-11-02). [ADR 0021](../docs/adr/0021-name-blind-slot-score-uses-placeholders.md).
+
+Intents never name data paths or event names (R1–R3, ADR 0011). A correct answer that picks other names still loses literal slot F1. This adds a second score, **name-blind slot F1**, reported next to the literal one. Selection does not change.
+
+### Files
+
+| File | Change |
+|---|---|
+| `a2ui_eval/align.py` | `triples(..., blind=False)`; `blind_leaf(prop, value)`; `Alignment.blind_score` |
+| `a2ui_eval/score.py` | `_data_triples(..., blind=False)`; `result["slot_blind"]`, set wherever `slot` is set |
+| `a2ui_eval/checkpoints.py` | rows carry `slot_f1_blind`; sources carry its mean; top-level `selection_blind` (same macro mean); in the CLI stdout line |
+| `tests/test_score.py`, `tests/test_checkpoints.py` | tests below |
+
+### Behaviour
+
+Blinding rewrites a component triple `(type, prop, value)` before comparison:
+- **Paths:** a leaf whose last key is `path` or `@path` (bindings, relative template bindings, a child-list template's `path`) gets the value `"<path>"`.
+- **Event names:** a leaf whose prop ends in `event.name` gets the value `"<event>"`.
+- **Event context keys:** the key after `.context.` in a prop becomes `*`.
+- **Interpolations:** in a string value, each bare-path `${...}` (the `structure._INTERP` pattern) becomes `${<path>}`.
+- **Data model:** a `$data` triple keeps its value, and its pointer becomes `"<path>"`. The `$op` triple is unchanged.
+
+Everything else stays literal: component types, literal text, enums, function `call` names and child references. The alignment is the literal score's alignment, and blinding changes no triple counts, so `n_pred` and `n_ref` match the literal score. Failed, empty and non-compiling responses get `slot_blind` equal to `slot`.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| N1 | Renaming a bound path (absolute, relative in a template, a template's list path, an interpolation) leaves blind F1 at 1.0 and lowers literal F1 | `test_score.py::test_blind_ignores_path_names[case]` |
+| N2 | Renaming an event name or a context key leaves blind F1 at 1.0 and lowers literal F1 | `test_score.py::test_blind_ignores_event_names` |
+| N3 | Data written under a different pointer with the same value: blind F1 1.0. Same pointer with a different value: blind F1 < 1.0 | `test_score.py::test_blind_data_model_keeps_values` |
+| N4 | Literal text changes and a binding replaced by a literal still lower blind F1 | `test_score.py::test_blind_still_scores_text_and_binding_kind` |
+| N5 | A failed response has `slot_blind == slot`, with F1 0 and the same `n_ref` | `test_score.py::test_failed_request_scores_zero_slot_f1` (extended) |
+| N6 | The literal `slot` is unchanged by this work: every existing scorer test passes as-is | existing suite |
+| N5b | `slot_blind` equals `slot` (a separate dict) for non-compiling, unextracted and text-only answers; a missing reference surface adds the same `n_ref` to both | `test_score.py::test_blind_parity_on_every_early_return_and_missing_surface` |
+| N7 | Score files carry `slot_f1_blind` per row and per source, and `selection_blind` (the macro mean over sources, from `slot_blind`). `selection` is unchanged | `test_checkpoints.py::test_score_reports_blind_next_to_literal`, `::test_blind_selection_is_wired_from_slot_blind_as_a_macro_mean` |
+
+### Decisions and non-goals
+
+- Placeholders, not a learned one-to-one renaming. A model that binds two fields to one path is not caught; `bindings_valid` and the reading of failures cover that. Revisit only if reading failures shows it matters.
+- Report-only: checkpoint selection stays on literal slot F1 until the run 1 rescore has been read. The run 2 selection score is decided then.
+- No interval on `selection_blind` yet. Add one if it becomes the selection score.
+- `exact_match` stays literal.
+- v1 catalog shapes are blinded by the same rules (`@path`). Eval data is v0.9.
+- The interpolation rule is `structure._INTERP` as it stands. It also matches identifier-like tokens (`${5}`, `${true}`, `${a.b}`), so "Price ${5}" and "Price ${9}" compare equal. Nested bare paths inside an expression interpolation (`${formatDate(value: ${/d}, ...)}`) are blinded, and the outer expression stays literal.
+- All event context keys become `*`, so the pairing of keys with values is lost (`{a: $/x, b: $/y}` equals `{a: $/y, b: $/x}`). This is accepted with the placeholder choice.
+- The event rule matches the key `event.name` on a key boundary only.
+
+Refuter round (2026-11-02): PASS-WITH-NOTES, with no blocker. N6 was checked on all 1748 run 1 predictions: literal `slot_f1`, `selection` and `selection_ci` are identical to HEAD. Fixed:
+- The N7 test couldn't tell blind from literal (MAJOR). The new wiring test kills the refuter's mutants.
+- Untested parity paths.
+- `slot` and `slot_blind` sharing one dict.
+- The event-name match boundary.
+
+Deferred: `align.py` imports the private `structure._INTERP`.
+
+### Rescore of run 1
+
+Every file in `runs/sft1/predictions/` is rescored locally into `runs/sft1/rescore-20261102/` (git-ignored; the original `scores/` stay untouched). A sub-agent reads the 20 lowest name-blind gallery rows of `s250.full` and sorts each into model error or scorer artefact.
+
+### Test command
+
+```bash
+cd glimmer-tune && uv run pytest tests/test_score.py tests/test_align.py tests/test_checkpoints.py
+cd glimmer-tune && uv run pytest
 ```
 
 ## 2c-2 and 2c-3 outline

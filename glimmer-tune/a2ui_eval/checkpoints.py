@@ -1,6 +1,9 @@
 """Dev prompts for checkpoint scoring, and scoring of a checkpoint's predictions (ADR 0015).
 
-`python -m a2ui_eval.checkpoints score <predictions.jsonl> --out <scores.json> [--full]`
+`python -m a2ui_eval.checkpoints score <predictions.jsonl> --out <scores.json> [--full] [--split test]`
+`python -m a2ui_eval.checkpoints compare <a-scores.json> <b-scores.json>`
+
+The test split is spent once, on the final candidate and the base (SPEC "Test evaluation").
 
 The trainer (`trainer/`, its own environment) never imports this package: it writes
 predictions and runs this command as a subprocess.
@@ -25,6 +28,7 @@ from .seeds import ROOT
 DATA = ROOT / "data"
 CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
 DEV_EXPORT = ROOT / "exports" / "sft_dev.jsonl"
+TEST_EXPORT = ROOT / "exports" / "sft_test.jsonl"
 SUBSET_PER_SOURCE = 32
 SOURCES = ("gallery", "synthetic")
 FINISH = ("stop", "length", "error")
@@ -37,6 +41,13 @@ class CheckpointError(Exception):
 
 def dev_cases(data: Path = DATA) -> list[dict[str, Any]]:
     return read_jsonl(data / "dev" / "cases.jsonl") + read_jsonl(data / "synth" / "dev" / "cases.jsonl")
+
+
+def test_cases(data: Path = DATA) -> list[dict[str, Any]]:
+    return read_jsonl(data / "test" / "cases.jsonl")
+
+
+SPLIT_CASES = {"dev": dev_cases, "test": test_cases}
 
 
 def _source(case: dict[str, Any]) -> str:
@@ -65,6 +76,21 @@ def export_dev(system_prompt: str, data: Path = DATA, seed: int = 0, per_source:
     ]
 
 
+def export_test(system_prompt: str, data: Path = DATA) -> list[dict[str, Any]]:
+    """One prompt row per frozen test case, id-sorted. Test is gallery only; each row keeps its
+    family for the family-level bootstrap. No subset: every row is sampled."""
+    return [
+        {
+            "id": c["id"],
+            "source": _source(c),
+            "family": c["family"],
+            "subset": False,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": c["intent"]}],
+        }
+        for c in sorted(test_cases(data), key=lambda c: c["id"])
+    ]
+
+
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
@@ -78,9 +104,51 @@ def selection_ci(
     if not by_source:
         return [0.0, 0.0]
     rng = random.Random(seed)
-    stats = sorted(_mean([_mean(rng.choices(v, k=len(v))) for v in by_source]) for _ in range(samples))
+    return _percentiles([_mean([_mean(rng.choices(v, k=len(v))) for v in by_source]) for _ in range(samples)], samples, level)
+
+
+def _percentiles(stats: list[float], samples: int, level: float) -> list[float]:
+    stats = sorted(stats)
     tail = (1 - level) / 2
     return [stats[int(tail * samples)], stats[min(samples - 1, int((1 - tail) * samples))]]
+
+
+def _by_family(rows: list[dict[str, Any]]) -> list[list[float]]:
+    fams: dict[str, list[float]] = {}
+    for r in rows:
+        fams.setdefault(r["family"], []).append(r["slot_f1"])
+    return [fams[f] for f in sorted(fams)]
+
+
+def _cluster_ci(clusters: list[list[float]], samples: int, level: float, seed: int) -> list[float]:
+    """Percentile bootstrap that resamples whole clusters and takes the row mean of the draw."""
+    if not clusters:
+        return [0.0, 0.0]
+    rng = random.Random(seed)
+    stats = []
+    for _ in range(samples):
+        draw = [v for c in rng.choices(clusters, k=len(clusters)) for v in c]
+        stats.append(_mean(draw))
+    return _percentiles(stats, samples, level)
+
+
+def family_ci(
+    rows: list[dict[str, Any]], samples: int = BOOTSTRAP["samples"], level: float = BOOTSTRAP["level"], seed: int = BOOTSTRAP["seed"]
+) -> list[float]:
+    """Interval for the row mean slot F1 when rows come from few families: rows of one family
+    are correlated, so whole families are resampled with replacement."""
+    return _cluster_ci(_by_family(rows), samples, level, seed)
+
+
+def compare_ci(
+    a: list[dict[str, Any]], b: list[dict[str, Any]], samples: int = BOOTSTRAP["samples"], level: float = BOOTSTRAP["level"], seed: int = BOOTSTRAP["seed"]
+) -> dict[str, Any]:
+    """Paired comparison: per-row difference b - a, families resampled. Both must score the same rows."""
+    fa, fb = {r["id"]: r for r in a}, {r["id"]: r for r in b}
+    if set(fa) != set(fb):
+        raise CheckpointError("the two score files must cover the same rows")
+    diffs = [{"id": i, "family": fa[i]["family"], "slot_f1": fb[i]["slot_f1"] - fa[i]["slot_f1"]} for i in sorted(fa)]
+    return {"diff": _mean([d["slot_f1"] for d in diffs]), "diff_ci": family_ci(diffs, samples, level, seed)}
 
 
 def score_predictions(
@@ -89,8 +157,10 @@ def score_predictions(
     data: Path = DATA,
     expect: set[str] | None = None,
     sdk: ExpressSDK | None = None,
+    split: str = "dev",
 ) -> dict[str, Any]:
     """Scores one checkpoint's predictions. `expect`: ids that must all be present.
+    `split="test"` scores against test references, with a family-level interval.
 
     `selection` is the mean of the gallery and synthetic mean row slot F1, so the larger
     synthetic dev set doesn't outweigh the gallery one (ADR 0009)."""
@@ -98,10 +168,10 @@ def score_predictions(
     if len(checkpoints) != 1:
         raise CheckpointError(f"predictions must be for one checkpoint, got {sorted(map(str, checkpoints))}")
     known = {r["id"]: r for r in dev_rows}
-    cases = {c["id"]: c for c in dev_cases(data)}
+    cases = {c["id"]: c for c in SPLIT_CASES[split](data)}
     ids = [p["id"] for p in predictions]
-    if unknown := sorted(set(ids) - set(known)):
-        raise CheckpointError(f"unknown ids (not in the dev export): {unknown[:5]}")
+    if unknown := sorted(set(ids) - (set(known) & set(cases))):
+        raise CheckpointError(f"unknown ids (not in the {split} export): {unknown[:5]}")
     if dupes := sorted({i for i in ids if ids.count(i) > 1}):
         raise CheckpointError(f"duplicate ids: {dupes[:5]}")
     if expect is not None and (missing := sorted(expect - set(ids))):
@@ -124,20 +194,28 @@ def score_predictions(
                 "exact_match": r["exact_match"],
                 "truncated": r["truncated"],
                 "slot_f1": r["slot"]["f1"],
+                "slot_f1_blind": r["slot_blind"]["f1"],
+                **({"family": cases[p["id"]]["family"]} if split == "test" else {}),
             }
         )
     sources = {}
     for source in SOURCES:
         own = [r for r in rows if r["source"] == source]
         if own:
-            sources[source] = {"rows": len(own), **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1")}}
+            sources[source] = {"rows": len(own), **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1", "slot_f1_blind")}}
+    if split == "test":
+        ci, how = family_ci(rows), {"clustered_by": "family"}
+    else:
+        ci, how = selection_ci(rows), {"stratified_by": list(SOURCES)}
     return {
         "checkpoint": checkpoints.pop(),
+        "split": split,
         "rows": rows,
         "sources": sources,
         "selection": _mean([s["slot_f1"] for s in sources.values()]),
-        "selection_ci": selection_ci(rows),
-        "bootstrap": {**BOOTSTRAP, "stratified_by": list(SOURCES)},
+        "selection_blind": _mean([s["slot_f1_blind"] for s in sources.values()]),
+        "selection_ci": ci,
+        "bootstrap": {**BOOTSTRAP, **how},
     }
 
 
@@ -147,19 +225,41 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("score", help="score one checkpoint's predictions JSONL")
     s.add_argument("predictions", type=Path)
     s.add_argument("--out", type=Path, required=True)
-    s.add_argument("--dev", type=Path, default=DEV_EXPORT)
-    s.add_argument("--full", action="store_true", help="every dev row must be present (default: the subset)")
+    s.add_argument("--dev", type=Path, default=None, help="the prompt export (default: the split's export)")
+    s.add_argument("--full", action="store_true", help="every dev row must be present (default: the subset; test always needs every row)")
+    s.add_argument("--split", choices=tuple(SPLIT_CASES), default="dev")
+    c = sub.add_parser("compare", help="paired, family-level comparison of two test score files (b - a)")
+    c.add_argument("a", type=Path)
+    c.add_argument("b", type=Path)
     args = p.parse_args(argv)
+    if args.cmd == "compare":
+        try:
+            a, b = (json.loads(f.read_text(encoding="utf-8")) for f in (args.a, args.b))
+            if a.get("split") != "test" or b.get("split") != "test":
+                raise CheckpointError("compare needs test score files (split: test)")
+            frozen = {c["id"] for c in test_cases()}
+            for name, f in (("a", a), ("b", b)):
+                if {r["id"] for r in f["rows"]} != frozen:
+                    raise CheckpointError(f"{name} must score every test row ({len(frozen)}), got {len(f['rows'])}")
+            out = compare_ci(a["rows"], b["rows"])
+        except CheckpointError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps({"a": a["checkpoint"], "b": b["checkpoint"], "a_selection": a["selection"], "b_selection": b["selection"], **out}))
+        return 0
     try:
-        dev_rows = read_jsonl(args.dev)
-        expect = {r["id"] for r in dev_rows if args.full or r["subset"]}
-        out = score_predictions(read_jsonl(args.predictions), dev_rows, expect=expect)
+        dev_rows = read_jsonl(args.dev or (TEST_EXPORT if args.split == "test" else DEV_EXPORT))
+        if args.split == "test":  # the guard is the frozen cases, not whatever export was passed in
+            expect = {c["id"] for c in test_cases()}
+        else:
+            expect = {r["id"] for r in dev_rows if args.full or r["subset"]}
+        out = score_predictions(read_jsonl(args.predictions), dev_rows, expect=expect, split=args.split)
     except CheckpointError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8")
-    print(json.dumps({"checkpoint": out["checkpoint"], "selection": out["selection"], "selection_ci": out["selection_ci"], "sources": out["sources"]}))
+    print(json.dumps({"checkpoint": out["checkpoint"], "split": out["split"], "selection": out["selection"], "selection_ci": out["selection_ci"], "selection_blind": out["selection_blind"], "sources": out["sources"]}))
     return 0
 
 

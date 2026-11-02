@@ -1,4 +1,4 @@
-"""`python -m glimmer_trainer {prepare,train}`. Only `train --launch` touches Fireworks."""
+"""`python -m glimmer_trainer {prepare,train,sample}`. Only `train --launch` and `sample` touch Fireworks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .loop import Config, Run, RunError, redact
+from .loop import Config, Run, RunError, redact, sample_rows
 from .prepare import PrepareError, check
 
 GLIMMER_TUNE = Path(__file__).resolve().parents[2]
@@ -40,7 +40,46 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--runs", type=Path, default=GLIMMER_TUNE / "runs")
         if name == "train":
             s.add_argument("--launch", action="store_true", help="open a Fireworks training session (remote; eval sampling is billed)")
+    sm = sub.add_parser("sample", help="sample one saved checkpoint of a finished run on a prompt export (billed)")
+    sm.add_argument("--run", type=Path, required=True, help="run directory holding manifest.json")
+    sm.add_argument("--ckpt", required=True, help="checkpoint name in the manifest, e.g. s250")
+    sm.add_argument("--cases", type=Path, required=True, help="prompt export, e.g. exports/sft_test.jsonl")
+    sm.add_argument("--out", type=Path, required=True, help="predictions JSONL; never overwritten")
+    sm.add_argument("--limit", type=int, default=None, help="only the first N rows (a probe)")
+    sm.add_argument("--max-tokens", type=int, default=None, help="default: the run's config.max_tokens")
+    sm.add_argument("--workers", type=int, default=8)
     return p
+
+
+def sample(args: argparse.Namespace, remote) -> int:
+    """Checks the output and checkpoint before any client exists; exits 1 when a row errored."""
+    if args.out.exists():
+        raise PrepareError(f"{args.out} exists; predictions are never overwritten")
+    if args.limit is not None and args.limit < 1:
+        raise PrepareError("--limit must be at least 1")
+    manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
+    paths = manifest.get("checkpoints", {})
+    if args.ckpt not in paths:
+        raise PrepareError(f"checkpoint {args.ckpt} is not in {args.run / 'manifest.json'} (have {sorted(paths)})")
+    rows = read_jsonl(args.cases)[: args.limit]
+    if not rows:
+        raise PrepareError(f"{args.cases} has no rows")
+    max_tokens = args.max_tokens or manifest.get("config", {}).get("max_tokens") or Config.max_tokens
+    if remote is None:
+        from .real import deps as remote
+    preds = sample_rows(remote(args.cases), paths[args.ckpt], rows, args.ckpt, args.workers, max_tokens)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with args.out.open("x", encoding="utf-8") as f:  # exclusive create: never overwrite
+            f.write("".join(json.dumps(p, ensure_ascii=False) + "\n" for p in preds))
+    except FileExistsError:
+        raise PrepareError(f"{args.out} exists; predictions are never overwritten") from None
+    errors = sum(p["finish"] == "error" for p in preds)
+    for p in preds:
+        if p["finish"] == "error":
+            print(f"{p['id']}: {p.get('error')}", file=sys.stderr)
+    print(json.dumps({"checkpoint": args.ckpt, "rows": len(preds), "errors": errors, "length": sum(p["finish"] == "length" for p in preds), "out": str(args.out)}))
+    return 1 if errors else 0
 
 
 def config(args: argparse.Namespace) -> Config:
@@ -58,6 +97,15 @@ def config(args: argparse.Namespace) -> Config:
 def main(argv: list[str] | None = None, local=None, remote=None) -> int:
     """`local()` -> (api, renderer, tokenizer); `remote(dev_path)` -> Deps. Injected by tests."""
     args = build_parser().parse_args(argv)
+    if args.cmd == "sample":
+        try:
+            return sample(args, remote)
+        except (PrepareError, RunError, FileNotFoundError) as e:
+            print(f"error: {redact(str(e))}", file=sys.stderr)
+            return 1
+        except Exception as e:  # noqa: BLE001 - SDK errors may quote request headers; never print the key
+            print(f"error: {type(e).__name__}: {redact(str(e))}", file=sys.stderr)
+            return 1
     if local is None:
         from .real import renderer_and_tokenizer as local
     try:

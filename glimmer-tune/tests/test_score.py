@@ -197,3 +197,80 @@ def test_failed_request_scores_zero_slot_f1(sdk, index, form_case):
     r = score_response(sdk, index, form_case, None)
     assert r["slot"]["n_ref"] > 0
     assert r["slot"]["f1"] == 0.0
+    assert r["slot_blind"] == r["slot"]  # N5
+
+
+# --- name-blind slot score (SPEC "Name-blind slot score", ADR 0021) -------------------------
+
+_LIST = 'surface("l")\nroot = Column([head, items])\nhead = Text("Rows: ${/count}")\nitems = List(_template($/rows, row))\nrow = Text($name)\n'
+
+
+def _both(sdk, index, ref_src, pred_src):
+    case = {"id": "b", "expect_ui": True, "reference": sdk.compile_express(ref_src)}
+    r = score_response(sdk, index, case, wrap(pred_src), "stop")
+    return r["slot"]["f1"], r["slot_blind"]["f1"], r
+
+
+@pytest.mark.parametrize(
+    "old,new",
+    [
+        ("$/form/email", "$/contact/mail"),  # absolute binding (in the field and the event context)
+        ("$name", "$label"),  # relative binding in a template
+        ("$/rows", "$/entries"),  # a template's list path
+        ("${/count}", "${/total}"),  # interpolation
+    ],
+)
+def test_blind_ignores_path_names(sdk, index, FORM_REF, old, new):
+    """N1: renaming a path costs literal F1, not name-blind F1."""
+    src = FORM_REF if old == "$/form/email" else _LIST
+    lit, blind, r = _both(sdk, index, src, src.replace(old, new))
+    assert lit < 1.0 and blind == 1.0
+    assert r["slot_blind"]["n_ref"] == r["slot"]["n_ref"] and r["slot_blind"]["n_pred"] == r["slot"]["n_pred"]
+
+
+def test_blind_ignores_event_names(sdk, index, FORM_REF):
+    """N2: event name and context key."""
+    for old, new in (('Event("signup"', 'Event("register"'), ("{email: $/form/email}", "{address: $/form/email}")):
+        lit, blind, _ = _both(sdk, index, FORM_REF, FORM_REF.replace(old, new))
+        assert lit < 1.0 and blind == 1.0, old
+
+
+def test_blind_data_model_keeps_values(sdk, index):
+    """N3: the pointer is blinded, the value is not."""
+    ref = 'surface("d")\nroot = Text($/user/name)\n$/user/name = "Ann"\n'
+    lit, blind, _ = _both(sdk, index, ref, ref.replace("/user/name", "/person/first"))
+    assert lit < 1.0 and blind == 1.0
+    _, blind, _ = _both(sdk, index, ref, ref.replace('"Ann"', '"Bea"'))
+    assert blind < 1.0
+
+
+def test_blind_still_scores_text_and_binding_kind(sdk, index, FORM_REF):
+    """N4: literal text, and a literal where a binding belongs, still cost name-blind F1."""
+    _, blind, _ = _both(sdk, index, FORM_REF, FORM_REF.replace('Text("Sign up")', 'Text("Register")'))
+    assert blind < 1.0
+    ref = 'surface("d")\nroot = Text($/user/name)\n'
+    _, blind, _ = _both(sdk, index, ref, ref.replace("$/user/name", '"user name"'))
+    assert blind < 1.0
+
+
+def test_blind_parity_on_every_early_return_and_missing_surface(sdk, index, form_case):
+    """Refuter: slot_blind equals slot (as an equal, separate dict) wherever no blinding applies."""
+    cases = [
+        (form_case, wrap("root = = broken\n")),  # does not compile
+        (form_case, "no block at all"),  # nothing extracted
+        ({"id": "t", "expect_ui": False, "reference": []}, "Just text."),  # text-only, as expected
+    ]
+    for case, text in cases:
+        r = score_response(sdk, index, case, text, "stop")
+        assert r["slot_blind"] == r["slot"] and r["slot_blind"] is not r["slot"], text
+    two = sdk.compile_express('surface("a")\nroot = Text("A")\n') + sdk.compile_express('surface("b")\nroot = Text($/x)\n$/x = "B"\n')
+    r = score_response(sdk, index, {"id": "m", "expect_ui": True, "reference": two}, wrap('surface("a")\nroot = Text("A")\n'), "stop")
+    assert r["slot_blind"]["n_ref"] == r["slot"]["n_ref"] and r["slot_blind"]["tp"] == r["slot"]["tp"]
+    assert r["slot"]["recall"] < 1.0
+
+
+def test_blind_event_rule_needs_a_key_boundary():
+    from a2ui_eval.align import EVENT_MARK, blind_leaf
+
+    assert blind_leaf("action.event.name", "go") == ("action.event.name", EVENT_MARK)
+    assert blind_leaf("prevent.name", "x") == ("prevent.name", "x")

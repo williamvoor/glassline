@@ -6,7 +6,7 @@ import json
 from collections import Counter
 from typing import Any
 
-from .align import SlotScore, score_components
+from .align import PATH_MARK, SlotScore, score_components
 from .refs import RefIndex
 from .sdk import CLOSE_TAG, CompileError, ExpressSDK
 from .structure import bound_paths, check_structure, unresolved_bindings
@@ -29,7 +29,8 @@ def close_stopped_block(text: str, finish_reason: str | None, sdk: ExpressSDK) -
     return text
 
 
-def _data_triples(turn: SurfaceTurn, name: str) -> Counter:
+def _data_triples(turn: SurfaceTurn, name: str, blind: bool = False) -> Counter:
+    """`blind` keeps the values and writes every pointer as the path placeholder (ADR 0021)."""
     out: Counter = Counter()
     out[("$op", turn.op, name)] += 1
 
@@ -41,7 +42,7 @@ def _data_triples(turn: SurfaceTurn, name: str) -> Counter:
             for i, v in enumerate(value):
                 flatten(f"{prefix.rstrip('/')}/{i}", v)
         else:
-            out[("$data", prefix or "/", json.dumps(value, sort_keys=True))] += 1
+            out[("$data", PATH_MARK if blind else (prefix or "/"), json.dumps(value, sort_keys=True))] += 1
 
     for path, value in turn.data_ops:
         flatten(path, value)
@@ -76,6 +77,7 @@ def _empty_result(case: dict[str, Any]) -> dict[str, Any]:
         "bindings_valid": False,
         "unresolved_bindings": [],
         "slot": SlotScore().to_dict(),
+        "slot_blind": SlotScore().to_dict(),
         "slot_by_type": {},
         "exact_match": False,
         "surface_id_errors": [],
@@ -99,6 +101,7 @@ def score_response(
         result["compile_errors"] = [{"kind": "NoResponse", "message": "no response"}]
         if expect_ui:  # nothing predicted against a real reference is F1 0, not the empty-vs-empty 1.0
             result["slot"] = SlotScore(n_ref=_ref_triple_count(index, reference)).to_dict()
+            result["slot_blind"] = dict(result["slot"])
         return result
 
     text = close_stopped_block(text, finish_reason, sdk)
@@ -109,12 +112,13 @@ def score_response(
         result["extracted"] = not blocks
         if not blocks:
             ok = {k: True for k in ("compiles", "sdk_valid", "schema_valid", "structure_valid", "bindings_valid", "exact_match")}
-            result.update(ok, slot=SlotScore().to_dict())
+            result.update(ok, slot=SlotScore().to_dict(), slot_blind=SlotScore().to_dict())
             return result
     else:
         result["extracted"] = bool(blocks)
         if not blocks:
             result["slot"] = SlotScore(n_ref=_ref_triple_count(index, reference)).to_dict()
+            result["slot_blind"] = dict(result["slot"])
             return result
 
     predicted: Messages = []
@@ -126,6 +130,7 @@ def score_response(
     result["compiles"] = not result["compile_errors"]
     if not result["compiles"]:
         result["slot"] = SlotScore(n_ref=_ref_triple_count(index, reference)).to_dict()
+        result["slot_blind"] = dict(result["slot"])
         return result
 
     result["sdk_error"] = sdk.sdk_check(text, existing)
@@ -172,7 +177,7 @@ def score_response(
         + [f"missing surface {s}" for s in ref_turns if s not in surface_map.values()]
     )
 
-    total = SlotScore()
+    total, total_blind = SlotScore(), SlotScore()
     by_type: dict[str, SlotScore] = {}
     exact = not result["surface_id_errors"]
     for sid, turn in pred_turns.items():
@@ -186,17 +191,24 @@ def score_response(
         pd = _data_triples(turn, rsid or f"?{sid}")
         rd = _data_triples(rturn, rsid) if rturn else Counter()
         total.add(SlotScore(tp=sum((pd & rd).values()), n_pred=sum(pd.values()), n_ref=sum(rd.values())))
+        total_blind.add(aligned.blind_score)
+        pdb = _data_triples(turn, rsid or f"?{sid}", blind=True)
+        rdb = _data_triples(rturn, rsid, blind=True) if rturn else Counter()
+        total_blind.add(SlotScore(tp=sum((pdb & rdb).values()), n_pred=sum(pdb.values()), n_ref=sum(rdb.values())))
         exact = exact and aligned.exact and pd == rd
     for rsid, rturn in ref_turns.items():
         if rsid in surface_map.values():
             continue
         missing = score_components({}, rturn.components, index)
         total.add(missing.score)
+        total_blind.add(missing.score)
         total.n_ref += sum(_data_triples(rturn, rsid).values())
+        total_blind.n_ref += sum(_data_triples(rturn, rsid).values())
         for t, s in missing.per_type.items():
             by_type.setdefault(t, SlotScore()).add(s)
 
     result["slot"] = total.to_dict()
+    result["slot_blind"] = total_blind.to_dict()
     result["slot_by_type"] = {t: s.to_dict() for t, s in sorted(by_type.items())}
     result["exact_match"] = exact and result["sdk_valid"]
     return result
