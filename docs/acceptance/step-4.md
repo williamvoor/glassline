@@ -12,4 +12,4 @@ Checked on 2026-11-02 against the loaded AusTender database (864,611 contracts, 
 | 5 | Switching `MODEL`/`FORMAT` needs no code change | pass (tests) | Model switch tests |
 | 6 | Byte-identical prompt (test), and `cached_tokens` > 0 from the second call of a live session | pass | Test P1/P4. Live: in `effort-check/agent-low-20261101T235731Z.log` the first call has `cached=0` and later calls have `cached=7537`. The cache rate over the effort check is 95 to 96 %. |
 | 7 | No model-typed number in charts, tables, metrics or `Cite` | pass by construction, **with a gap** | Macro and prose-filling tests. Gap: the model can select string literals in SQL and show them through `Metric`, which puts model-typed text on screen (see `../reasoning-effort-check.md`). |
-| 8 | Reasoning effort check done and recorded | **pending the user's scores** | `../reasoning-effort-check.md` |
+| 8 | Reasoning effort check done and recorded | **paused** until Muse Glimmer is fine-tuned (2026-11-02); runs recorded, unscored | `../reasoning-effort-check.md` |

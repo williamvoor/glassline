@@ -3,8 +3,11 @@
 The check from `explorer/SPEC.md` §10. It asks whether `REASONING_EFFORT=minimal` should stay the
 default or change to `low`. The harness is in `explorer/specs/effort-check/SPEC.md`.
 
-**Status: awaiting the user's scores.** The decision follows from them (rule below). The harness
-never scores, and the notes under "First read" are not scores.
+**Status: paused on 2026-11-02 until Muse Glimmer is fine-tuned.** The runs below are unscored,
+and `minimal` stays the default until then. Once Glimmer generates the Express, the model doing
+the UI changes, so these runs may need repeating rather than scoring. The decision follows from
+the scores (rule below). The harness never scores, and the notes under "First read" are not
+scores.
 
 ## Runs
 
