@@ -272,6 +272,7 @@ notes = "notes.md"
 
 # [comments]                 # optional Comment overlay (section 13)
 # overlay = "comments.toml"
+# examples = ["…"]           # optional example questions for the client (section 14)
 
 [currency]                    # one currency per dataset; used by the currency formats
 code = "AUD"
@@ -328,7 +329,7 @@ fails to import against that commit). Client:
 **Client behaviour.** A chat view: input box, list of turns. An agent turn shows status
 updates while the task runs ("Running SQL: top suppliers…", "SQL failed, retrying"), then the
 prose rendered with markdown, then an `<a2ui-surface>` for that turn's surface. Each turn's
-surface stays rendered as the conversation grows. The browser calls the agent directly at
+surface stays rendered as the conversation grows. Section 14 adds the manual-testing chat view. The browser calls the agent directly at
 `VITE_AGENT_URL` (default `http://127.0.0.1:10002`), and the agent allows `CLIENT_ORIGIN` with CORS
 (ADR 0007; no Vite proxy).
 
@@ -627,3 +628,52 @@ notice_id = "Contract notice number. Primary key."
 cd explorer/agent
 uv run pytest            # needs Docker
 ```
+
+## 14. Amendment: chat view for manual testing (2026-11-03)
+
+Status: **approved** (2026-11-03). The section 8 chat view was a bare input and turn list, and
+`run.sh` started only the stub agent. Manual end-to-end testing needs the real agent in one command
+and a chat view that shows progress, failures and where to start.
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/src/explorer_agent/config.py` | `Dataset.examples` (default `()`); `load_dataset` reads the optional `examples` list |
+| `agent/src/explorer_agent/server.py` | `agent_card(url, description, examples)` and `build_app(..., description, examples)`: the card's `description` is the Dataset's; examples go in one `AgentSkill`'s `examples` (no skill without examples) |
+| `agent/src/explorer_agent/__main__.py`, `testing/stub_server.py` | pass the description and examples |
+| `datasets/austender/dataset.toml` | three example questions |
+| `client/src/a2a.ts` | `AgentConnection.info`: `{description, examples}` from the agent card |
+| `client/src/app.ts`, `client/index.html` | the chat view below |
+| `run.sh` | `./run.sh` (stub, as before) or `./run.sh --real` |
+| READMEs, tests | `test_config.py`, `test_server.py`, `client/test/a2a.test.ts`, `client/test/app.test.ts` |
+
+### Behaviour
+
+- **Example questions.** `examples = ["…"]` in `dataset.toml` is optional; each must be a
+  non-blank string, else `ConfigError`. They reach the client through the agent card and **never
+  go into the prompt**, so the cached prefix is unchanged. They are not taken from
+  `scenarios.toml` (evaluation data, ADR 0018).
+- **Chat view.** A header with the Dataset description and New conversation (clears the turns,
+  drops the `contextId`, starts a new `MessageProcessor`). Before the first question: a short
+  explanation and the examples as buttons that ask them. Each turn shows the question, then the
+  latest status with a running timer, then the prose and surface, then "Answered in X s · N
+  steps" (expands to the status steps). A failed turn shows the error and Retry, which reruns
+  the same question in place. If the agent card can't be fetched, a banner names the agent URL
+  and offers Retry. The composer is a textarea: Enter sends, Shift+Enter is a new line; Ask is
+  disabled while a turn runs.
+- **Launcher.** `./run.sh --real` starts `python -m explorer_agent` (settings from the repo
+  root's `.env`) and the client; it sets `AGENT_HOST`, `AGENT_PORT` and `CLIENT_ORIGIN` itself so
+  agent and client agree, waits up to 60 s for the agent card, and refuses to start when the
+  agent port is already serving. Ctrl-C stops both.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| C1 | No `examples` → `()`; a valid list loads; a non-list, non-string or blank entry is a `ConfigError` | `test_config.py::test_examples_*`, `test_bad_examples_are_a_config_error` |
+| C2 | The card carries the description and examples; no examples → no skills | `test_server.py::test_agent_card_carries_the_dataset_description_and_examples`, `test_agent_card_without_examples_has_no_skills` |
+| C3 | Prompt bytes unchanged | existing `test_prompt.py` snapshot hashes |
+| C4 | The client reads description and examples from the card | `a2a.test.ts` |
+| C5 | Examples, Enter/Shift+Enter, New conversation, Retry, unreachable-agent banner | `app.test.ts` |
+| C6 | Existing suites and build pass | `uv run pytest`, `npm run build`, `npm test` |
