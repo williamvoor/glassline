@@ -60,6 +60,16 @@ def to_transport(reply: str) -> list[dict]:
         (3_441_812_603.4, "currency", "numeric", "$3,441,812,603"),
         (-1500.0, "currency", "numeric", "-$1,500"),
         (3_441_812_603.0, "currency_m", "numeric", "$3,441.8M"),
+        (38_414_946_047.02, "currency_compact", "numeric", "$38.4B"),
+        (812_300_000.0, "currency_compact", "numeric", "$812.3M"),
+        (45_200, "currency_compact", "bigint", "$45.2K"),
+        (812.4, "currency_compact", "numeric", "$812"),
+        (0, "currency_compact", "bigint", "$0"),
+        (-1_500_000_000.0, "currency_compact", "numeric", "-$1.5B"),
+        (999_960_000.0, "currency_compact", "numeric", "$1.0B"),
+        (999.96, "currency_compact", "numeric", "$1.0K"),
+        (1_234_500_000_000.0, "currency_compact", "numeric", "$1,234.5B"),
+        (None, "currency_compact", "numeric", "—"),
         (12.345, "pct", "numeric", "12.3%"),
         (0.1234, "fraction_pct", "numeric", "12.3%"),
         (1999.6, "int", "numeric", "2,000"),
@@ -73,6 +83,12 @@ def test_format_value(value, fmt, column_type, expected):
 def test_currency_symbol_comes_from_the_caller_not_the_code():
     assert format_value(3_441_812_603.0, "currency_m", "numeric", currency_symbol="€") == "€3,441.8M"
     assert format_value(-1500.0, "currency", "numeric", currency_symbol="€") == "-€1,500"
+    assert format_value(-2_500_000.0, "currency_compact", "numeric", currency_symbol="€") == "-€2.5M"
+
+
+def test_currency_compact_needs_a_number():
+    with pytest.raises(MacroError, match="needs a number"):
+        format_value("Acme", "currency_compact", "text")
 
 
 @pytest.mark.parametrize(
@@ -331,3 +347,110 @@ def test_dates_are_not_bare_numbers(ctx, date):
 def test_date_range_from_the_live_runs_is_not_bare_numbers(ctx):
     filled = fill_prose("FY 2024-25 (1 Jul 2024–30 Jun 2025): overseas got about 6.6%, from ~$8m to ~$1.57bn.")
     assert filled.bare_numbers == ["6.6", "8", "1.57"]
+
+
+# --- currency_compact (explorer/specs/names-periods-currency) ------------------------------
+
+
+def _money_store(values: list, columns=("name", "value", "contracts")) -> ResultStore:
+    store = ResultStore()
+    rows = [{"name": f"N{i}", "value": v, "contracts": 1000 + i} for i, v in enumerate(values)]
+    store.add(sql="s", purpose="p", columns=list(columns), column_types=["text", "numeric", "bigint"],
+              rows=rows, truncated=False)
+    return store
+
+
+def test_cite_and_metric_currency_compact():
+    with macro_context(_money_store([3_441_812_603.0, 980_000_000.0])):
+        metric = by_type(expand("Metric", result_id="r1", column="value", label="L", row=1,
+                                format="currency_compact"), "Text")[1]
+        cite = expand("Cite", template="{r1[0].value|currency_compact} and {r1[1].value|currency_compact}")[0]
+    assert metric["text"] == "$980.0M"
+    assert cite["text"] == r"\$3\.4B and \$980\.0M"
+
+
+def test_data_table_currency_compact_uses_one_unit_per_column():
+    with macro_context(_money_store([3_441_812_603.0, 1_200_000_000.0, 980_000_000.0, None])):
+        grid = by_type(expand("DataTable", result_id="r1", title="T",
+                              format="value:currency_compact"), "DataGrid")[0]
+    assert [r[1] for r in grid["rows"]] == ["$3.4B", "$1.2B", "$1.0B", "—"]
+    assert [r[2] for r in grid["rows"]] == ["1,000", "1,001", "1,002", "1,003"]
+
+
+def test_data_table_currency_compact_unit_from_shown_rows():
+    with macro_context(_money_store([5_000_000.0, 2_000_000.0, 7_000_000_000.0]), table_row_cap=2):
+        grid = by_type(expand("DataTable", result_id="r1", title="T",
+                              format="value:currency_compact"), "DataGrid")[0]
+    assert [r[1] for r in grid["rows"]] == ["$5.0M", "$2.0M"]
+
+
+def test_chart_currency_compact_picks_unit_from_data():
+    with macro_context(_money_store([38_414_946_047.0, 22_705_188_409.0])):
+        spec = by_type(expand("BarChart", result_id="r1", x="name", y="value", title="T",
+                              format="currency_compact"), "VegaChart")[0]["spec"]
+    assert spec["encoding"]["y"]["title"] == "Value ($B)"
+    assert spec["encoding"]["y"]["axis"]["format"] == ",.1f"
+    assert [v["value"] for v in spec["data"]["values"]] == [pytest.approx(38.414946047), pytest.approx(22.705188409)]
+
+
+def test_chart_currency_compact_unit_after_folding():
+    store = ResultStore()
+    rows = [{"year": "2024", "agency": f"A{i}", "value": 400_000_000.0} for i in range(5)]
+    store.add(sql="s", purpose="p", columns=["year", "agency", "value"],
+              column_types=["text", "text", "numeric"], rows=rows, truncated=False)
+    with macro_context(store, max_color_categories=2):
+        spec = by_type(expand("LineChart", result_id="r1", x="year", y="value", title="T", color="agency",
+                              format="currency_compact"), "VegaChart")[0]["spec"]
+    # A line chart doesn't stack: no single row reaches 1e9, but "Other" folds three into 1.2e9.
+    assert spec["encoding"]["y"]["title"] == "Value ($B)"
+    values = {v["agency"]: v["value"] for v in spec["data"]["values"]}
+    assert values["Other"] == pytest.approx(1.2)
+
+
+def test_chart_currency_compact_small_values():
+    with macro_context(_money_store([812.0, 15.5])):
+        spec = by_type(expand("LineChart", result_id="r1", x="name", y="value", title="T",
+                              format="currency_compact"), "VegaChart")[0]["spec"]
+    assert spec["encoding"]["y"]["title"] == "Value ($)"
+    assert spec["encoding"]["y"]["axis"]["format"] == ",.0f"
+    assert [v["value"] for v in spec["data"]["values"]] == [812.0, 15.5]
+
+
+def test_currency_compact_non_finite_values_do_not_crash():
+    assert format_value(float("nan"), "currency_compact", "numeric") == "$nan"
+    assert format_value(float("inf"), "currency_compact", "numeric") == "$inf"
+    with macro_context(_money_store([float("nan"), 2_000_000.0])):
+        grid = by_type(expand("DataTable", result_id="r1", title="T",
+                              format="value:currency_compact"), "DataGrid")[0]
+    assert [r[1] for r in grid["rows"]] == ["$nan", "$2.0M"]
+
+
+def test_currency_compact_shared_unit_has_no_negative_zero():
+    with macro_context(_money_store([38_000_000_000.0, -20_000_000.0, -400_000_000.0])):
+        grid = by_type(expand("DataTable", result_id="r1", title="T",
+                              format="value:currency_compact"), "DataGrid")[0]
+    assert [r[1] for r in grid["rows"]] == ["$38.0B", "$0.0B", "-$0.4B"]
+
+
+def test_stacked_bar_currency_compact_unit_from_stack_totals():
+    store = ResultStore()
+    rows = [{"year": "2024", "agency": f"A{i}", "value": 400_000_000.0} for i in range(5)]
+    store.add(sql="s", purpose="p", columns=["year", "agency", "value"],
+              column_types=["text", "text", "numeric"], rows=rows, truncated=False)
+    with macro_context(store):  # all five groups kept: each segment 400M, the stack 2B
+        bar = by_type(expand("BarChart", result_id="r1", x="year", y="value", title="T", color="agency",
+                             format="currency_compact"), "VegaChart")[0]["spec"]
+        line = by_type(expand("LineChart", result_id="r1", x="year", y="value", title="T", color="agency",
+                              format="currency_compact"), "VegaChart")[0]["spec"]
+    assert bar["encoding"]["y"]["title"] == "Value ($B)"
+    assert line["encoding"]["y"]["title"] == "Value ($M)"  # lines don't stack
+
+
+def test_horizontal_negative_chart_currency_compact():
+    with macro_context(_money_store([-2_500_000_000.0, 300_000_000.0]), currency_symbol="€"):
+        spec = by_type(expand("BarChart", result_id="r1", x="name", y="value", title="T", horizontal=True,
+                              format="currency_compact"), "VegaChart")[0]["spec"]
+    assert spec["encoding"]["x"]["title"] == "Value (€B)"
+    assert spec["encoding"]["x"]["axis"]["format"] == ",.1f"
+    assert spec["encoding"]["tooltip"][-1]["format"] == ",.1f"
+    assert [v["value"] for v in spec["data"]["values"]] == [-2.5, 0.3]

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import math
 import re
 from collections.abc import Callable, Iterable, Iterator
 from contextvars import ContextVar
@@ -25,7 +26,7 @@ from explorer_agent.results import INTEGER_TYPES, ResultStore, StoredResult
 PASSTHROUGH_COMPONENTS = ["Column", "Row", "Card", "Text", "Divider", "Tabs"]
 TABLE_ROW_CAP = 200
 MAX_COLOR_CATEGORIES = 8
-FORMATS = ("auto", "currency", "currency_m", "int", "decimal", "pct", "fraction_pct", "text", "date")
+FORMATS = ("auto", "currency", "currency_m", "currency_compact", "int", "decimal", "pct", "fraction_pct", "text", "date")
 DEFAULT_CURRENCY_SYMBOL = "$"
 OTHER = "Other"
 
@@ -135,9 +136,14 @@ def _number(value: Any, fmt: str) -> float | int:
 
 
 def format_value(
-    value: Any, fmt: str = "auto", column_type: str = "", currency_symbol: str = DEFAULT_CURRENCY_SYMBOL
+    value: Any,
+    fmt: str = "auto",
+    column_type: str = "",
+    currency_symbol: str = DEFAULT_CURRENCY_SYMBOL,
+    unit: tuple[float, str] | None = None,
 ) -> str:
-    """Formats one stored value as display text."""
+    """Formats one stored value as display text. `unit` fixes `currency_compact`'s unit, so a
+    table column or chart shares one; by default each value picks its own."""
     sym = currency_symbol
     if value is None:
         return "—"
@@ -156,6 +162,9 @@ def format_value(
         case "currency_m":
             n = _number(value, fmt) / 1e6
             return f"-{sym}{-n:,.1f}M" if n < 0 else f"{sym}{n:,.1f}M"
+        case "currency_compact":
+            n = _number(value, fmt)
+            return _compact(n, sym, unit or compact_unit(abs(n)))
         case "int":
             return f"{round(_number(value, fmt)):,}"
         case "decimal":
@@ -170,12 +179,41 @@ def format_value(
             return str(value)
 
 
-def _format(result: StoredResult, value: Any, column: str, fmt: str) -> str:
-    return format_value(value, fmt, result.column_type(column), _ctx().currency_symbol)
+def compact_unit(magnitude: float) -> tuple[float, str]:
+    """Divisor and suffix for `currency_compact`, chosen after rounding: 999.96M shows as 1.0B."""
+    if not math.isfinite(magnitude) or round(magnitude) < 1000:
+        return 1.0, ""
+    for divisor, suffix in ((1e3, "K"), (1e6, "M")):
+        if round(magnitude / divisor, 1) < 1000:
+            return divisor, suffix
+    return 1e9, "B"
 
 
-def _cell(result: StoredResult, row: dict[str, Any], column: str, fmt: str) -> str:
-    return _format(result, row.get(column), column, fmt)
+def _compact(n: float | int, sym: str, unit: tuple[float, str]) -> str:
+    divisor, suffix = unit if math.isfinite(n) else (1.0, "")
+    text = f"{abs(n) / divisor:,.1f}{suffix}" if suffix else f"{abs(n):,.0f}"
+    negative = n < 0 and any(d in "123456789" for d in text)  # no "-$0.0B"
+    return f"-{sym}{text}" if negative else f"{sym}{text}"
+
+
+def _is_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _largest(values: Iterable[Any]) -> float:
+    return max((abs(v) for v in values if _is_number(v)), default=0.0)
+
+
+def _format(
+    result: StoredResult, value: Any, column: str, fmt: str, unit: tuple[float, str] | None = None
+) -> str:
+    return format_value(value, fmt, result.column_type(column), _ctx().currency_symbol, unit)
+
+
+def _cell(
+    result: StoredResult, row: dict[str, Any], column: str, fmt: str, unit: tuple[float, str] | None = None
+) -> str:
+    return _format(result, row.get(column), column, fmt, unit)
 
 
 # --- charts --------------------------------------------------------------------------------
@@ -185,6 +223,7 @@ def _cell(result: StoredResult, row: dict[str, Any], column: str, fmt: str) -> s
 _AXIS: dict[str, tuple[str, float, str]] = {
     "currency": (",.0f", 1.0, " ({sym})"),
     "currency_m": (",.1f", 1e-6, " ({sym}M)"),
+    "currency_compact": (",.0f", 1.0, " ({sym})"),  # unit picked from the data in _chart
     "int": (",d", 1.0, ""),
     "decimal": (",.2f", 1.0, ""),
     "pct": (".1f", 1.0, " (%)"),
@@ -229,6 +268,20 @@ def _chart_values(
     return rows, domain
 
 
+def _plotted_extents(values: list[dict[str, Any]], x: str, y: str, stacked: bool) -> list[float]:
+    """The sizes the axis must show: each value, or for stacked bars each stack's total (the
+    positive and the negative parts stack separately)."""
+    if not stacked:
+        return [v[y] for v in values if _is_number(v[y])]
+    up: dict[Any, float] = {}
+    down: dict[Any, float] = {}
+    for v in values:
+        if _is_number(v[y]):
+            side = up if v[y] >= 0 else down
+            side[v[x]] = side.get(v[x], 0.0) + v[y]
+    return [*up.values(), *down.values()]
+
+
 def _scaled(value: Any, scale: float) -> Any:
     return value * scale if isinstance(value, (int, float)) and not isinstance(value, bool) else value
 
@@ -251,6 +304,10 @@ def _chart(
         _column(result, color)
     axis_format, scale, suffix = _axis(result, y, fmt)
     values, domain = _chart_values(result, x, y, color, scale)
+    if fmt == "currency_compact":  # one unit for the chart, from the largest value plotted
+        divisor, unit = compact_unit(_largest(_plotted_extents(values, x, y, stacked=mark == "bar" and bool(color))))
+        values = [{**v, y: v[y] / divisor if _is_number(v[y]) else v[y]} for v in values]
+        axis_format, suffix = (",.1f" if unit else ",.0f"), f" ({_ctx().currency_symbol}{unit})"
 
     temporal = result.is_temporal(x)
     x_enc: dict[str, Any] = {"field": x, "type": "temporal" if temporal else "ordinal", "title": column_label(x)}
@@ -301,7 +358,7 @@ def BarChart(
         title: Chart title, plain text.
         color: Optional column to stack by; the top 8 groups are kept, the rest become "Other".
         horizontal: Draw bars horizontally (good for long category names).
-        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct. pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
+        format: Value format: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct. currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     return _chart(
         _result(result_id), mark="bar", x=x, y=y, title=title, color=color, fmt=format,
@@ -327,7 +384,7 @@ def LineChart(
         y: Numeric column for the vertical axis.
         title: Chart title, plain text.
         color: Optional column with one line per group; the top 8 are kept, the rest become "Other".
-        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct. pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
+        format: Value format: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct. currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     return _chart(
         _result(result_id), mark="line", x=x, y=y, title=title, color=color, fmt=format,
@@ -354,7 +411,7 @@ def DataTable(result_id: str, title: str, columns: str = "", format: str = "") -
         result_id: ID of a stored query result, e.g. "r1".
         title: Table title, plain text.
         columns: Optional comma-separated columns to show, in order (default: all).
-        format: Optional comma-separated column:format pairs, e.g. "value:currency_m,share:fraction_pct". pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
+        format: Optional comma-separated column:format pairs, e.g. "value:currency_compact,share:fraction_pct". currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     result = _result(result_id)
     shown = [_column(result, c.strip()) for c in columns.split(",") if c.strip()] or result.columns
@@ -365,7 +422,11 @@ def DataTable(result_id: str, title: str, columns: str = "", format: str = "") -
         {"key": c, "label": column_label(c), **({"align": "end"} if result.is_numeric(c) else {})}
         for c in shown
     ]
-    cells = [[_cell(result, r, c, formats.get(c, "auto")) for c in shown] for r in rows]
+    # currency_compact columns share one unit, from the largest value shown.
+    units = {
+        c: compact_unit(_largest(r.get(c) for r in rows)) for c in shown if formats.get(c) == "currency_compact"
+    }
+    cells = [[_cell(result, r, c, formats.get(c, "auto"), units.get(c)) for c in shown] for r in rows]
     notes = []
     if result.row_count > cap:
         notes.append(f"Showing {cap:,} of {result.row_count:,} rows")
@@ -391,7 +452,7 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
         column: Column holding the value.
         label: Short label shown above the value, plain text.
         row: Row index (0 = first row).
-        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct, text, date. pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
+        format: Value format: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct, text, date. currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     result = _result(result_id)
     _column(result, column)
@@ -445,7 +506,7 @@ def Cite(template: str) -> Text:
     """A sentence with numbers filled in from stored results, so they are never retyped.
 
     Args:
-        template: Markdown text with placeholders like {r1[0].value|currency_m}: result ID, row index, column, optional format (the Metric formats; pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%)).
+        template: Markdown text with placeholders like {r1[0].value|currency_m}: result ID, row index, column, optional format (the Metric formats; currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%)).
     """
     return Text(text=_fill(template))
 

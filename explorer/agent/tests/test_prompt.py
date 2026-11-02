@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from explorer_agent.config import Currency, Dataset
+from explorer_agent.macros import BarChart, Cite, DataTable, LineChart, Metric
 from explorer_agent.prompt import build_system_prompt, dataset_context, instructions, make_format
 from explorer_agent.schema import SchemaCatalog, render_schema_section
 from explorer_agent.ui import UiPipeline
@@ -30,6 +31,7 @@ DEMO_SCHEMA = "### s.things (table)\nThings.\n- id integer not null: Key.\n"
 BUILD_SCRIPT = """
 import asyncio, os, sys
 from explorer_agent.config import Currency, Dataset
+from explorer_agent.macros import BarChart, Cite, DataTable, LineChart, Metric
 from explorer_agent.prompt import build_system_prompt, dataset_context
 from explorer_agent.schema import SchemaCatalog, render_schema_section
 from explorer_agent.sql import open_pool
@@ -158,3 +160,21 @@ def test_instructions_and_repair_text_are_format_neutral():
 
     for text in (instructions(), REPAIR_MESSAGE):
         assert "<a2ui" not in text, text
+
+
+# explorer/specs/names-periods-currency
+@pytest.mark.parametrize("fmt_name", FORMATS)
+def test_prompt_lists_currency_compact(fmt_name):
+    prompt = build_system_prompt(UiPipeline(fmt_name).format, dataset_context(DEMO, DEMO_SCHEMA))
+    # The macro docstrings are what the prompt shows for each macro (test_prompt_explains_percent_formats).
+    for fn in (BarChart, LineChart, DataTable, Metric, Cite):
+        assert "currency_compact" in (fn.__doc__ or ""), fn.__name__
+    assert prompt.count("currency_compact") >= 6  # five macros plus the instructions' example
+
+
+def test_prompt_has_name_and_period_rules():
+    text = instructions()
+    assert "{r1[0].value|currency_compact}" in text
+    assert "Don't run a separate query to look up keys or IDs first" in text
+    assert "string_agg(DISTINCT name, '; ')" in text
+    assert "Don't convert it into a date range yourself" in text
