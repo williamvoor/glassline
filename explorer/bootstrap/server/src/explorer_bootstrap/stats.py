@@ -14,6 +14,7 @@ from typing import Any
 
 from psycopg_pool import AsyncConnectionPool
 
+from explorer_agent.config import SCHEMA_NAME
 from explorer_agent.results import NUMERIC_TYPES, TEMPORAL_TYPES
 from explorer_agent.sql import SqlFail, SqlRunner, check_dsn
 
@@ -137,3 +138,24 @@ async def column_ranges(runner: SqlRunner, schema: str, table: str, columns: Ite
         return RangeOutcome("error", {}, result.message)
     row = result.rows[0]
     return RangeOutcome("ok", {c: (row[f"mn_{i}"], row[f"mx_{i}"]) for i, c in enumerate(cols)})
+
+
+_SCHEMAS_SQL = """
+SELECT n.nspname,
+       count(c.oid) FILTER (WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT c.relispartition
+                            AND has_table_privilege(c.oid, 'SELECT'))
+FROM pg_namespace n LEFT JOIN pg_class c ON c.relnamespace = n.oid
+WHERE has_schema_privilege(n.oid, 'USAGE')
+  AND left(n.nspname, 3) <> 'pg_' AND n.nspname <> 'information_schema'
+GROUP BY n.nspname
+ORDER BY n.nspname COLLATE "C"
+"""
+
+
+async def visible_schemas(pool: AsyncConnectionPool) -> list[dict[str, Any]]:
+    """Schemas the login can use, with how many tables and views it can read in each.
+
+    Names that the explorer couldn't use as an Allowed schema (SCHEMA_NAME) are left out.
+    """
+    rows = await _read(pool, _SCHEMAS_SQL, {})
+    return [{"name": name, "objects": int(n)} for name, n in rows if SCHEMA_NAME.fullmatch(name)]

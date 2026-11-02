@@ -665,11 +665,14 @@ source = { editable = "." }
 dependencies = [
     { name = "explorer-agent" },
     { name = "python-dotenv" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "austender" },
+    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "testcontainers" },
@@ -679,11 +682,14 @@ dev = [
 requires-dist = [
     { name = "explorer-agent", editable = "../../agent" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
+    { name = "starlette", specifier = "==1.10.0" },
+    { name = "uvicorn", specifier = "==0.54.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "austender", editable = "../../../austender" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "pytest", specifier = "==8.4.2" },
     { name = "pytest-asyncio", specifier = "==1.2.0" },
     { name = "testcontainers", extras = ["postgres"], specifier = "==4.15.0" },

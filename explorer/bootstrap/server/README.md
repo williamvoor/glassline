@@ -49,6 +49,19 @@ Known limits: min/max runs one query per table, so one slow column marks all of 
 ranges "skipped", and one column the login can't read marks them "error". NaN and Infinity
 show as null. Min/max of high-precision `numeric` columns are JSON numbers and can lose digits.
 
+## The UI
+
+```bash
+cd ../ui && npm ci && npm run build && cd ../server
+uv run python -m explorer_bootstrap serve      # http://127.0.0.1:8765/
+```
+
+Connect (pick schemas) → Report (coverage, statistics, a rough cost ceiling, "Draft with …" and
+its progress) → Review (edit the files and comments, re-run or dismiss claims, export). The
+server binds 127.0.0.1 only, keeps one draft in memory (a restart loses it; the CLI's
+`draft.json` is the durable route), and refuses requests with another `Host` or a non-JSON POST,
+so other web pages can't drive it.
+
 ## Draft, verify, export
 
 ```bash

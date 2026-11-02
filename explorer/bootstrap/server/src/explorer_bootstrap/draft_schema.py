@@ -144,13 +144,21 @@ def validate_draft_args(args: Any, report: dict[str, Any]) -> list[str]:
         if not _nonblank(c["comment"]):
             bad(f"{where}.comment must be a non-blank string")
 
-    claims = args.get("claims")
+    problems.extend(claim_problems(args.get("claims")))
+    return problems[:MAX_PROBLEMS]
+
+
+def claim_problems(claims: Any, *, extra_keys: frozenset[str] = frozenset()) -> list[str]:
+    """Problems with a list of claims (the model's, or the person's edits with `extra_keys`)."""
+    problems: list[str] = []
+    bad = problems.append
     if not isinstance(claims, list):
-        bad("claims must be an array")
-        claims = []
+        return ["claims must be an array"]
     for i, cl in enumerate(claims):
         where = f"claims[{i}]"
-        if not isinstance(cl, dict) or set(cl) != {"text", "file", "sql", "expect"}:
+        if not isinstance(cl, dict) or not {"text", "file", "sql", "expect"} <= set(cl) <= (
+            {"text", "file", "sql", "expect"} | extra_keys
+        ):
             bad(f"{where} must have exactly text, file, sql, expect")
             continue
         if not _nonblank(cl["text"]):

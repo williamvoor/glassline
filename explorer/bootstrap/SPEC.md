@@ -1,7 +1,7 @@
 # Dataset bootstrap: spec
 
-Status: phase 1 and phase 2a **approved** (2026-11-02). The
-rest of phase 2 is not yet specified; until it is, `docs/bootstrap-build-prompt.md` describes it. Related ADRs: 0019 (Comment overlay), 0020 (Muse
+Status: phase 1, 2a, 2b and 2c **approved** (2026-11-02). Still open from the brief: the live
+run against `vicprop/`. Related ADRs: 0019 (Comment overlay), 0020 (Muse
 Wonder only here), 0010 (tests build their database with the austender package). Terms follow
 `CONTEXT.md` (Dataset, Data dictionary, Comment overlay, Allowed schema, Dataset context).
 
@@ -391,3 +391,139 @@ error. Messages never show the DSN or keys.
 ### Test command
 
 Same as phase 1 (`uv run pytest`; Docker; never the network or a model).
+
+## Phase 2c: local server and Lit UI
+
+Status: **approved** (2026-11-02; decided by the builder on the user's delegation). Wraps the
+phase 2b functions; adds the pre-run cost estimate. Brief: `docs/bootstrap-build-prompt.md` §4–5.
+
+### Files
+
+```
+server/src/explorer_bootstrap/
+  server.py        Starlette app: API routes, in-memory state, static UI
+  stats.py         + visible_schemas()
+  draft.py         + estimate_cost()
+  __main__.py      + `serve [--port 8765] [--timeout-ms N]`
+server/tests/test_server.py
+server/pyproject.toml   starlette==1.10.0, uvicorn==0.54.0 direct (already locked transitively); httpx (dev)
+ui/                Vite + Lit + TypeScript, its own npm package (`explorer-bootstrap-ui`)
+  package.json, package-lock.json, tsconfig.json, vite.config.ts, index.html, README.md
+  src/main.ts, src/api.ts, src/app.ts (<bootstrap-app>), src/connect.ts, src/report.ts,
+  src/review.ts, src/claims.ts, src/types.ts
+  test/report.test.ts, test/review.test.ts, test/claims.test.ts, test/app.test.ts
+```
+
+UI stack, same as `explorer/client` (pinned exactly, `lit` at the client's resolved 3.3.3): lit
+3.3.3, vite 6.4.5, typescript 5.8.3, vitest 3.2.7, happy-dom 20.14.6. Decorators
+(`experimentalDecorators`, `useDefineForClassFields: false`), light DOM (`createRenderRoot()`
+returns `this`), tests mount with `document.createElement` + `appendChild` + `updateComplete`.
+No imports from `explorer/client`, no component library, no router, no code editor.
+
+### Server
+
+`python -m explorer_bootstrap serve` opens the report pool (read-only, timeout) at startup, binds
+`127.0.0.1` only, serves the API under `/api` and the built UI (`ui/dist`) at `/` (one origin:
+no CORS). In development the Vite dev server proxies `/api` to it.
+
+- **Request guard** (a page on another site must not drive the tool): every `/api` request must
+  have a `Host` of `127.0.0.1:<port>` or `localhost:<port>` (DNS rebinding), and every `POST`
+  must be `Content-Type: application/json` (so a cross-site request needs a CORS preflight,
+  which we never answer). Otherwise 403.
+- **State**, in memory, one person: the last report, the current draft (with claim results), the
+  current draft run. One run at a time (409 while one runs).
+- **Routes** (JSON in and out; errors are `{"error": message}` or `{"reasons": [...]}`):
+
+| Route | Does |
+|---|---|
+| `GET /api/connection` | `{host, database, schemas: [{name, objects}]}`: schemas the login can use, with readable object counts. Never the user or password |
+| `POST /api/report` `{schemas}` | the report JSON (same as the CLI's), stored |
+| `POST /api/estimate` `{model}` | pre-run estimate for the stored report: `{model, prompt_chars, input_tokens_est, first_call_usd, run_ceiling_usd, max_calls}` |
+| `POST /api/draft` `{model, effort}` | starts a run on the stored report → `{run_id}`; 409 if one runs; 400 without a report or with a model outside the allowlist |
+| `GET /api/draft/{id}/events?after=N` | `{events: [...], done, draft?, error?}`: events after index N (the on_event dicts); when done, the verified draft and its validation, or the error |
+| `GET /api/draft` | the current draft and its validation, or 404 |
+| `POST /api/claims/verify` `{claims: [{text, file, sql, expect, dismissed}]}` | replaces the draft's claims, reruns all, stores and returns them |
+| `POST /api/validate` `{files, comments}` | stores the edits; returns `{errors, context_chars}` |
+| `POST /api/export` `{name, target, files, comments, dismissed: [index]}` | stores the edits and dismissals, exports with the **stored** claim results → `{path}` (relative to the repo) or 422 `{reasons}` |
+
+  Claim results only ever come from the server's own runs: a client can't send a state.
+- **Estimate:** `input_tokens_est = ceil(len(system prompt + user message) / 3)` (deliberately
+  high for English and JSON); `first_call_usd = input × input price + max_tokens × output price`;
+  `run_ceiling_usd = max_calls × first_call_usd`. The UI labels it "rough ceiling", says it
+  ignores the cache discount and the growth from tool results, and shows the actual cost after.
+- **Errors and secrets:** responses and logs never hold the DSN, user, password or API key;
+  database errors give the class and primary message only; unexpected errors are 500 with the
+  class name. Model errors are the run's `error` (already scrubbed by `run_draft`).
+
+### UI
+
+`<bootstrap-app>` holds the state and shows a step bar (Connect · Report · Review, current one
+marked) and one screen element at a time.
+
+1. **`<bs-connect>`**: database host and name; a checkbox per schema (with object count); "Run
+   report" (disabled until one is ticked).
+2. **`<bs-report>`**: summary bar (objects, columns, % with comments, context chars vs 20,000);
+   a filter "Only missing comments"; per object a `<table>`: name, kind, coverage badge
+   ("n/m commented"), row estimate; rows per column: name, type, nullable, null fraction,
+   distinct estimate, top values, comment or a "no comment" marker. Model picker (Wonder, Spark),
+   effort picker, the estimate, and "Draft with <model>". While drafting: a progress list (each
+   `run_sql` purpose, each call's tokens and cost) and running totals; polled every 500 ms.
+3. **`<bs-review>`**: a tab per file (`dataset.toml`, `notes.md`, `glossary.md`) with a
+   monospace `<textarea>`; a comments table (object, column, kind, text in a textarea, an
+   "accept" checkbox; rewrites show the current comment); `<bs-claims>`: per claim the text,
+   file, SQL (editable), expectation (editable JSON), state badge, message, actual result,
+   "Re-run" (sends all claims) and "Dismiss"/"Undismiss". Validation (errors, context size) is
+   refreshed 400 ms after the last edit. Name field, target radio (overlay `comments.toml` /
+   `comments.sql`; default from the report's `can_comment`: true → sql), "Export" disabled
+   while validation has errors, a failed/error claim isn't dismissed, a claim was edited but
+   not re-run, or the name is empty; the server's refusal reasons are shown. "Re-run report"
+   goes back to the Report screen with a fresh report (the draft is kept).
+
+Keyboard: everything is a native control in tab order; tabs are buttons with `aria-selected`;
+visible `:focus-visible` outline. Real `<table>` markup with `<th scope>`.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| S1 | Full flow over HTTP with a stub model: connection → report → estimate → draft (events, done) → verify → validate → export, for both targets; the toml export loads and has no overlay drift | `test_server.py::test_full_flow` (db) |
+| S2 | Request guard: wrong Host → 403; POST without JSON content type → 403; GETs from the right host work | `test_server.py::test_request_guard` |
+| S3 | One run at a time (409); draft without report (400); model outside the allowlist (400) | `test_server.py::test_draft_errors` (db) |
+| S4 | Claim states come only from the server: export with a client-sent "verified" is ignored; a result sent to verify is ignored (the claim is rerun); dismissals by index unblock | `test_server.py::test_claims_integrity` (db) |
+| S5 | No secrets in any response body or captured log over the full flow, including a model error | `test_server.py::test_no_secrets` (db) |
+| S6 | `visible_schemas` lists usable schemas with counts, not `pg_*`/`information_schema` | `test_server.py::test_connection` (db) |
+| S7 | Estimate arithmetic and labels | `test_server.py::test_estimate` (db) |
+| S8 | The built UI is served at `/` next to the API (one origin) | `test_server.py::test_serves_the_built_ui` (db) |
+| S9 | `/api/draft` and `/api/estimate` refuse a body that isn't a JSON object, or a non-string model/effort, with 400 (no run starts); `/api/report` is 409 while a run is going; an unexpected error is a 500 whose log holds only the class name | `test_server.py::test_bad_bodies_are_400`, `::test_report_is_refused_while_drafting`, `::test_unexpected_error_logs_only_the_class` (db) |
+| U1 | Report: summary numbers; "only missing" filter hides fully commented objects and commented columns; "no comment" marker; real `<table>`/`<th>` | `ui/test/report.test.ts` |
+| U2 | Review: export disabled by validation errors, by an undismissed failed/error claim, by an edited-not-rerun claim (the server can't see edits that weren't re-run, so this is the UI's rule), by an empty name; enabled otherwise; refusal reasons shown; a validation reply older than the latest is ignored | `ui/test/review.test.ts` |
+| U3 | Claims panel: each state's badge; dismiss toggles; re-run posts all claims and shows new states | `ui/test/claims.test.ts` |
+| U4 | App: step bar marks the current step; connect → report → review with a stubbed `fetch`; review → "Re-run report" (pending edits saved first) → "Back to the draft" shows the server's stored draft | `ui/test/app.test.ts` |
+| U5 | `npm run build` passes (type check + bundle) | build |
+
+### Decisions
+
+- Polling (`?after=N`) instead of SSE: simpler on both sides and in tests, and per-tool-call
+  progress every 500 ms is enough (the brief allows progress per tool call).
+- The server serves the built UI: one origin, so no CORS and no extra port in use.
+- The estimate is a labelled rough ceiling, not a bound: we have no tokenizer for Muse models.
+- One person, in memory: restarting the server loses the draft (export or keep the CLI's
+  `draft.json` for durability). Saving a draft from the UI is out of scope.
+- **Where review edits live:** on the server. `validate` and `export` store the files and comments,
+  `verify` stores the claims. Leaving review flushes a pending validation first; "Back to the
+  draft" reloads `GET /api/draft`. Dismissals not yet sent by verify or export are not kept.
+- A kept draft is validated and exported against the report it was drafted from, not a newer
+  report run afterwards (the new one is for looking at coverage, e.g. after applying
+  `comments.sql`). `/api/report` is refused while a draft runs.
+- A request body that isn't a JSON object is a 400 everywhere; it never starts a paid run.
+- Unexpected errors: the client gets `unexpected <Class>`; the log gets the class only (the
+  server swallows Starlette's re-raise so uvicorn doesn't print the message).
+- The report screen offers schemas only (no `--dataset-dir`); redrafting an existing Dataset is
+  out of scope (phase 2b Decisions).
+
+### Test command
+
+```bash
+cd explorer/bootstrap/server && uv run pytest     # Docker; no network, no model
+cd explorer/bootstrap/ui && npm test && npm run build
+```

@@ -30,6 +30,7 @@ from explorer_bootstrap.stats import QUERY_CANCELED, open_report_pool
 REPO_ROOT = Path(__file__).resolve().parents[5]  # genUI/
 ENV_FILE = REPO_ROOT / ".env"
 DATASETS_ROOT = REPO_ROOT / "explorer" / "datasets"
+UI_DIST = REPO_ROOT / "explorer" / "bootstrap" / "ui" / "dist"
 # Tests set this to a stub (explorer_agent.testing.stub_model); None means litellm.acompletion.
 COMPLETION: Completion | None = None
 URL_VAR = "BOOTSTRAP_DATABASE_URL"
@@ -72,6 +73,10 @@ def _parser() -> argparse.ArgumentParser:
     e.add_argument("--name", required=True, help="the new dataset directory's name")
     e.add_argument("--target", required=True, choices=("toml", "sql"), help="comments.toml (overlay) or comments.sql")
     e.add_argument("--root", type=Path, default=DATASETS_ROOT, help="parent directory (default explorer/datasets)")
+
+    s = sub.add_parser("serve", help="run the local UI and its API on 127.0.0.1")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
     return p
 
 
@@ -271,6 +276,33 @@ def _export(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+async def _serve(args: argparse.Namespace, env: Mapping[str, str]) -> int:
+    import uvicorn
+
+    from explorer_bootstrap.server import build_app
+
+    if args.timeout_ms <= 0 or not 0 < args.port < 65536:
+        raise _Fatal("--timeout-ms and --port must be positive (port below 65536)")
+    try:
+        load_draft_settings(env)  # fail now on a bad BOOTSTRAP_* setting, not on the first draft
+    except SettingsError as e:
+        raise _Fatal(str(e)) from None
+    pool, database = await _open(env, args.timeout_ms)
+    try:
+        app = build_app(
+            pool, database=database, env=env, port=args.port, timeout_ms=args.timeout_ms,
+            datasets_root=DATASETS_ROOT, repo_root=REPO_ROOT, ui_dir=UI_DIST, completion=COMPLETION,
+        )
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning"))
+        sys.stdout.write(f"bootstrap: http://127.0.0.1:{args.port}/ (database {database['name']} on "
+                         f"{database['host']})\n")
+        sys.stdout.flush()
+        await server.serve()
+    finally:
+        await pool.close()
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     # psycopg's pool logs connection errors, which name the user; we print our own message instead.
@@ -280,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "export":
             return _export(args)
-        command = {"report": _report, "draft": _draft, "verify": _verify}[args.command]
+        command = {"report": _report, "draft": _draft, "verify": _verify, "serve": _serve}[args.command]
         return asyncio.run(command(args, os.environ))
     except _Fatal as e:
         sys.stderr.write(f"error: {e}\n")

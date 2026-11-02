@@ -195,3 +195,20 @@ async def run_draft(
         results = await asyncio.gather(*(one(tc) for tc in tool_calls))
         messages.extend(_tool_message(tc.id, r) for tc, r in zip(tool_calls, results, strict=True))
     raise DraftError(f"no valid draft after {settings.max_tool_iterations} model calls")
+
+
+def estimate_cost(report: dict[str, Any], settings: DraftSettings) -> dict[str, Any]:
+    """A rough ceiling before running: ~1 token per 3 characters (high for English and JSON), the full
+    output allowance on every call, no cache discount. Tool results add input it can't foresee."""
+    prompt_chars = len(build_draft_prompt(report)) + len(USER_MESSAGE)
+    tokens = -(-prompt_chars // 3)
+    p = settings.prices
+    first = (tokens * p.input + settings.max_tokens * p.output) / 1_000_000
+    return {
+        "model": settings.model,
+        "prompt_chars": prompt_chars,
+        "input_tokens_est": tokens,
+        "max_calls": settings.max_tool_iterations,
+        "first_call_usd": round(first, 4),
+        "run_ceiling_usd": round(first * settings.max_tool_iterations, 4),
+    }
