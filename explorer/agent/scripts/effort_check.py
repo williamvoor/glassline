@@ -120,11 +120,13 @@ def classify_failure(prose: str) -> str:
 # --- one question over A2A -------------------------------------------------------------------
 
 
-def message_body(text: str) -> dict[str, Any]:
+def message_body(text: str, context_id: str | None = None) -> dict[str, Any]:
     message = {
         "kind": "message", "role": "user", "messageId": str(uuid.uuid4()),
         "parts": [{"kind": "text", "text": text}], "metadata": CAPS,
     }
+    if context_id:  # continue a Conversation (scenarios with several turns)
+        message["contextId"] = context_id
     return {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/stream", "params": {"message": message}}
 
 
@@ -132,15 +134,16 @@ def _texts(parts: list[dict[str, Any]]) -> str:
     return "\n\n".join(p["text"] for p in parts if p.get("kind") == "text")
 
 
-async def ask(client: httpx.AsyncClient, text: str) -> dict[str, Any]:
-    """Sends `text` in a fresh Conversation. Never raises for transport problems."""
+async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = None) -> dict[str, Any]:
+    """Sends `text` in a fresh Conversation, or in `context_id`'s. Never raises for transport
+    problems. The result's `context_id` is the reply's, for a following Turn."""
     statuses: list[str] = []
     final: dict[str, Any] | None = None
     start = time.monotonic()
     error = ""
     try:
         async with client.stream(
-            "POST", "/", json=message_body(text), headers={"X-A2A-Extensions": EXT_URI}
+            "POST", "/", json=message_body(text, context_id), headers={"X-A2A-Extensions": EXT_URI}
         ) as r:
             if r.status_code != 200:
                 error = f"HTTP {r.status_code}"
@@ -185,6 +188,7 @@ async def ask(client: httpx.AsyncClient, text: str) -> dict[str, Any]:
     return {
         "wall_s": wall_s, "statuses": statuses, "repairs": statuses.count(REPAIR_STATUS),
         "prose": prose, "failure": classify_failure(prose), "surface": surface_summary(a2ui),
+        "context_id": final.get("contextId"),
     }
 
 

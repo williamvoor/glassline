@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Scenarios are scored by rerunning the SQL on the Surface against live reference SQL

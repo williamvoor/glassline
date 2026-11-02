@@ -1,6 +1,6 @@
 # SPEC: end-to-end scenarios, scored automatically
 
-**Status: draft, reviewed by a refuter on the user's behalf and amended** (2026-11-02). Scoring method in ADR 0018 (proposed). Sub-spec of
+**Status: built** (2026-11-02); scenarios signed off by the user. Scoring method in ADR 0018. Sub-spec of
 `explorer/SPEC.md` §10. Reuses the effort-check harness (`explorer/specs/effort-check/SPEC.md`).
 
 The effort check asks 5 questions and is scored by hand. Prompt and loop changes now need a
@@ -16,7 +16,7 @@ Paths relative to `explorer/` unless stated.
 |---|---|
 | `datasets/austender/scenarios.toml` | the AusTender scenarios (10, signed off by the user 2026-11-02) |
 | `agent/scripts/scenarios.py` | runner and scorer: `run` and `report` subcommands. Imports the A2A client, agent process, log parser and secret scan from `effort_check.py`; no AusTender names in code |
-| `agent/scripts/effort_check.py` | `ask()` gains an optional `context_id` for multi-turn scenarios; nothing else changes |
+| `agent/scripts/effort_check.py` | `ask()` gains an optional `context_id` for multi-turn scenarios, and returns the reply's `contextId` as `context_id` (amended during build); nothing else changes |
 | `agent/tests/test_scenarios.py` | tests: no model, no network; scoring tests use a stub SQL runner |
 | `docs/scenarios/<dataset>/runs-<stamp>.jsonl`, `agent-<stamp>.log`, `report-<stamp>.md` (repo root) | output of `run` (committed after a live run, after the secret scan) |
 
@@ -55,8 +55,10 @@ Optional checks on the last Turn (any scenario):
 - `answer_in = ["metric", "prose"]`: the expected values must also be **stated**, in a Metric value
   or the prose, not just present in the answer rows. For integer and text values only. Used where a
   reused Result holds many candidate values (a follow-up). "Stated" means:
-  - an integer: a whole number token equal to it, after removing thousands separators and a
-    leading currency symbol (`37`, `1,234`, `$37` count; `137`, `37.5` and `r37` don't);
+  - an integer: a whole number token equal to it, after removing thousands separators, a leading
+    currency symbol and an all-zero decimal part (`37`, `1,234`, `$37`, `$1,234.00` count; `137`,
+    `37.5` and `r37` don't). Dates are removed first, so the `25` in `FY2024-25` doesn't count;
+  - with alternates, it's enough that one matched entry's values are all stated;
   - text: the trimmed, case-folded value appears with word boundaries on both sides.
 - `forbid_visual = ["chart"]`: none of these kinds may be on the Surface.
 - `expect_empty = true`: every number in the answer rows is null or zero, and the prose is not
@@ -68,6 +70,9 @@ Optional checks on the last Turn (any scenario):
 - `smoke = true`: passes if the Turn doesn't fail. For behaviour no rule can judge from text (a
   refused write). Smoke runs are **left out of the pass rate**: they can't fail on the agent's
   answer. The report prints their prose for a person to read.
+
+Prose is matched after undoing markdown escaping (`\.` → `.`), as the user reads it. Filled
+`Cite` values carry it; a backslash the model typed itself is undone too (amended during build).
 
 There are no free-text phrase checks: two review rounds showed regexes can't tell a refusal from a
 claim, failing good answers and passing bad ones (Review decisions, item 7).
@@ -82,14 +87,19 @@ A scenario has a `reference`, `expect_empty`, or `smoke`. One with none of them 
    `reference`, `expect_empty` and `smoke`.
 2. Run every `reference`, `alternates` and `wrong` query once, read-only, through the agent's
    `SqlRunner` (same guard, `READ ONLY`, timeout, row cap, the dataset's read-only role from
-   `DATABASE_URL`). A reference that fails or returns no rows stops the run before any model call.
+   `DATABASE_URL`). A query that fails, returns no rows, hits the row cap, lacks an `expect`
+   column or has a null expected value stops the run before any model call. Duplicate `wrong`
+   labels in a scenario are rejected at load.
 3. Start the agent once (as the effort check does) and send a warm-up question.
 4. For each scenario and run: send the turns in one Conversation (`context_id` from the first
-   Turn's reply). Record, for the last Turn, what the effort check records (prose, failure,
+   Turn's reply). A failed Turn ends the scenario; that Turn is the one scored (it fails on
+   `failure`). If a Turn fails on transport and the agent process has exited, the run stops. Record, for the last Turn, what the effort check records (prose, failure,
    statuses, Repairs, wall time, model calls with tokens and latency, SQL attempts).
 5. **Score the last Turn:**
    - Rerun each distinct SQL from the Surface's `SqlDetails` through the same `SqlRunner`. These
-     rows are the **answer rows**.
+     rows are the **answer rows**. A rerun that fails is the fail reason `rerun_failed` (the rows
+     are incomplete, so an empty-looking answer can't pass); one that hits the row cap sets the
+     flag `answer_truncated`.
    - Answer rows and reference rows both come through the agent's `SqlRunner`, which converts
      values with `to_json_safe` (`Decimal` → `float`, dates → ISO text). Integer columns (`count`,
      `bigint`) stay Python `int`.
@@ -97,10 +107,11 @@ A scenario has a `reference`, `expect_empty`, or `smoke`. One with none of them 
      - `b` is an integer (Python `int`): `a == b` exactly. Counts need it (24,172 and 24,187 must differ);
      - `b` is another number: `|a - b| <= max(abs, rel × |b|)`, defaults `abs = 0.01`, `rel = 0.0005`;
      - `b` is text: equal after trimming and case-folding.
+     - Bools match only bools (a `true` cell never matches a count of 1).
      - With `percent = true` a **non-integer answer cell** is scaled (`a`, `a × 100`, `a / 100` are
        tried) and compared with `b` in the reference's own units; the `abs` floor is 0 unless set.
-       So 6.5958 % never matches a fraction like 0.0627. Integer cells are never scaled, so a stray
-       count of 660 can't match 6.6 %.
+       So 6.5958 % never matches a fraction like 0.0627. Whole-number cells are never scaled
+       (`660`, or `660.0` from a `numeric` column), so a stray count can't match 6.6 %.
      - Rounding in SQL passes only while it stays within the tolerance: whole dollars and `$M`-level
        rounding of a large total pass; `6.6` passes a percent with `rel = 0.002`. Scaling to another
        unit (`sum(x) / 1e9`) fails. SQL should return raw values; formats round.
@@ -120,15 +131,18 @@ A scenario has a `reference`, `expect_empty`, or `smoke`. One with none of them 
      Surface shows a known wrong reading next to the right one (a hedge), and only a person can
      tell which one it presents as the answer.
    - Every record names its fail reasons (`failure`, `no_visual`, `forbidden_visual`, `missing` with
-     the values not found, `not_stated`, `prose`), and every `wrong` entry whose values all match
+     the values not found, `not_stated`, `not_empty` for `expect_empty` rows, `prose` for empty
+     prose or numbers in it), and every `wrong` entry whose values all match
      (`matched_wrong: [labels]`), whatever the status.
-   - **Flags** (recorded, never a fail): `over_max_model_calls`; `write_attempted` when any SQL
+   - **Flags** (recorded, never a fail): `over_max_model_calls`; `answer_truncated`; `write_attempted` when any SQL
      attempt in the Turn is rejected by the agent's own `guard()` as not a single `SELECT` (the guard
      and the read-only role already stop writes, so a write can't succeed and isn't scored).
-6. Stop the agent, run the secret scan on every file written (it fails the run on a hit, as the
-   effort check does), and write `report-<stamp>.md`:
+6. Stop the agent, write `report-<stamp>.md`, and run the secret scan on every file written (it
+   fails the run on a hit, as the effort check does). The scan runs even when the agent fails to
+   start, a scenario fails part-way, or the report can't be written. `report RUNS.jsonl` writes
+   `report-<stem>.md` beside it and never overwrites the input. The report:
    - per scenario: runs by status, fail reasons, matched wrong answers, median wall time, model
-     calls and Repairs; the prose of `smoke` and `needs_review` runs, for reading;
+     calls and Repairs; the full prose of `smoke`, `needs_review` and `fail` runs, for reading;
    - overall: the pass rate (`pass` over runs, leaving out `smoke` and `blocked` runs), the
      `needs_review` and `blocked` counts, median and p90 wall time, and mean model calls;
    - failures by type.
@@ -143,19 +157,21 @@ All in `agent/tests/test_scenarios.py` unless stated. No model, network or datab
 
 | # | Criterion | Test |
 |---|---|---|
-| 1 | Valid file loads; unknown key, no turns, or none of `reference`, `expect_empty` and `smoke` is rejected | `test_load_valid`, `test_load_rejects[unknown_key, no_turns, nothing_to_check]` |
+| 1 | Valid file loads; unknown key, no turns, or none of `reference`, `expect_empty` and `smoke` is rejected | `test_load_valid`, `test_load_rejects[unknown_key, no_turns, nothing_to_check]`, `test_load_rejects_duplicate_ids` |
 | 2 | Unreviewed scenarios are skipped unless `--include-unreviewed`; `--ids` filters | `test_selection` |
-| 3 | Match: integers exact (24,180 ≠ 24,187); other numbers at the tolerance edges and `abs` floor; text case-folding; `percent` scales non-integer cells only, with no `abs` floor (0.0627 ≠ 6.5958 %; integer 660 ≠ 6.6 %); rounding within the tolerance matches, scaling to another unit doesn't | `test_value_match[...]` |
+| 3 | Match: integers exact (24,180 ≠ 24,187); other numbers at the tolerance edges and `abs` floor; text case-folding; `percent` scales non-integer cells only, with no `abs` floor (0.0627 ≠ 6.5958 %; integer 660 ≠ 6.6 %); rounding within the tolerance matches, scaling to another unit doesn't | `test_value_match[...]`, `test_percent_tolerance_comes_from_the_column` |
 | 4 | Pass needs failure `none`, any one listed visual, and all reference values; extra rows and Visuals don't fail | `test_score_pass`, `test_score_extra_rows_pass`, `test_score_fail_reasons[failure, no_visual, missing]` |
 | 4a | `content_policy` → `blocked`; a passing run that matches a wrong entry → `needs_review` | `test_status_blocked`, `test_status_needs_review` |
+| 4b | Tolerances apply to alternates and wrong entries; a failed rerun is `rerun_failed`; truncation is a flag | `test_tolerance_applies_to_alternates_and_wrong_entries`, `test_rerun_failure_and_truncation` |
 | 5 | An alternate's values pass; a wrong entry is named when it matches, on failing and passing runs | `test_score_alternate`, `test_score_names_wrong_answer[fail, pass]` |
 | 6 | Answer rows come from the Surface's `SqlDetails`, deduplicated, rerun through the runner | `test_answer_rows_from_surface_sql` |
-| 7 | `answer_in`: a value only in a reused table fails; stated in a Metric or the prose passes; whole tokens only (`37`, `$37`, `1,234` count; `137`, `37.5` don't) | `test_answer_in[...]` |
-| 7a | `forbid_visual`; `expect_empty` (a table of a real agency's figures fails; null, zero and empty rows pass; empty prose fails); `prose_no_numbers` (`0`, `0.00`, `$0`, dates, years and `FY2024-25` allowed; `2` fails); `smoke` | `test_empty_and_smoke_checks[...]` |
+| 7 | `answer_in`: a value only in a reused table fails; stated in a Metric or the prose passes; whole tokens only (`37`, `$37`, `1,234` count; `137`, `37.5` don't) | `test_answer_in[...]`, `test_stated[...]`, `test_answer_in_accepts_any_matched_entry_that_is_stated` |
+| 7a | `forbid_visual`; `expect_empty` (a table of a real agency's figures fails; null, zero and empty rows pass; empty prose fails); `prose_no_numbers` (`0`, `0.00`, `$0`, dates, years and `FY2024-25` allowed; `2` fails); `smoke` | `test_empty_checks[...]`, `test_smoke_passes_unless_the_turn_fails` |
 | 7b | `write_attempted` flag from the guard; `over_max_model_calls` flag; neither fails a run | `test_flags` |
-| 8 | A reference that fails or is empty stops the run before the agent starts | `test_reference_failure_stops_run` |
-| 9 | Multi-turn: turns share a `context_id`; only the last Turn is scored | `test_multi_turn_context` (stub A2A transport) |
-| 10 | The report: statuses per scenario; pass rate leaves out `smoke` and `blocked`; reference run times recorded | `test_report` |
+| 8 | A reference that fails or is empty stops the run before the agent starts | `test_reference_failure_stops_run[...]`, `test_references_record_rows_and_time`, `test_references_reject_truncated_and_null[...]`, `test_duplicate_wrong_labels_are_rejected` |
+| 9 | Multi-turn: turns share a `context_id`; only the last Turn is scored; a failed earlier Turn ends the scenario; the real A2A server returns a `contextId` | `test_multi_turn_context` (stub A2A transport), `test_a_failed_earlier_turn_ends_the_scenario`, `test_effort_check.py::test_ask_against_stub_agent` |
+| 10 | The report: statuses per scenario; pass rate leaves out `smoke` and `blocked`; p90; full prose of smoke, needs_review and fail runs; reference run times; the output path never overwrites the input | `test_report`, `test_report_shows_prose_and_p90`, `test_report_path_never_overwrites_the_input` |
+| 10a | `run()` end to end with a fake agent: records, answer rows, report, agent stopped; a secret in the output fails the run after the report is written; a failure part-way still writes the report | `test_run_end_to_end`, `test_run_secret_hit_and_part_way_failure` |
 | 11 | `ask()` without `context_id` is unchanged | `test_effort_check.py` (existing tests still pass) |
 | 12 | The draft file loads and every scenario has a reviewer-visible reference (`reviewed` present) | `test_austender_scenarios_load` |
 
@@ -233,6 +249,17 @@ to be decided on the recommendations:
    (15 contracts apart; only the count tells the readings apart); a "top 10" listing 25 passes; a
    prose-only reply to `no-such-agency` that invents a fact without digits passes (prose isn't
    scored); `categories` like `partial-period` are labels, not checks.
+
+9. **Build review (PASS-WITH-NOTES).** Fixed in one round: `report` could overwrite a runs file
+   not named `runs-*`; a failed or truncated answer rerun passed silently; the secret scan was
+   skipped if the agent failed to start or the report failed; a bool cell matched a count of 1;
+   `answer_in` checked only the first matched entry; the report cut prose at 600 characters;
+   duplicate wrong labels; whole-number floats were scaled by `percent`; `25` in `FY2024-25`
+   counted as stated; and tests for seven surviving mutants and for `run()` itself. Found during
+   the build and fixed separately: the pool's `DISCARD ALL` reset broke psycopg's automatic
+   prepared statements on the sixth run of a statement (`sql.py`, `prepare_threshold=None`).
+   Re-review: all resolved, no blocker. Known limit, deferred: a count equal to a year (1900–2099)
+   can never be "stated", because years are stripped first; no scenario has one.
 
 **Next batch** (after these 10 are signed off), including the refuter's trap suggestions: a top list
 holding the FMS account (dropped only with a stated reason); corporate groups (BAE has three

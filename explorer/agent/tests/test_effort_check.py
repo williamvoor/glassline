@@ -66,6 +66,7 @@ async def test_ask_against_stub_agent():
     assert chart["values"][0]["supplier"] == "Supplier A"
     assert len(s["sql"]) == 3 and all(q["sql"] == FIXTURE_SQL for q in s["sql"])
     assert s["a2ui"], "raw A2UI messages are kept"
+    assert r["context_id"], "the real A2A server reports the Conversation's context ID"
 
 
 # H2
