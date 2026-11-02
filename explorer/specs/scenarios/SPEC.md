@@ -207,8 +207,9 @@ to be decided on the recommendations:
 1. **Prose-only answers fail** when a scenario has a `reference`: the explorer is meant to show its
    working, so a missing Visual is a real defect.
 2. **Scaled SQL fails** (`/1e9`); rounding within the tolerance passes (corrected in item 8).
-3. **`top-growth-fy2324` asks "in dollars"**, matching the effort check's decision; ranking by
-   percent is a labelled wrong answer.
+3. **`top-growth-fy2324` ranks by dollars**, matching the effort check's decision; ranking by
+   percent is a labelled wrong answer. (The question first said "in dollars"; Meta's filter
+   blocks that, see item 10.)
 4. **The follow-up asks about "the first one"** (the third was the FMS payment account, which an agent
    may rightly drop) and needs the count stated (`answer_in`): matching any cell let a wrong Metric
    pass, because a reused top-5 table holds every supplier's count.
@@ -267,8 +268,11 @@ to be decided on the recommendations:
     correct not-found answer ("125 agencies, 0 matching") because `prose_no_numbers` read the
     filled prose and `expect_empty` failed on a context count (both amended above, with a
     regression test); `top-growth-fy2324` was `blocked`: Meta's filter rejects "grew the most in
-    dollars" (a probe reproduced it), so the question now says "had the largest dollar increase
-    in value", which the probe accepted.
+    dollars". A probe with the bare question accepted "had the largest dollar increase in value",
+    but the rerun was still blocked. Probed again with the agent's real system prompt: both
+    "dollar" wordings blocked, the effort check's original wording accepted (as in all 13 earlier
+    runs). So the question is back to the original; decision 3 now rests on the labelled
+    percent-ranking wrong answer alone. Lesson: probe the filter with the real system prompt.
 
 **Next batch** (after these 10 are signed off), including the refuter's trap suggestions: a top list
 holding the FMS account (dropped only with a stated reason); corporate groups (BAE has three

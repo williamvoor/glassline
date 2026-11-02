@@ -50,8 +50,10 @@ expect = ["total_value"]
 id = "top-growth-fy2324"
 reviewed = true
 categories = ["amendments", "ranked-list"]
-# "grew the most in dollars" is blocked by Meta's content filter (probed 2026-11-02); this wording is not.
-turns = ["Which 10 contracts published in 2023-24 had the largest dollar increase in value through amendments, from what to what?"]
+# The effort check's wording. With the agent's system prompt, Meta's content filter blocks any
+# "dollar" wording tried ("grew the most in dollars", "had the largest dollar increase in value");
+# this one passed every time (probed 2026-11-02). Ranking by percent stays a labelled wrong answer.
+turns = ["Which 10 contracts published in 2023-24 grew the most through amendments, from what to what?"]
 visual = ["table"]
 
 [scenario.reference]
