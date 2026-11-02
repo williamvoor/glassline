@@ -29,3 +29,6 @@ node_modules/
 
 # AusTender backfill logs
 austender/logs/
+
+# Claude Code agent worktrees
+.claude/worktrees/
