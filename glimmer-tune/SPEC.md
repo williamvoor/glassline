@@ -854,6 +854,99 @@ A skeleton's needs are inferred from its required blocks (`field`, `kv` and `sta
 - **The system prompt is frozen before launch.** Changing `build_system_prompt` later invalidates the adapter.
 - Prep notes (not committed): the Fireworks prep document in the session scratchpad. Training is free for jobs started before 2026-12-01 Pacific; eval sampling is billed.
 
+## SFT run 1: prompt freeze and trainer (spec, 2026-11-02)
+
+Decision: [ADR 0015](../docs/adr/0015-our-own-sft-loop-in-a-separate-trainer-project.md). User choices (2026-11-02): a dev subset on every checkpoint and full dev on base plus the best 2; a separate trainer project; per-token mean loss.
+
+### Behavior
+
+Prompt freeze (main env, `a2ui_eval`):
+- `data/system_prompt.txt` holds the exact output of `build_system_prompt(sdk)` on `catalogs/basic_v0_9.json` (no trailing newline added). `data_cli freeze-prompt` writes it. It is committed.
+- `export` refuses (ExportError) when `build_system_prompt` differs from the frozen file, unless the file doesn't exist yet.
+
+Dev prompts (main env):
+- `data_cli export-dev` writes `exports/sft_dev.jsonl`. It has one row per dev case: the 84 gallery rows (`data/dev`) and the 200 synthetic rows (`data/synth/dev`). Each row has `{id, source: "gallery"|"synthetic", subset: bool, messages: [system, user]}`, with the system text from the frozen file.
+- `subset` marks a fixed 64 rows: 32 gallery and 32 synthetic, chosen by `random.Random(seed).sample` over id-sorted rows, with seed 0. The same input always gives the same subset.
+
+Scoring (main env), `python -m a2ui_eval.checkpoints score <predictions.jsonl> --out <scores.json>`:
+- Predictions rows: `{id, checkpoint, text, finish: "stop"|"length"|"error"}`. `text` is null on error.
+- Each id is looked up in the dev cases and scored with `score_response`. `finish == "length"` is passed as the finish reason, so truncation is detected.
+- The summary is per checkpoint and per source: rows, compiles rate, exact_match rate and mean row slot F1, plus `selection`. `selection` is the mean of the gallery and synthetic mean row F1 (macro over the two sources), so the 200 synthetic rows don't swamp the 84 gallery ones. An unknown id or a missing dev row raises an error.
+- `selection_ci` is a 95% percentile bootstrap interval for `selection`: 2000 resamples, `random.Random(0)`, with rows resampled with replacement within each source (keeping its row count), so each resample is weighted like `selection`. The scores file records the settings in `bootstrap`, and the CLI's stdout line carries `selection_ci`. The trainer ignores it; selection still uses the point value. Added after run 1, where the 64-row subset ranked `s250` and `s225` 0.007 apart and full dev put them 0.03 apart.
+
+Trainer (`glimmer-tune/trainer/`, its own uv project, Python 3.13, never imports `a2ui_eval`):
+- Pins `fireworks-ai[training]==1.2.30` and the cookbook at commit `57968a2` from git, as an exact pin with the lock committed.
+- `python -m glimmer_trainer prepare --train ../exports/sft_train.jsonl --dev ../exports/sft_dev.jsonl --prompt ../data/system_prompt.txt --max-seq-len 8192` is local only: it loads the tokenizer and makes no Fireworks call. It:
+  - renders every row with the `muse_glimmer` renderer
+  - checks that every system message equals the frozen prompt and that no rendered prompt contains `Current date:`
+  - checks that every train row has at most `max-seq-len` tokens and positive weights
+  - prints rows, steps, the token max/p50/p95 and the planned checkpoints
+  - prints an estimate of sampled rows
+
+  It exits non-zero on any failed check.
+- `python -m glimmer_trainer train ... --run-id <name> --launch` is the only remote command. Without `--launch` it runs `prepare` and stops. With it:
+  1. Opens a serverless LoRA training client: base `accounts/fireworks/models/muse-glimmer-30b`, rank 16, alpha 32, MLP/attention/unembed on.
+  2. Saves sampler checkpoint `s000` (base) before step 1.
+  3. Trains 1 epoch with batch 16, shuffled with `random.Random(0)` and keeping the last short batch. It uses Adam with lr 5e-5, betas 0.9/0.999, eps 1e-8, weight decay 0 and grad clip 1.0.
+  4. Builds datums the cookbook way (`build_supervised_example`, `LAST_ASSISTANT_TURN`, inputs and targets shifted by one). Each assistant-token weight is `1 / (response tokens in the batch)`.
+  5. Logs every step to `runs/<run-id>/metrics.jsonl`: step, loss (`loss:sum`), response tokens, grad norm metrics and seconds.
+  6. Saves sampler checkpoint `sNNN` every 25 steps and at the last step. Names are 4 characters.
+  7. After each save, samples the subset rows for that checkpoint in a background worker pool while training continues. Sampling is greedy (temperature 0) with max tokens 3072 and the renderer's stop tokens. Results go to `runs/<run-id>/predictions/<ckpt>.jsonl`. The text is `get_text_content(parse_response(...))`, and `finish` is "length" when the termination is not clean.
+  8. When training ends and every subset sample is in, it scores each checkpoint by subprocess: `uv run --project <glimmer-tune> python -m a2ui_eval.checkpoints score`. It picks the 2 best checkpoints other than `s000` by `selection` (ties go to the earlier step).
+  9. Samples all dev rows for `s000` and those two, then scores them. The full sample file is `<ckpt>.full.jsonl`.
+  10. Promotes the full-dev winner (other than `s000`) as `glimmer-a2ui-<run-id>-<ckpt>`, then deletes the training session.
+- `runs/<run-id>/manifest.json` is written before training and updated at each stage. It records the config, the session and run ids, the checkpoint paths, the scores, the winner and the promoted model. It holds no key.
+- On any exception after the session opens, the run writes the error to the manifest and **does not delete the session**, so its checkpoints can still be promoted by hand. It prints the session id.
+- The API key comes only from the `FIREWORKS_API_KEY` env var. It is never logged or written. `trainer/.env.example` documents it.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| T1 | `data/system_prompt.txt` equals `build_system_prompt(sdk)` byte for byte | `tests/test_prompt.py::test_frozen_prompt_matches` |
+| T2 | export refuses a prompt that differs from the frozen file (`checked_system_prompt`, used by `export` and `export-dev`) | `tests/test_prompt.py::test_export_refuses_unfrozen_prompt` |
+| T3 | dev export: 284 rows, 32+32 subset, deterministic, frozen system text, no assistant turn | `tests/test_checkpoints.py::test_export_dev_rows_and_subset` |
+| T4 | score summary per source, `selection` = macro mean of row F1; truncation via `finish: length`; error row scores 0 | `tests/test_checkpoints.py::test_score_summary_per_source` |
+| T5 | unknown id or missing dev row raises | `tests/test_checkpoints.py::test_score_rejects_unknown_and_missing` |
+| T5b | `selection_ci`: collapses when every row is equal; stratified by source; brackets `selection`; seeded; narrows with more rows; one source and no rows work; written to the scores file and stdout | `tests/test_checkpoints.py::test_selection_ci_*`, `::test_score_output_carries_selection_ci` |
+| T6 | batches: seeded shuffle, size 16, last short batch kept, every row once | `trainer/tests/test_loop.py::test_batches` |
+| T7 | datum weights sum to 1 per batch, only on assistant tokens, inputs and targets shifted | `trainer/tests/test_loop.py::test_datums_mean_weights` |
+| T8 | checkpoint schedule: s000, every 25 steps, final step; names ≤ 17 chars | `trainer/tests/test_loop.py::test_checkpoint_schedule` |
+| T9 | full fake run: order of calls (save s000 before first step, Adam params, subset sampled per ckpt, top-2 full, promote winner ≠ s000, delete session last), files written | `trainer/tests/test_loop.py::test_run_end_to_end_with_fakes` |
+| T10 | an exception mid-run records the error and does not delete the session | `trainer/tests/test_loop.py::test_failure_keeps_session` |
+| T11 | `prepare` fails on a system prompt that isn't frozen, a `Current date:` in a prompt, an over-length row | `trainer/tests/test_prepare.py` |
+| T12 | without `--launch`, `train` creates no Fireworks client (the tokenizer may still be fetched from Hugging Face) | `trainer/tests/test_cli.py::test_train_without_launch_is_local` |
+| T13 | the key is never written to the manifest, predictions, metrics or stdout; error text is redacted | `trainer/tests/test_loop.py::test_key_not_leaked` |
+
+Trainer tests use fake service, training, sampler and renderer objects. They never import the Fireworks client network path, never load a real tokenizer, and run with sockets blocked (a `conftest.py` that patches `socket.socket.connect`).
+
+### Amendments from the build (2026-11-02)
+
+- **Full dev reuses the subset answers.** Sampling is greedy, so a finalist's full file is its 64 subset predictions plus the other 220 rows, sampled once. That saves about 190 samples.
+- **Sampling failures are per row.** After retries at 2 s and 8 s, a row is recorded as `finish: "error"`, and it scores 0. The manifest records `sample_errors` per checkpoint (and per `<ckpt>.full`). Above 25% error rows in one checkpoint, the run stops with the session kept, because that score would be noise. A training or save failure aborts the run the same way (T10). On any failure, queued sampling is cancelled rather than waited for.
+- **`finish` comes from the SDK's `stop_reason`** (`"length"` or `"stop"`), not from `parse_response`'s termination. Muse's parser reports MALFORMED whenever `<|eot|>` is missing from the returned tokens, which may just mean the server stripped the stop token.
+- **Promotion** matches the checkpoint by the last segment of `checkpointName` or `name`, because the SDK documents only `name` (`pick_checkpoint`, tested with rows shaped like the SDK's). A missing session name fails fast. If deleting the session fails after promotion, it is recorded as `delete_error` and the run still counts as done.
+- **`--launch` needs an explicit `--run-id`.** Unexpected errors print redacted to stderr. A run directory that is not empty is refused.
+- **Scorer fix found by T4:** `score_response` gave a missing response slot F1 1.0, because both sides were empty. It now counts the reference's slots, so F1 is 0 (`tests/test_score.py::test_failed_request_scores_zero_slot_f1`). For `expect_ui: false` cases (none in dev yet) a missing response still has 0 reference slots. That gets revisited with 2c-2.
+- **Run ids** match `[a-z0-9][a-z0-9-]{0,39}`, so `glimmer-a2ui-<run>-sNNN` fits Fireworks' 63-character model id. A run directory that already exists is refused.
+- **Train input** is `exports/sft_mix.jsonl` (`export --mix 0.7`). The real `prepare` on 2026-11-02 found 5199 rows, 325 steps, 14 checkpoints (s000 to s325), rendered tokens max 6843 / p50 5349 / p95 5919, and an estimate of 1556 samples. It found no date and one `Reasoning strength: low.` line.
+
+### Decisions and non-goals
+
+- Selection uses the literal slot F1. The path- and event-blind score is milestone 3 work and not part of this run. Base and tuned are compared on the same scorer, so the comparison stays fair.
+- No automatic resume. A crashed run is promoted by hand from the manifest's checkpoint list.
+- No LR schedule and no warmup, as in the cookbook starter.
+- No deployment. Serving the adapter is a later, paid decision.
+- Sampling during training uses a separate sampling client per checkpoint (`create_sampling_client(model_path=...)`). Its effect on step time is logged, not tuned.
+- The test split stays untouched. The trainer reads only train and dev exports.
+
+### Test command
+
+```bash
+cd glimmer-tune && uv run pytest
+cd glimmer-tune/trainer && uv run pytest
+```
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.

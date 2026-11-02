@@ -190,3 +190,10 @@ def test_list_template_with_relative_binding(sdk, index):
 def test_failed_request(sdk, index, form_case):
     r = score_response(sdk, index, form_case, None)
     assert r["compile_errors"][0]["kind"] == "NoResponse"
+
+
+def test_failed_request_scores_zero_slot_f1(sdk, index, form_case):
+    """Regression: a missing response kept SlotScore() with n_ref=0, so its F1 read as 1.0."""
+    r = score_response(sdk, index, form_case, None)
+    assert r["slot"]["n_ref"] > 0
+    assert r["slot"]["f1"] == 0.0

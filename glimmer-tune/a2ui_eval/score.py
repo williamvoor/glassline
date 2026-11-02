@@ -97,6 +97,8 @@ def score_response(
 
     if text is None:  # request failed
         result["compile_errors"] = [{"kind": "NoResponse", "message": "no response"}]
+        if expect_ui:  # nothing predicted against a real reference is F1 0, not the empty-vs-empty 1.0
+            result["slot"] = SlotScore(n_ref=_ref_triple_count(index, reference)).to_dict()
         return result
 
     text = close_stopped_block(text, finish_reason, sdk)

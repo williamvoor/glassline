@@ -1,4 +1,4 @@
-"""Data commands: `python -m a2ui_eval.data_cli {generate,draft,build-eval,export}`."""
+"""Data commands: `python -m a2ui_eval.data_cli {generate,draft,build-eval,export,export-dev,freeze-prompt,...}`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from .export import ExportError, approx_tokens, export_sft
 from .fingerprint import fingerprint
 from .generate import GenerationError, generate_family, load_splits, load_templates, read_jsonl, write_jsonl
-from .prompt import build_system_prompt
+from .prompt import PromptError, build_system_prompt, checked_system_prompt, freeze_prompt
 from .refs import RefIndex
 from .sdk import ExpressSDK
 from .seeds import ROOT, load_seeds
@@ -160,7 +160,7 @@ def cmd_export(args) -> None:
         train,
         eval_cases,
         splits,
-        build_system_prompt(sdk),
+        checked_system_prompt(sdk),
         approx_tokens if args.approx_tokens else load_tokenizer_counter(),
         args.max_seq_len,
         eval_seed_fingerprints(index, args.data),
@@ -170,6 +170,19 @@ def cmd_export(args) -> None:
     )
     write_jsonl(args.out, rows)
     print(json.dumps(report.to_dict(), indent=2))
+
+
+def cmd_freeze_prompt(args) -> None:
+    print(f"froze the system prompt to {freeze_prompt(ExpressSDK(CATALOG), force=args.force)}")
+
+
+def cmd_export_dev(args) -> None:
+    from .checkpoints import DEV_EXPORT, export_dev
+
+    rows = export_dev(checked_system_prompt(ExpressSDK(CATALOG)), args.data, seed=args.seed)
+    write_jsonl(args.out or DEV_EXPORT, rows)
+    subset = [r for r in rows if r["subset"]]
+    print(json.dumps({"rows": len(rows), "subset": len(subset), "out": str(args.out or DEV_EXPORT)}))
 
 
 def cmd_lint(args) -> None:
@@ -272,6 +285,13 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--seed", type=int, default=0, help="seed for the gallery oversampling and the final shuffle")
     e.add_argument("--approx-tokens", action="store_true", help="count tokens as ceil(chars/3) instead of loading the tokenizer (offline)")
     e.set_defaults(fn=cmd_export)
+    fz = sub.add_parser("freeze-prompt", help="write data/system_prompt.txt (ADR 0015)")
+    fz.add_argument("--force", action="store_true", help="overwrite a different frozen prompt; invalidates trained adapters")
+    fz.set_defaults(fn=cmd_freeze_prompt)
+    ed = sub.add_parser("export-dev", help="dev prompts for checkpoint scoring (gallery + synthetic, with a fixed subset)")
+    ed.add_argument("--out", type=Path, default=None)
+    ed.add_argument("--seed", type=int, default=0)
+    ed.set_defaults(fn=cmd_export_dev)
     v = sub.add_parser("vocab", help="write domain vocabularies with meta/muse-spark-1.3")
     which = v.add_mutually_exclusive_group(required=True)
     which.add_argument("--domain")
@@ -298,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         args.fn(args)
-    except (GenerationError, ExportError, VocabError, SynthError, SkeletonError) as e:
+    except (GenerationError, ExportError, PromptError, VocabError, SynthError, SkeletonError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

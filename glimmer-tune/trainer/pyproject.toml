@@ -1,0 +1,19 @@
+[project]
+name = "glimmer-trainer"
+version = "0.1.0"
+description = "SFT loop for Muse Glimmer 30B on Fireworks serverless training (ADR 0015)"
+requires-python = "==3.13.*"
+dependencies = [
+    "fireworks-ai[training]==1.2.30",
+    # The cookbook supplies the muse_glimmer renderer and tokenizer loader. Same commit as gt-smoke-1.
+    "fireworks-training-cookbook @ git+https://github.com/fw-ai/cookbook@57968a2237b663be33078d2747a28463983ae134#subdirectory=training",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
