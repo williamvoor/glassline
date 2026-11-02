@@ -191,7 +191,9 @@ def open_pool(dsn: str) -> AsyncConnectionPool:
         min_size=1,
         max_size=POOL_MAX_SIZE,
         open=False,
-        kwargs={"autocommit": True},
+        # No automatic prepared statements: the DISCARD ALL reset drops them on the server while
+        # psycopg still thinks they exist, so the 6th run of a statement on a connection failed.
+        kwargs={"autocommit": True, "prepare_threshold": None},
         reset=_reset,
         name="explorer-sql",
     )

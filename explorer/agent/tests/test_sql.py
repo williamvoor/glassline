@@ -162,3 +162,12 @@ async def test_privilege_check_fails_for_empty_schema(ro_pool):
     r = SqlRunner(ro_pool, ("mart", "nothing_here"), 5000, 10)
     with pytest.raises(StartupError, match="nothing_here"):
         await r.check_privileges()
+
+
+# Regression (scenario build 2026-11-02): psycopg prepares a statement after it runs 5 times on a
+# connection, and the pool's DISCARD ALL reset drops it on the server only, so the next run failed
+# with 'prepared statement "_pg3_0" does not exist'. Many queries in a row on one connection did it.
+async def test_many_queries_on_one_connection(ro_pool):
+    r = runner(ro_pool)
+    results = [await r.run("SELECT count(*) AS n FROM mart.contract") for _ in range(15)]
+    assert all(isinstance(x, SqlOk) for x in results), [x for x in results if isinstance(x, SqlFail)][:1]
