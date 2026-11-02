@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -278,7 +278,7 @@ def _chart(
         "mark": {"type": mark, "point": True} if mark == "line" else {"type": mark},
         "encoding": encoding,
     }
-    return Column(children=[Text(text=title, variant="h4"), VegaChart(spec=spec), _sql_details(result)])
+    return Column(children=[Text(text=_fill(title), variant="h4"), VegaChart(spec=spec), _sql_details(result)])
 
 
 @macro
@@ -374,7 +374,7 @@ def DataTable(result_id: str, title: str, columns: str = "", format: str = "") -
     caption = "; ".join(notes) or None
     return Column(
         children=[
-            Text(text=title, variant="h4"),
+            Text(text=_fill(title), variant="h4"),
             DataGrid(columns=grid_columns, rows=cells, caption=caption),
             _sql_details(result),
         ]
@@ -399,7 +399,7 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
     return Card(
         child=Column(
             children=[
-                Text(text=label, variant="caption"),
+                Text(text=_fill(label), variant="caption"),
                 Text(text=_format(result, value, column, format), variant="h2"),
                 _sql_details(result),
             ]
@@ -467,8 +467,30 @@ def fill_prose(prose: str) -> FilledProse:
     """
     ctx = _ctx()
     text = _fill(prose, on_error=lambda e: ctx.errors.append(f"prose: {e}"))
-    bare = _BARE_NUMBER.findall(_PLACEHOLDER_SHAPE.sub("", prose))
-    return FilledProse(text=text, bare_numbers=bare)
+    return FilledProse(text=text, bare_numbers=_bare_numbers(prose))
+
+
+def fill_surface_text(components: Iterable[dict[str, Any]]) -> list[str]:
+    """Fills placeholders in the `Text` the model wrote on the Surface, in place (ADR 0013).
+
+    Run before macro expansion, so only the model's own Text is touched: macro-built Text holds
+    formatted values from Results. Errors go to the context's error list, naming the component.
+    Returns the numbers the model typed in that Text.
+    """
+    ctx = _ctx()
+    bare: list[str] = []
+    for comp in components:
+        text = comp.get("text")
+        if comp.get("component") != "Text" or not isinstance(text, str):
+            continue  # a data binding, or not Text
+        cid = comp.get("id")
+        comp["text"] = _fill(text, on_error=lambda e, cid=cid: ctx.errors.append(f"Text {cid!r}: {e}"))
+        bare += _bare_numbers(text)
+    return bare
+
+
+def _bare_numbers(text: str) -> list[str]:
+    return _BARE_NUMBER.findall(_PLACEHOLDER_SHAPE.sub("", text))
 
 
 MACROS = [BarChart, LineChart, DataTable, Metric, Cite]

@@ -22,13 +22,22 @@ from a2ui.parser import A2uiPart, TextPart
 from pydantic import TypeAdapter
 
 from explorer_agent.catalog import explorer_catalog
-from explorer_agent.macros import DEFAULT_CURRENCY_SYMBOL, FilledProse, fill_prose, macro_context, macro_expander
+from explorer_agent.macros import (
+    DEFAULT_CURRENCY_SYMBOL,
+    FilledProse,
+    fill_prose,
+    fill_surface_text,
+    macro_context,
+    macro_expander,
+)
 from explorer_agent.prompt import make_format
 from explorer_agent.results import ResultStore
 
 log = logging.getLogger(__name__)
 
 _MESSAGE = TypeAdapter(AgentToRendererMessage)
+# The effort check harness parses this line (ADR 0012).
+BARE_NUMBERS_LOG = "reply has numbers typed by the model: "
 
 
 class UiError(Exception):
@@ -113,6 +122,15 @@ def validate(messages: list[dict[str, Any]]) -> None:
         raise UiError([f"invalid UI: {e}"]) from e
 
 
+def _components(message: Any) -> list[dict[str, Any]]:
+    """The component dicts of a parsed message, whether it is a dict or an SDK model."""
+    if isinstance(message, dict):
+        body = message.get("updateComponents") or {}
+        return body.get("components", [])
+    body = getattr(message, "update_components", None)
+    return list(getattr(body, "components", None) or [])
+
+
 def _rewrite_surface(message: dict[str, Any], surface_id: str) -> dict[str, Any]:
     out = dict(message)
     for key, body in message.items():
@@ -144,6 +162,7 @@ class UiPipeline:
             with macro_context(store, currency_symbol=self._currency_symbol) as ctx:
                 prose = fill_prose(prose_raw)
                 prose_ok = not ctx.errors
+                bare = prose.bare_numbers + fill_surface_text(c for m in typed for c in _components(m))
                 try:
                     expanded = self._expander.transform_to_transport(
                         [_MESSAGE.validate_python(m) if isinstance(m, dict) else m for m in typed]
@@ -153,8 +172,8 @@ class UiPipeline:
                 if ctx.errors:
                     raise UiError(list(ctx.errors))
 
-            if prose.bare_numbers:
-                log.warning("prose has numbers typed by the model: %s", ", ".join(prose.bare_numbers))
+            if bare:
+                log.warning("%s%s", BARE_NUMBERS_LOG, ", ".join(bare))
 
             messages = [
                 _rewrite_surface(m.model_dump(by_alias=True, exclude_none=True), surface_id) for m in expanded
@@ -162,7 +181,7 @@ class UiPipeline:
             if messages:  # a prose-only reply is valid; the processor rejects an empty list
                 check_known_props(messages, explorer_catalog())
                 validate(messages)
-            return UiResult(prose=prose.text, messages=messages, bare_numbers=prose.bare_numbers)
+            return UiResult(prose=prose.text, messages=messages, bare_numbers=bare)
         except UiError as e:
             if prose is not None and prose_ok and prose.text:
                 e.prose = prose.text

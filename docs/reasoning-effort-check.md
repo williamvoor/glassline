@@ -94,12 +94,15 @@ and `low` is right in at least 2 of 3. Every 1-of-3 miss is still listed here.
 
 ## Other findings from the runs
 
-- **The model shows notes through `Metric`.** Some answers select string literals in SQL (for
-  example "2012-13 partial…") and show them with `Metric`. Numbers inside those literals are
-  typed by the model. They reach the screen as if they came from the database, and the
-  bare-number check never sees them. This works around ADR 0001.
-- **A placeholder in a `Metric` label is not filled.** One first-run answer showed the raw text
-  `{r1[0].total_value|currency_m}` in a label. Labels and titles don't go through placeholder
-  filling.
+- **The model writes notes as plain `Text` on the Surface.** Some answers put a heading and a
+  caption note (for example "2012-13 partial…", "9 of 10 are Department of Defence") straight on
+  the Surface as `Text`. Numbers in that text are typed by the model, and the bare-number check
+  scanned only the prose. (First written up as notes shown through `Metric` from SQL string
+  literals; the SQL has no such literals. The harness's `surface_summary` counted any Column with
+  a caption and an h2 as a metric, so the `metrics` field in these run files over-reports.)
+  Fixed: Surface Text is now scanned (ADR 0013), and the harness finds metrics by `Metric`'s Card.
+- **A placeholder in Surface Text is not filled.** One first-run answer showed the raw text
+  `{r1[0].total_value|currency_m}` in a caption note. Placeholders were filled only in prose and
+  `Cite`. Fixed: Surface Text and Macro titles and labels are now filled (ADR 0013).
 - **The model typed a wrong date range.** In the acceptance test (criterion 2), the prose
   described FY 2024-25 as "July 2024–June 2026" instead of June 2025.

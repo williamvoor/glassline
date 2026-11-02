@@ -8,6 +8,7 @@ import pytest
 import effort_check as ec
 from explorer_agent.executor import GENERIC_ERROR, UI_ERROR_PREFIX
 from explorer_agent.llm import (
+    CONTENT_POLICY_PROSE,
     MODEL_FAILED_PROSE,
     NO_VIEW_PROSE,
     REPAIR_STATUS,
@@ -94,6 +95,7 @@ async def test_ask_sends_extension_and_fresh_conversation():
         (NO_VIEW_PROSE + "\n- bad prop", "no_view"),
         (UI_ERROR_PREFIX + " boom", "ui_error"),
         (MODEL_FAILED_PROSE.format(name="APIError"), "model_failed"),
+        (CONTENT_POLICY_PROSE, "content_policy"),
         (GENERIC_ERROR, "error"),
         ("Defence awarded $38.4B across 24,187 contracts.", "none"),
     ],
@@ -171,7 +173,7 @@ WHERE agency_name = 'Department of Defence'
 FROM mart.contract
 2026-11-02 01:00:01,300 INFO explorer_agent.sql: sql ok: 1 rows in 180 ms
 2026-11-02 01:00:02,000 INFO explorer_agent.llm: model call: model=meta/muse-spark-1.3 prompt=13,000 cached=- completion=400 reasoning=- latency_ms=3000 cache_rate=0%
-2026-11-02 01:00:02,100 WARNING explorer_agent.ui: prose has numbers typed by the model: 38.4, 24187
+2026-11-02 01:00:02,100 WARNING explorer_agent.ui: reply has numbers typed by the model: 38.4, 24187
 2026-11-02 01:00:02,200 WARNING explorer_agent.llm: turn timed out after 60 s
 """
 
@@ -336,3 +338,19 @@ def test_summary_unknown_cached():
     s = ec.summary(recs)["low"]
     assert s["cache_rate"] == 50.0
     assert s["prompt_tokens"] == 2000
+
+
+# A note and a heading the model wrote in a plain Column are not a metric; Metric's Card is.
+def test_surface_summary_metrics_come_from_cards():
+    comps = [
+        {"id": "root", "component": "Column", "children": ["title", "note", "m"]},
+        {"id": "title", "component": "Text", "text": "Overseas share", "variant": "h2"},
+        {"id": "note", "component": "Text", "text": "Basis: 9 of 10", "variant": "caption"},
+        {"id": "m", "component": "Card", "child": "m__col"},
+        {"id": "m__col", "component": "Column", "children": ["m__l", "m__v", "m__sql"]},
+        {"id": "m__l", "component": "Text", "text": "Overseas value", "variant": "caption"},
+        {"id": "m__v", "component": "Text", "text": "$4,106.3M", "variant": "h2"},
+        {"id": "m__sql", "component": "SqlDetails", "summary": "s", "sql": "SELECT 1"},
+    ]
+    summary = ec.surface_summary([{"updateComponents": {"surfaceId": "s", "components": comps}}])
+    assert summary["metrics"] == [["Overseas value", "$4,106.3M"]]

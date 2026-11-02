@@ -8,58 +8,38 @@ Repo rules apply (`CLAUDE.md`, `explorer/SPEC.md`). Before each fix, write a reg
 fails for the reason described. Tests must never call a real model. Paths below are relative to
 `explorer/agent/`. Line numbers are as of commit `de7e1e7`.
 
-## 1. Model-typed text and numbers reach the screen through `Metric`
+## 1. Model-typed numbers reach the screen through plain `Text` on the Surface
 
 **Problem.** ADR 0001 says that every number on screen comes from the database. Some answers
-get around this. The model writes SQL that selects string literals, then shows them with
-`Metric`. Numbers inside those literals are typed by the model. They are displayed as if they
-came from the data, and the bare-number check in `ui.py:157` never sees them, because it scans
-only the prose.
+put a heading and a caption note straight on the Surface as plain `Text`, with numbers the
+model typed itself. The bare-number check in `ui.py:157` scanned only the prose, so it never
+saw them.
 
-**Evidence.** These are from `docs/effort-check/runs-20261101T235731Z.jsonl`, in the
-`surface.metrics` of each record (pairs are `[label, value]`):
+**Correction.** This section first said the model selected string literals in SQL and showed
+them with `Metric`. It doesn't: none of the SQL in the runs selects a literal. The harness's
+`surface_summary` (`scripts/effort_check.py:218-223`) counted any `Column` holding a caption
+and an h2 `Text` as a metric, so a model-written note next to a heading looked like one.
 
-- Q4 minimal run 1: `['Non-cancelled contracts, current (amended) value, AUD as published. Financial years July–June.', 'Total AusTender contract value by financial year']`
-- Q3 low run 2: `['FY 2023-24 by publish_date. … 9 of 10 are Department of Defence.', '…']`
+**Evidence.** In `docs/effort-check/runs-20261101T235731Z.jsonl`, Q3 low run 2 has a caption
+`Text` reading "FY 2023-24 by publish_date. … 9 of 10 are Department of Defence." "9 of 10" is a
+count the model worked out and typed.
 
-In that last one, "9 of 10" is a count the model worked out and typed. The SQL behind each
-example is in the same record's `sql_attempts`.
+**Decision.** Surface Text follows the prose rules: placeholders are filled, and typed numbers
+are logged, not rejected (ADR 0013). The harness finds metrics by `Metric`'s `Card`.
 
-**Where.** `Metric` is at `src/explorer_agent/macros.py:384-407`. The SQL guard is `sql.py`. The
-model's rules are `src/explorer_agent/prompts/instructions.md`.
+## 2. Placeholders in Surface Text (and Macro titles and labels) are not filled
 
-**Open question for the user.** Where should the fix go?
-- (a) Reject a result column that is a constant string literal in the SQL guard. This needs
-  pglast analysis of the select list.
-- (b) Make `Metric` reject a text value that contains digits.
-- (c) Add an instruction that results are for data, not notes, and that notes belong in the prose.
+**Problem.** `Cite` placeholders such as `{r1[0].total_value|currency_m}` were filled only in
+the prose and in `Cite`. When the model put one in a plain `Text`, the raw template text
+appeared on screen. Macro titles and labels (`BarChart`, `LineChart`, `DataTable` `title`,
+`Metric` `label`) had the same gap, though no run hit it.
 
-Option (c) alone is the weakest. It's a decision for the user, so ask before building.
-
-## 2. Placeholders in `Metric` labels (and titles) are not filled
-
-**Problem.** `Cite` placeholders such as `{r1[0].total_value|currency_m}` are filled only in the
-prose and in `Cite`. When the model puts one in a `Metric` label, the raw template text appears
-on screen. Chart and table titles probably behave the same way: `BarChart`, `LineChart` and
-`DataTable` pass `title` straight to `Text`.
-
-**Evidence.** In `docs/effort-check/runs-20261101T235100Z.jsonl`, Q5 low run 1 has a metric
-whose label contains the literal text
+**Evidence.** In `docs/effort-check/runs-20261101T235100Z.jsonl`, Q5 low run 1 has a caption
+`Text` (component `note`, first reported as a metric label) with the literal text
 `Total matches mart.agency_fy total of {r1[0].total_value|currency_m} across {r1[0].contracts|int} contracts.`
 
-**Where.**
-- `Metric` label: `macros.py:402`, `Text(text=label, …)`.
-- Chart titles: `macros.py:281`.
-- Table titles: `macros.py:377`.
-- Filling: `_fill` at `macros.py:426` and the `_PLACEHOLDER` pattern at `macros.py:416`.
-
-**Direction.** There are two options:
-- Fill placeholders in labels and titles with `_fill`. The values would come from stored
-  Results, which is consistent with ADR 0001.
-- Reject placeholders there as a macro error, so a Repair asks the model to fix the view.
-
-Filling is friendlier. If a placeholder fails to fill, it must go through the existing
-error-capture path, not render as raw text.
+**Decision.** Fill placeholders in model-written Text and in Macro titles and labels. A failed
+fill is a UI error, so a Repair follows (ADR 0013).
 
 ## 3. A blocked question tells the user to "try again"
 

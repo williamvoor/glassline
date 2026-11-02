@@ -9,7 +9,7 @@ from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.results import ResultStore
 from explorer_agent.testing.stub_server import FIXED_REPLY, seed_fixture
 from explorer_agent.catalog import explorer_catalog
-from explorer_agent.ui import UiError, UiPipeline, check_known_props, known_props, validate
+from explorer_agent.ui import BARE_NUMBERS_LOG, UiError, UiPipeline, check_known_props, known_props, validate
 
 CLIENT_FIXTURE = Path(__file__).resolve().parents[2] / "client" / "test" / "fixtures" / "slice_transport.json"
 MACRO_NAMES = {"BarChart", "LineChart", "DataTable", "Metric", "Cite"}
@@ -99,7 +99,7 @@ def test_bare_number_is_logged(pipeline, fixture_store, caplog):
     with caplog.at_level(logging.WARNING, logger="explorer_agent.ui"):
         ui = pipeline.build("About 812 million went to {r1[1].supplier}.", fixture_store, "turn-1")
     assert ui.bare_numbers == ["812"]
-    assert any("812" in r.getMessage() for r in caplog.records)
+    assert any(r.getMessage() == BARE_NUMBERS_LOG + "812" for r in caplog.records)
 
 
 def test_validation_failure_raises_ui_error():
@@ -184,3 +184,71 @@ def test_pipeline_runs_unknown_prop_check(monkeypatch, fixture_store):
     monkeypatch.setattr(MacroExpander, "transform_to_transport", leaky)
     with pytest.raises(UiError, match="has no property 'placeholder'"):
         UiPipeline().build(FIXED_REPLY, fixture_store, "turn-1")
+
+
+# Text the model writes on the Surface follows the prose rules: placeholders are filled from
+# Results, and numbers it typed itself are logged (ADR 0001).
+
+
+def _text(messages: list[dict], cid: str) -> str:
+    return next(c["text"] for c in components(messages) if c["id"] == cid)
+
+
+def test_surface_text_placeholder_is_filled(pipeline, fixture_store):
+    reply = '<a2ui>\nroot = Column([t])\nt = Text("Top is {r1[0].supplier} at {r1[0].value|currency_m}.")\n</a2ui>'
+    ui = pipeline.build(reply, fixture_store, "turn-1")
+    assert _text(ui.messages, "t") == "Top is Supplier A at \\$3,441\\.8M."
+
+
+def test_surface_text_placeholder_error_raises_ui_error(pipeline, fixture_store):
+    reply = '<a2ui>\nroot = Column([t])\nt = Text("Top is {r1[0].nope}.")\n</a2ui>'
+    with pytest.raises(UiError) as e:
+        pipeline.build(reply, fixture_store, "turn-1")
+    assert any("nope" in m and "'t'" in m for m in e.value.messages)
+
+
+def test_surface_text_bare_number_is_logged(pipeline, fixture_store, caplog):
+    reply = 'Hi.\n<a2ui>\nroot = Column([t])\nt = Text("9 of 10 went to {r1[0].supplier}.")\n</a2ui>'
+    with caplog.at_level(logging.WARNING, logger="explorer_agent.ui"):
+        ui = pipeline.build(reply, fixture_store, "turn-1")
+    assert ui.bare_numbers == ["9", "10"]
+    assert any("9, 10" in r.getMessage() for r in caplog.records)
+
+
+def test_macro_output_is_not_counted_as_bare_numbers(pipeline, fixture_store):
+    ui = pipeline.build(FIXED_REPLY, fixture_store, "turn-1")
+    assert ui.bare_numbers == []
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        'BarChart("r1", "supplier", "value", "Led by {r1[0].supplier}")',
+        'LineChart("r1", "supplier", "value", "Led by {r1[0].supplier}")',
+        'DataTable("r1", "Led by {r1[0].supplier}")',
+        'Metric("r1", "value", "Led by {r1[0].supplier}")',
+    ],
+    ids=["BarChart", "LineChart", "DataTable", "Metric"],
+)
+def test_macro_title_placeholder_is_filled(pipeline, fixture_store, call):
+    ui = pipeline.build(f"<a2ui>\nroot = Column([c])\nc = {call}\n</a2ui>", fixture_store, "turn-1")
+    texts = [c["text"] for c in components(ui.messages) if c["component"] == "Text"]
+    assert "Led by Supplier A" in texts
+    assert not any("{r1" in t for t in texts)
+
+
+def test_macro_title_placeholder_error_raises_ui_error(pipeline, fixture_store):
+    reply = '<a2ui>\nroot = Column([c])\nc = Metric("r1", "value", "Led by {r1[0].nope}")\n</a2ui>'
+    with pytest.raises(UiError) as e:
+        pipeline.build(reply, fixture_store, "turn-1")
+    assert any("Metric" in m and "nope" in m for m in e.value.messages)
+
+
+def test_prose_and_surface_bare_numbers_share_one_log_line(pipeline, fixture_store, caplog):
+    reply = 'About 812 went to {r1[1].supplier}.\n<a2ui>\nroot = Column([t])\nt = Text("9 of 10")\n</a2ui>'
+    with caplog.at_level(logging.WARNING, logger="explorer_agent.ui"):
+        ui = pipeline.build(reply, fixture_store, "turn-1")
+    assert ui.bare_numbers == ["812", "9", "10"]
+    assert [r.getMessage() for r in caplog.records if BARE_NUMBERS_LOG in r.getMessage()] == [
+        BARE_NUMBERS_LOG + "812, 9, 10"
+    ]

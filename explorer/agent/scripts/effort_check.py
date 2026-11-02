@@ -34,7 +34,9 @@ from dotenv import dotenv_values
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.executor import GENERIC_ERROR, UI_ERROR_PREFIX
+from explorer_agent.ui import BARE_NUMBERS_LOG
 from explorer_agent.llm import (
+    CONTENT_POLICY_PROSE,
     MODEL_FAILED_PROSE,
     NO_VIEW_PROSE,
     REPAIR_STATUS,
@@ -104,6 +106,8 @@ def classify_failure(prose: str) -> str:
         return "ui_error"
     if text.startswith(_MODEL_FAILED_PREFIX):
         return "model_failed"
+    if text == CONTENT_POLICY_PROSE:
+        return "content_policy"
     if text == GENERIC_ERROR:
         return "error"
     paragraphs = [p.strip() for p in text.split("\n\n")]
@@ -215,8 +219,8 @@ def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
             charts.append({"title": sibling_title(c["id"]), "values": (c.get("spec", {}).get("data") or {}).get("values", [])})
         elif kind == "SqlDetails":
             sql.append({"summary": c.get("summary", ""), "sql": c.get("sql", "")})
-        elif kind == "Column":
-            kids = [by_id.get(k, {}) for k in c.get("children", [])]
+        elif kind == "Card":  # what Metric expands to: Card > Column > [caption, h2, SqlDetails]
+            kids = [by_id.get(k, {}) for k in by_id.get(c.get("child", ""), {}).get("children", [])]
             label = next((k.get("text") for k in kids if k.get("component") == "Text" and k.get("variant") == "caption"), None)
             value = next((k.get("text") for k in kids if k.get("component") == "Text" and k.get("variant") == "h2"), None)
             if label is not None and value is not None:
@@ -230,7 +234,7 @@ _LOG_LINE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} (DEBUG|INFO|
 _MODEL_CALL = re.compile(r"model call: .*?prompt=(\S+) cached=(\S+) completion=(\S+) reasoning=(\S+) latency_ms=(\d+)")
 _RUN_SQL = re.compile(r"run_sql \((.*?)\): (.*)", re.DOTALL)
 _SQL_FAILED = re.compile(r"run_sql failed: (\S+) ?(.*)", re.DOTALL)
-_BARE = "prose has numbers typed by the model: "
+_BARE = BARE_NUMBERS_LOG
 _LISTENING = "explorer: listening on "  # the agent's startup line on stdout
 
 

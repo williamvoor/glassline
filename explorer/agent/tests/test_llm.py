@@ -8,6 +8,7 @@ import pytest
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.executor import Conversation
 from explorer_agent.llm import (
+    CONTENT_POLICY_PROSE,
     MODEL_FAILED_PROSE,
     NO_VIEW_PROSE,
     REPAIR_STATUS,
@@ -498,6 +499,19 @@ async def test_model_retry_once_then_success():
     ui = await loop(new_conv(), "q", Statuses())
     assert ui.prose == "Hi."  # succeeded even though max_tool_iterations=1: the retry didn't count
     assert len(model.calls) == 2 and sleeps == [1.0]
+
+
+# A blocked question is never transient: its own prose, and no retry.
+async def test_content_policy_error_is_not_retried():
+    async def sleep(s):
+        pass
+
+    blocked = litellm.ContentPolicyViolationError(message="rejected", model="m", llm_provider="meta")
+    model = ScriptedCompletion([blocked, text("Hi.")])
+    loop = LlmLoop(LoopConfig(), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model, sleep=sleep)
+    ui = await loop(new_conv(), "q", Statuses())
+    assert ui.prose == CONTENT_POLICY_PROSE
+    assert len(model.calls) == 1
 
 
 async def test_model_retry_twice_fails():

@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 STEP_LIMIT_PROSE = "I couldn't finish this answer within the step limit."
 NO_VIEW_PROSE = "I couldn't build a valid view for this answer."
 MODEL_FAILED_PROSE = "The model service failed ({name}). Please try again."
+# The provider blocked the question itself; asking again gets the same answer, so no "try again".
+CONTENT_POLICY_PROSE = "The model provider declined to answer this question. Rephrasing it may help."
 REPAIR_STATUS = "Fixing the view"
 REPAIR_MESSAGE = (
     "Your reply could not be shown: {errors}. Reply again with the corrected UI in the same output "
@@ -209,6 +211,8 @@ class LlmLoop:
             # Class and status only: a provider's error body can echo request content.
             log.error("model call failed: %s status=%s", type(cause).__name__, getattr(cause, "status_code", "-"))
             log.debug("model call failure detail", exc_info=cause)
+            if isinstance(cause, litellm.exceptions.ContentPolicyViolationError):
+                return UiResult(prose=CONTENT_POLICY_PROSE, messages=[], bare_numbers=[])
             return UiResult(prose=MODEL_FAILED_PROSE.format(name=type(cause).__name__), messages=[], bare_numbers=[])
         finally:
             elapsed = self.clock() - start
