@@ -90,6 +90,19 @@ question ran once. All runs succeeded with no Repairs.
 | `currency_compact` used | **Yes.** Metrics and prose show `$38.4B`, `$62.3B`, `$4.1B`, `$3.4B`. |
 | Speed | **Q1 not faster:** wall 6.7, 9.9, 8.3 s against 4.1–7.3 s before at `minimal` (mean 8.3 s vs 5.6 s), despite fewer calls. Per-call latency rose: Q1's first call used 179–353 reasoning tokens (before 50–220) and took 3.0–4.5 s. Q5 unchanged (4.2–5.0 s vs 4.1–5.9 s). Three runs can't separate provider latency noise from longer reasoning about the new rules. |
 
+**Rerun of Q1 (10 runs, same day).** The 3-run speed result was noise.
+
+- **Speed:** of 9 successful runs, the mean was 5.5 s and the median 5.1 s, against a mean of
+  5.6 s before. Every run made exactly 2 model calls (before: 3–4 with the lookup). The first
+  call reasons longer (155–421 reasoning tokens), which uses up most of the saved call. **Net: no
+  speed change, but consistent answers.**
+- **Answers:** all 9 gave $38.4B across 24,187 contracts.
+- **Matched names:** cited in the Surface in only 1 of 9 runs.
+- **Run 3 failed:** its reply failed the UI checks, and the Repair request got `BadRequestError`
+  (HTTP 400) from the provider. The log doesn't record which UI check failed. It's a separate
+  bug, not caused by this change, and it was never seen before because no earlier live run needed
+  a Repair.
+
 ## Decisions
 
 - **`currency_m` stays.** The stub reply, tests and earlier conversations use it. It's still a
