@@ -18,7 +18,8 @@ number on screen comes from a stored query result. The SQL behind each visual is
 The first dataset is AusTender, in our own database built by `../austender/` (its own
 `SPEC.md`). The `fti` database is not used. Nothing in explorer code is AusTender-specific:
 the dataset is a directory of configuration and notes (section 7) plus the descriptions stored
-in the database itself (`COMMENT ON`).
+in the database itself (`COMMENT ON`), optionally overridden by a Comment overlay file in the
+dataset directory (section 13).
 
 Out of scope for v1: authentication, persistent conversations (memory is in-process), UI
 actions (buttons and inputs that call back to the agent), streaming partial UI, more than
@@ -88,7 +89,8 @@ same information is already in the prompt, so this tool mostly matters after a s
 
 ### `describe_table(name)`
 `name` is schema-qualified (`mart.contract_supplier`). Returns the object's comment and its
-live columns (name, type, nullable, column comment from `col_description`). Unknown or
+live columns (name, type, nullable, column comment from `col_description`), with the Comment
+overlay applied (section 13). Unknown or
 disallowed name → an error result listing close matches.
 
 ### `run_sql(sql, purpose)`
@@ -102,7 +104,9 @@ status update and stored with the result. Execution is in section 9. Returns on 
  "sql": "SELECT …", "elapsed_ms": 812}
 ```
 
-`rows_preview` holds the first `ROWS_TO_MODEL` rows (default 20). On failure it returns
+`rows_preview` holds the first `ROWS_TO_MODEL` rows (default 20). A query that matches no rows is
+a success with `row_count: 0` and its columns, not an error: "nothing found" is an answer
+(amended 2026-11-02; it had been reported as a failure). On failure it returns
 `{"error": {"sqlstate": "42703", "message": "column \"valu\" does not exist", "hint": …}}`
 so the model can correct itself.
 
@@ -189,7 +193,7 @@ given configuration and database schema):
 |---|---|---|---|
 | 1 | A2UI format rules + inference catalog (macros + passthrough) | `fmt.prompt_generator.generate()` | Express ~14k chars / Direct JSON ~28k |
 | 2 | Agent instructions | `agent/src/explorer_agent/prompts/instructions.md` (generic, in code) | ~1.5k chars |
-| 3 | Dataset context | dataset directory + database comments, built once at startup | target ≤ 20k chars |
+| 3 | Dataset context | dataset directory + database comments (Comment overlay applied, section 13), built once at startup | target ≤ 20k chars |
 | 4 | Conversation | user messages, assistant replies, tool calls and results | grows |
 
 Nothing per-request (date, IDs, timestamps, result IDs) appears in layers 1–3. The surface
@@ -265,6 +269,9 @@ description = "Australian Commonwealth procurement contracts (AusTender)"
 allowed_schemas = ["mart"]    # what the read-only role can see; defined in ../austender/SPEC.md
 glossary = "glossary.md"      # paths relative to this file
 notes = "notes.md"
+
+# [comments]                 # optional Comment overlay (section 13)
+# overlay = "comments.toml"
 
 [currency]                    # one currency per dataset; used by the currency formats
 code = "AUD"
@@ -382,7 +389,8 @@ Steps 1–3 run in parallel with the database build in `../austender/`.
   text (Lit escaping), and `Cite` escapes markdown before inserting into `Text`. Chart data goes in
   `data.values` only.
 - Database comments go into the prompt (layer 3). They are written by us in the dataset's
-  migrations, so they are trusted configuration, not data.
+  migrations, so they are trusted configuration, not data. The same holds for the Comment
+  overlay (section 13), which is committed with the dataset.
 - The model's own `Text` content is rendered as markdown by the client. Links render, but
   `@a2ui/markdown-it` is configured with images and raw HTML disabled.
 
@@ -531,3 +539,91 @@ Later decisions (2026-10-31, after the first macros):
 - **Validation:** unknown-prop check shared with glimmer-tune.
 - **A2UI SDK:** one git pin for explorer and glimmer-tune (ADR 0006).
 - **Client transport:** the browser calls the agent directly with CORS, no Vite proxy (ADR 0007).
+
+## 13. Amendment: Comment overlay (2026-11-02)
+
+Status: **draft for approval**. Decision: ADR 0019. Terms: **Data dictionary**, **Comment
+overlay** (`../CONTEXT.md`). Until now the Data dictionary was the database's `COMMENT ON`s only,
+so a database we can read but not alter couldn't be described. A Dataset may now name a Comment
+overlay file whose entries replace the database's comment for the same table or column.
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/src/explorer_agent/config.py` | `CommentOverlay` (+ `OverlayEntry`); `Dataset.comment_overlay` (default `None`, so existing hand-built `Dataset`s still work); `load_dataset` reads `[comments]` and parses and statically checks the overlay file |
+| `agent/src/explorer_agent/schema.py` | `apply_overlay(objects, overlay)` (pure, the one place comments are replaced); `overlay_problems(objects, overlay)` (drift check); `SchemaCatalog(pool, schemas, overlay=None)` applies the overlay in `_load`, so `objects()` (schema section, `list_tables`) and `describe()` (`describe_table`) both see it |
+| `agent/src/explorer_agent/__main__.py` | passes `settings.dataset.comment_overlay` to `SchemaCatalog`; after the first `objects()`, fails startup (exit 1) if `overlay_problems` finds any |
+| `agent/README.md` | the overlay, and that edits take effect on restart |
+| tests | `test_config.py`, `test_schema.py`, `test_tools.py`, `test_prompt.py`, `test_main.py` (below) |
+
+### Behaviour
+
+`dataset.toml` gains one optional table:
+
+```toml
+[comments]
+overlay = "comments.toml"      # relative to dataset.toml; absent = database comments only
+```
+
+The overlay file (TOML, UTF-8):
+
+```toml
+["mart.contract"]                      # quoted "schema.table": an unquoted [mart.contract] is
+comment = "One row per contract ..."   # a nested table in TOML and is rejected
+["mart.contract".columns]
+notice_id = "Contract notice number. Primary key."
+```
+
+- **Overlay, not replace.** Database comments are always read. An entry's `comment` replaces the
+  object's database comment; each name under `columns` replaces that column's comment. Anything
+  without an entry keeps its database comment (or none).
+- **Applied everywhere comments reach the model**, in one place (`apply_overlay` in
+  `SchemaCatalog._load`): the schema section in the cached prefix, `list_tables` and
+  `describe_table`.
+- **Static checks in `load_dataset`** (`ConfigError`; the message names the file, and the entry
+  when there is one, never a comment's text): `[comments]` not a table, a key other than `overlay`, or `overlay` not a
+  string; file missing, not UTF-8 or not valid TOML; a top-level key that isn't `schema.table`
+  (split on the first `.`) or whose schema isn't an Allowed schema; an entry that isn't a table,
+  has a key other than `comment`/`columns`, or has neither a comment nor any column; a `comment`
+  or column comment that isn't a non-blank string; `columns` not a table.
+- **Startup drift check** (needs the database): an entry naming a table, view or column that
+  doesn't exist in the Allowed schemas fails startup with every such entry listed, ordered by
+  entry name, as `explorer: comment overlay <path>: unknown column mart.contract.y; unknown table mart.x`.
+- **Caching:** the overlay is read once at startup, so the prefix stays byte-identical across
+  requests; an edit takes effect on restart.
+- With no `[comments]` table, behaviour and prompt bytes are unchanged (the snapshot hashes don't
+  move).
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| O1 | No `[comments]` → `comment_overlay is None`, prompt unchanged | `test_config.py::test_no_overlay_by_default`; existing `test_prompt.py::test_prompt_snapshot` hashes unchanged |
+| O2 | A valid overlay loads, path relative to `dataset.toml` | `test_config.py::test_overlay_loads` |
+| O3 | Every static error above → `ConfigError` naming the file | `test_config.py::test_overlay_errors` (parametrised, incl. unquoted `[mart.contract]` and a schema outside the Allowed schemas) |
+| O4 | `apply_overlay` replaces exactly the named comments (object and column), adds comments where the database has none, leaves the rest untouched, keeps order | `test_schema.py::test_apply_overlay` (pure) |
+| O5 | `overlay_problems` lists unknown tables and columns; empty for a matching overlay | `test_schema.py::test_overlay_problems` (pure) |
+| O6 | Against the seed database, the overlay reaches the schema section, `list_tables` and `describe_table` | `test_schema.py::test_catalog_applies_overlay` (db), `test_tools.py::test_tools_see_overlay` (db) |
+| O7 | Prompt with an overlay is byte-identical across two processes with different `PYTHONHASHSEED`s | `test_prompt.py::test_overlay_prompt_is_identical_across_processes` (db) |
+| O8 | A drifted overlay fails startup with exit 1 and lists every unknown entry | `test_main.py::test_overlay_drift_fails_startup` (db) |
+| O9 | The existing suite still passes | `uv run pytest` |
+
+### Decisions
+
+- The overlay is trusted configuration, like database comments (section 9): written and reviewed
+  by us, committed with the Dataset.
+- An overlay can't remove a comment (blank strings are rejected). No current need.
+- Comments keep their whitespace as written; the schema section already folds each to one line.
+- The drift check runs once at startup, not on every `describe_table`; a schema change while the
+  agent runs is out of scope, as for database comments.
+- `TableInfo`/`ColumnInfo` don't record where a comment came from; the model doesn't need it.
+  The bootstrap report works it out itself from the raw catalog and the overlay.
+- AusTender keeps its database comments and gets no overlay.
+
+### Test command
+
+```bash
+cd explorer/agent
+uv run pytest            # needs Docker
+```

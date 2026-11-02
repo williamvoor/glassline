@@ -288,6 +288,11 @@ class SqlRunner:
                         fetched.append(row)
                         if len(fetched) > self.row_cap:
                             break
+                    if not fetched and cur.description is None:
+                        # A stream that yields no rows leaves no column description. Ask for the
+                        # columns without producing rows; the newlines keep a trailing comment inside.
+                        body = sql.strip().rstrip(";").rstrip()
+                        await cur.execute(f"SELECT * FROM (\n{body}\n) AS _explorer_empty LIMIT 0")
                     elapsed_ms = round((time.perf_counter() - start) * 1000)
                     if cur.description is None:
                         return SqlFail(sqlstate=None, message="the statement returned no rows")

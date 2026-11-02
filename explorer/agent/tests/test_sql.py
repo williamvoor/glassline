@@ -171,3 +171,23 @@ async def test_many_queries_on_one_connection(ro_pool):
     r = runner(ro_pool)
     results = [await r.run("SELECT count(*) AS n FROM mart.contract") for _ in range(15)]
     assert all(isinstance(x, SqlOk) for x in results), [x for x in results if isinstance(x, SqlFail)][:1]
+
+
+# Regression (scenario run 2026-11-02): a SELECT matching no rows came back as SqlFail("the statement
+# returned no rows"), because a stream that yields nothing leaves no column description. The model was
+# told its query failed when the honest answer was "nothing found".
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT agency_name, contract_count FROM mart.agency WHERE false",
+        "WITH a AS (SELECT agency_name, contract_count FROM mart.agency) SELECT * FROM a WHERE contract_count < 0",
+        "SELECT agency_name, contract_count FROM mart.agency WHERE false;",
+        "SELECT agency_name, contract_count FROM mart.agency WHERE false -- none",
+    ],
+    ids=["plain", "with", "semicolon", "trailing_comment"],
+)
+async def test_empty_result_is_a_result(ro_pool, sql):
+    out = await runner(ro_pool).run(sql)
+    assert isinstance(out, SqlOk), out
+    assert (out.columns, out.rows, out.truncated) == (["agency_name", "contract_count"], [], False)
+    assert out.column_types[1] in ("bigint", "integer", "int8", "int4")
