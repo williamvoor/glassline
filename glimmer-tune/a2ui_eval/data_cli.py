@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .export import ExportError, export_sft
+from .export import ExportError, approx_tokens, export_sft
 from .fingerprint import fingerprint
 from .generate import GenerationError, generate_family, load_splits, load_templates, read_jsonl, write_jsonl
 from .prompt import build_system_prompt
@@ -136,18 +136,64 @@ def eval_seed_fingerprints(index: RefIndex, data: Path = DATA) -> set[str]:
 
 def cmd_export(args) -> None:
     sdk, index, _, splits = _setup(args.data)
-    eval_cases = read_jsonl(args.data / DRAFT.name) + read_jsonl(args.data / "dev" / "cases.jsonl") + read_jsonl(args.data / "test" / "cases.jsonl")
+    synth = args.data / "synth"
+    eval_cases = (
+        read_jsonl(args.data / DRAFT.name)
+        + read_jsonl(args.data / "dev" / "cases.jsonl")
+        + read_jsonl(args.data / "test" / "cases.jsonl")
+        + (read_jsonl(synth / "dev" / "cases.jsonl") if (synth / "dev" / "cases.jsonl").exists() else [])
+    )
+    train = read_jsonl(args.data / "train" / "cases.jsonl")
+    skeleton_splits = None
+    if args.mix is not None:
+        from .synth.pipeline import load_skeleton_splits
+        from .synth.skeleton import load_skeletons
+        from .synth.catalog_model import CatalogModel
+        import yaml
+
+        doc = yaml.safe_load((args.data / "splits.yaml").read_text()) or {}
+        skeleton_splits = load_skeleton_splits(doc, load_skeletons(CatalogModel(sdk)))
+        if not (synth / "train" / "cases.jsonl").exists():
+            raise ExportError(f"--mix needs {synth / 'train' / 'cases.jsonl'}; run `synth --split train` first")
+        train += read_jsonl(synth / "train" / "cases.jsonl")
     rows, report = export_sft(
-        read_jsonl(args.data / "train" / "cases.jsonl"),
+        train,
         eval_cases,
         splits,
         build_system_prompt(sdk),
-        load_tokenizer_counter(),
+        approx_tokens if args.approx_tokens else load_tokenizer_counter(),
         args.max_seq_len,
         eval_seed_fingerprints(index, args.data),
+        skeleton_splits,
+        args.mix,
+        args.seed,
     )
     write_jsonl(args.out, rows)
     print(json.dumps(report.to_dict(), indent=2))
+
+
+def cmd_lint(args) -> None:
+    from .synth.catalog_model import CatalogModel
+    from .synth.lint import lint_gallery, lint_rows, load_gallery_allowlist, stale_allowlist
+    from .synth.skeleton import load_skeletons
+
+    model = CatalogModel(ExpressSDK(CATALOG))
+    problems: list[str] = []
+    if args.gallery:
+        seeds, allow = load_seeds(), load_gallery_allowlist()
+        problems += [f"gallery {stem}: {', '.join(rules)}" for stem, rules in lint_gallery(seeds, model, allow).items()]
+        problems += [f"stale allowlist entry {entry}" for entry in stale_allowlist(seeds, model, allow)]
+    if args.synthetic:
+        tags = {k: s.tags for k, s in load_skeletons(model).items()}
+        rows = read_jsonl(args.synthetic)
+        problems += [f"{rid}: {', '.join(rules)}" for rid, rules in lint_rows(rows, model, tags).items()]
+    if not (args.gallery or args.synthetic):
+        raise GenerationError("lint needs --gallery and/or --synthetic <cases.jsonl>")
+    for line in problems:
+        print(line, file=sys.stderr)
+    if problems:
+        raise GenerationError(f"{len(problems)} lint problems")
+    print("lint passed")
 
 
 def cmd_vocab(args) -> None:
@@ -222,6 +268,9 @@ def build_parser() -> argparse.ArgumentParser:
     e = sub.add_parser("export")
     e.add_argument("--max-seq-len", type=int, default=8192)
     e.add_argument("--out", type=Path, default=EXPORT)
+    e.add_argument("--mix", type=float, nargs="?", const=0.7, default=None, help="synthetic share of the output (default 0.7); adds data/synth/train rows")
+    e.add_argument("--seed", type=int, default=0, help="seed for the gallery oversampling and the final shuffle")
+    e.add_argument("--approx-tokens", action="store_true", help="count tokens as ceil(chars/3) instead of loading the tokenizer (offline)")
     e.set_defaults(fn=cmd_export)
     v = sub.add_parser("vocab", help="write domain vocabularies with meta/muse-spark-1.3")
     which = v.add_mutually_exclusive_group(required=True)
@@ -238,6 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
     co = sub.add_parser("coverage", help="coverage report for data/synth/train")
     co.add_argument("--target", type=int, default=30)
     co.set_defaults(fn=cmd_coverage)
+    li = sub.add_parser("lint", help="plausibility linter (S8)")
+    li.add_argument("--gallery", action="store_true", help="every single-turn converted seed, after the allowlist")
+    li.add_argument("--synthetic", type=Path, help="a synthetic cases.jsonl")
+    li.set_defaults(fn=cmd_lint)
     return p
 
 

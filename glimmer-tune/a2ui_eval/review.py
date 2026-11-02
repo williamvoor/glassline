@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
+from dataclasses import dataclass
 from functools import cache
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +26,8 @@ from .seeds import ROOT
 DRAFT = ROOT / "data" / "intents_draft.jsonl"
 CATALOG = ROOT / "catalogs" / "basic_v0_9.json"
 DIST = ROOT / "review" / "dist"
+VERDICTS = ROOT / "data" / "synth" / "review.jsonl"
+VERDICT_KINDS = ("approve", "reject")
 
 # Component props whose literal string values a reader would expect in the intent.
 _TEXT_PROPS = ("text", "label", "name", "title", "placeholder")
@@ -138,7 +142,77 @@ def view_rows(path: Path) -> list[dict[str, Any]]:
     return out
 
 
-def make_handler(draft: Path, dist: Path):
+@dataclass(frozen=True)
+class SyntheticReview:
+    cases: Path
+    sample: int = 50
+    seed: int = 0
+    verdicts: Path = VERDICTS
+
+
+def sample_rows(rows: list[dict[str, Any]], n: int, seed: int) -> list[dict[str, Any]]:
+    """`n` rows chosen without replacement by `seed`, in id order. The same rows give the same sample."""
+    ordered = sorted(rows, key=lambda r: r["id"])
+    return sorted(random.Random(seed).sample(ordered, min(n, len(ordered))), key=lambda r: r["id"])
+
+
+def read_verdicts(path: Path) -> dict[str, dict[str, Any]]:
+    return {r["id"]: r for r in read_rows(path)} if path.exists() else {}
+
+
+def record_verdict(review: SyntheticReview, row_id: Any, verdict: Any, reason: Any) -> dict[str, Any]:
+    """Upserts `{id, verdict, reason}` (the latest verdict per id wins; first-seen order is kept).
+    Refuses an id outside the sample, an unknown verdict, and a reject without a reason."""
+    if verdict not in VERDICT_KINDS:
+        raise ReviewError(f"verdict must be one of {VERDICT_KINDS}")
+    if row_id not in {r["id"] for r in sample_rows(read_rows(review.cases), review.sample, review.seed)}:
+        raise ReviewError(f"unknown row id {row_id!r}")
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if verdict == "reject" and not reason:
+        raise ReviewError("a reject needs a reason")
+    record = {"id": row_id, "verdict": verdict, "reason": reason}
+    records = read_verdicts(review.verdicts)
+    records[row_id] = record  # keeps the dict position of an earlier verdict
+    write_rows(review.verdicts, list(records.values()))
+    return record
+
+
+@cache
+def _lint_context():
+    from .synth.catalog_model import CatalogModel
+    from .synth.skeleton import load_skeletons
+
+    model = CatalogModel(v09_sdk())
+    return model, {k: s.tags for k, s in load_skeletons(model).items()}
+
+
+def synthetic_views(review: SyntheticReview) -> list[dict[str, Any]]:
+    from .synth.lint import lint_surface
+
+    sdk, (model, tags) = v09_sdk(), _lint_context()
+    verdicts = read_verdicts(review.verdicts)
+    out = []
+    for row in sample_rows(read_rows(review.cases), review.sample, review.seed):
+        keys = ("id", "family", "split", "intent", "reference_express", "fingerprint", "skeleton", "domain", "topic", "detail")
+        view: dict[str, Any] = {k: row.get(k) for k in keys}
+        verdict = verdicts.get(row["id"])
+        view.update(
+            synthetic=True,
+            reviewed=verdict is not None,
+            verdict=verdict["verdict"] if verdict else None,
+            reason=verdict["reason"] if verdict else "",
+            lint=lint_surface(row["reference"], model, tags.get(row.get("skeleton"), ())),
+            expected=expected_values(row["reference"]),
+        )
+        try:
+            view["v09"] = sdk.compile_express(row["reference_express"])
+        except Exception as e:
+            view["v09"], view["render_error"] = [], str(e)
+        out.append(view)
+    return out
+
+
+def make_handler(draft: Path, dist: Path, synthetic: SyntheticReview | None = None):
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(dist), **kwargs)
@@ -153,14 +227,16 @@ def make_handler(draft: Path, dist: Path):
 
         def do_GET(self):
             if self.path == "/api/rows":
-                return self._json(HTTPStatus.OK, view_rows(draft))
+                return self._json(HTTPStatus.OK, synthetic_views(synthetic) if synthetic else view_rows(draft))
             return super().do_GET()
 
         def do_POST(self):
-            if self.path != "/api/rows":
+            if self.path != ("/api/verdict" if synthetic else "/api/rows"):
                 return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if synthetic:
+                    return self._json(HTTPStatus.OK, record_verdict(synthetic, body.get("id"), body.get("verdict"), body.get("reason")))
                 row = update_row(draft, body.get("id"), body.get("intent"), body.get("reviewed"))
             except (ReviewError, json.JSONDecodeError, AttributeError) as e:
                 return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
@@ -173,11 +249,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--draft", type=Path, default=DRAFT)
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--synthetic", type=Path, help="review a sample of synthetic rows from this cases.jsonl instead of the draft")
+    ap.add_argument("--sample", type=int, default=50)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--verdicts", type=Path, default=VERDICTS)
     args = ap.parse_args()
+    review = SyntheticReview(args.synthetic, args.sample, args.seed, args.verdicts) if args.synthetic else None
     if not (DIST / "index.html").exists():
         raise SystemExit(f"{DIST} is missing; run `npm install && npm run build` in review/")
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.draft, DIST))
-    print(f"reviewing {args.draft} at http://127.0.0.1:{args.port}")
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.draft, DIST, review))
+    print(f"reviewing {args.synthetic or args.draft} at http://127.0.0.1:{args.port}")
     server.serve_forever()
 
 

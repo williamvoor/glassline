@@ -1,0 +1,10 @@
+# Gallery seeds that fail a plausibility rule by upstream design (SPEC 2c, Linter).
+# stem -> {rule id: reason}. An entry that stops firing fails test_synth_lint.py.
+00_complex-layout:
+  form_submit: Layout demo with two text fields and no button; there is nothing to submit.
+07_task-card:
+  form_submit: A task card with a checkbox and a date picker that save as you change them; it has no Button.
+09_login-form:
+  form_submit: The login event sends only the email, not the password; the password stays on the client.
+30_live-invitation-builder:
+  form_submit: A live editor whose preview updates from the data model; it has no submit Button.

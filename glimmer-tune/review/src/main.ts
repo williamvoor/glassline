@@ -17,6 +17,14 @@ interface Row {
   expected: string[];
   v09: Record<string, unknown>[];
   render_error?: string;
+  // Synthetic review mode (the server adds `synthetic: true`): a verdict per row instead of an edited intent.
+  synthetic?: boolean;
+  skeleton?: string;
+  domain?: string;
+  detail?: string;
+  lint?: string[];
+  verdict?: 'approve' | 'reject' | null;
+  reason?: string;
 }
 
 type Filter = 'all' | 'todo' | 'dev' | 'test';
@@ -35,6 +43,7 @@ export class ReviewApp extends LitElement {
   @state() private filter: Filter = 'all';
   @state() private error = '';
   @state() private saving = false;
+  @state() private reason = ''; // the reject reason being typed (synthetic mode)
 
   override createRenderRoot() {
     return this; // light DOM, so index.html styles reach the A2UI components
@@ -80,10 +89,12 @@ export class ReviewApp extends LitElement {
     if (i < 0 || i >= this.rows.length) return;
     this.index = i;
     this.draft = this.rows[i].intent;
+    this.reason = this.rows[i].reason ?? '';
   }
 
   private async save(reviewed: boolean): Promise<boolean> {
     const row = this.row;
+    if (row?.synthetic) return true; // nothing to edit; verdicts are saved by `verdict`
     if (!row || !this.draft.trim()) return false;
     if (row.intent === this.draft && row.reviewed === reviewed) return true;
     this.saving = true;
@@ -106,6 +117,34 @@ export class ReviewApp extends LitElement {
     }
   }
 
+  /** Synthetic mode: records approve or reject (a reject needs a reason) and moves on. */
+  private async verdict(kind: 'approve' | 'reject') {
+    const row = this.row;
+    if (!row) return;
+    if (kind === 'reject' && !this.reason.trim()) {
+      this.error = 'A reject needs a reason.';
+      return;
+    }
+    this.saving = true;
+    try {
+      const res = await fetch('/api/verdict', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: row.id, verdict: kind, reason: kind === 'reject' ? this.reason : ''}),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? res.statusText);
+      this.rows = this.rows.map(r => (r.id === row.id ? {...r, verdict: body.verdict, reason: body.reason, reviewed: true} : r));
+      this.error = '';
+    } catch (e) {
+      this.error = `Not saved: ${e}`;
+      return;
+    } finally {
+      this.saving = false;
+    }
+    await this.step(1);
+  }
+
   /** Moves within the current filter, saving an edited intent first. */
   private async step(delta: number, reviewed?: boolean) {
     if (!(await this.save(reviewed ?? this.row?.reviewed ?? false))) return;
@@ -116,7 +155,15 @@ export class ReviewApp extends LitElement {
   }
 
   private onKey = (e: KeyboardEvent) => {
-    const inText = (e.target as HTMLElement)?.tagName === 'TEXTAREA';
+    const tag = (e.target as HTMLElement)?.tagName;
+    const inText = tag === 'TEXTAREA' || tag === 'INPUT';
+    if (this.row?.synthetic) {
+      if (!inText && e.key === 'a') void this.verdict('approve');
+      else if (!inText && e.key === 'j') void this.step(1);
+      else if (!inText && e.key === 'k') void this.step(-1);
+      else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void this.verdict('reject');
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       void this.step(1, true);
@@ -147,7 +194,7 @@ export class ReviewApp extends LitElement {
     let family = '';
     return html`<aside>
       <header>
-        <div class="progress">${done} / ${this.rows.length} approved</div>
+        <div class="progress">${done} / ${this.rows.length} ${this.rows[0]?.synthetic ? 'reviewed' : 'approved'}</div>
         <select @change=${(e: Event) => (this.filter = (e.target as HTMLSelectElement).value as Filter)}>
           <option value="all">All rows</option>
           <option value="todo">Not approved</option>
@@ -161,7 +208,7 @@ export class ReviewApp extends LitElement {
         family = r.family;
         return html`${heading}
           <div class="item ${i === this.index ? 'current' : ''}" @click=${() => this.save(this.row!.reviewed).then(ok => ok && this.select(i))}>
-            <span class="mark">${r.reviewed ? '✓' : ''}</span>
+            <span class="mark">${r.synthetic ? (r.verdict === 'reject' ? '✗' : r.verdict === 'approve' ? '✓' : '') : r.reviewed ? '✓' : ''}</span>
             <span class="text">${r.id.split('/').pop()} ${r.intent}</span>
             ${this.duplicateOf(i) ? html`<span class="dup" title="Same UI as ${this.duplicateOf(i)}">dup</span>` : nothing}
           </div>`;
@@ -169,9 +216,41 @@ export class ReviewApp extends LitElement {
     </aside>`;
   }
 
+  private renderSynthetic(row: Row) {
+    return html`${this.renderList()}
+      <main>
+        <div class="meta">
+          <strong>${row.id}</strong>
+          <span class="badge">${row.domain} · ${row.detail}</span>
+          ${row.verdict ? html`<span class="badge ${row.verdict === 'approve' ? 'ok' : 'warn'}">${row.verdict}</span>` : html`<span class="badge">not reviewed</span>`}
+          ${(row.lint ?? []).map(rule => html`<span class="badge warn">lint: ${rule}</span>`)}
+        </div>
+        <p class="intent">${row.intent}</p>
+        <div class="values">
+          <span class="hint">Values in the UI:</span>
+          ${row.expected.map(v => html`<span class="chip ${norm(row.intent).includes(norm(v)) ? '' : 'missing'}">${v}</span>`)}
+        </div>
+        <div class="actions">
+          <input type="text" placeholder="Reason (required to reject)" .value=${this.reason} @input=${(e: Event) => (this.reason = (e.target as HTMLInputElement).value)} />
+          <button class="primary" ?disabled=${this.saving} @click=${() => this.verdict('approve')}>Approve &amp; next</button>
+          <button ?disabled=${this.saving} @click=${() => this.verdict('reject')}>Reject &amp; next</button>
+          <button ?disabled=${this.saving} @click=${() => this.step(-1)}>← Prev</button>
+          <button ?disabled=${this.saving} @click=${() => this.step(1)}>Skip →</button>
+          <span class="hint">a approve · ⌘/Ctrl+Enter reject · j/k next/prev</span>
+        </div>
+        ${this.error ? html`<div class="error">${this.error}</div>` : nothing}
+        <div class="canvas">${this.renderSurface(row)}</div>
+        <details>
+          <summary>Reference Express</summary>
+          <pre>${row.reference_express}</pre>
+        </details>
+      </main>`;
+  }
+
   override render() {
     const row = this.row;
     if (!row) return html`<aside></aside><main>${this.error ? html`<div class="error">${this.error}</div>` : 'Loading…'}</main>`;
+    if (row.synthetic) return this.renderSynthetic(row);
     const text = norm(this.draft);
     const dup = this.duplicateOf(this.index);
     return html`${this.renderList()}
