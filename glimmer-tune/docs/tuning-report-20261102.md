@@ -243,3 +243,96 @@ Gallery exact match is 0.0 for all three. Base `s000.full` truncated 1.2% of gal
   - more data-bound lists.
 - An inference-time compile check with one retry would also help the explorer, whatever the model.
 - Not yet checked: which conditional idioms the v0.9 catalog's functions support.
+
+## 7. Why 14 gallery rows don't compile: invented conditionals (2026-11-02)
+
+**What fails.** In `s250.full`, 13 of the 14 gallery compile failures are invented conditionals. The 14th (`dev/32_advanced-form-validator/0003`) is a missing closing parenthesis on the submit Button's `?and(...)` check (23 opening, 22 closing). It was not cut off: `finish` is `stop` after about 350 tokens, far below the 3,072 limit, and no stop sequence fired inside a string. Corrected in section 8; this line first said a `?regex(...)` was cut off.
+- **Shipping-status, 7 rows:** `Icon($completed ? "check" : "arrowForward")`. The model adds a `completed` flag to each step, then tries to pick the icon from it.
+- **Financial grid, 6 rows:** `if($change >= 0, "body", "caption")`, which styles the change column by its sign.
+
+**Express has no conditional at all.** The v0.9 catalog's only functions are `required`, `regex`, `length`, `numeric`, `email`, `formatString`, `formatNumber`, `formatCurrency`, `formatDate`, `pluralize`, `openUrl`, `and`, `or` and `not`. There's no `if` and no comparison operator. The references avoid logic:
+- shipping-status stores the icon per step in the data model (`{icon: "check", label: …}` with `Icon($icon)`);
+- the financial grid doesn't style by sign, and the intent doesn't ask for it.
+
+**Evidence** (reading the run 1 predictions with `runs/sft1/rescore-20261102/` for source and compile status). The comparison counts come from a pattern match and are approximate; the ternary and `if(` counts are exact.
+
+| Checkpoint | Gallery ternary | Gallery comparison | Gallery `if(` | Gallery not compiling | Synthetic conditionals |
+|---|---|---|---|---|---|
+| s000 base (full, 84 gallery rows) | 0 | 0 | 0 | 22 | 0 |
+| s025 (32 gallery rows) | 0 | 1 | 3 | 6 | 0 |
+| s050 | 0 | 7 | 4 | 5 | 0 |
+| s100–s125 | 0 | 0–3 | 2–3 | 6–7 | 0 |
+| s150–s325 | 1–4 | 1–3 | 0–2 | 2–6 | 0 |
+| s225 (full) | 10 | 10 | 2 | 18 | 0 |
+| s250 (full) | 8 | 8 | 4 | 14 | 0 |
+
+- **Tuning traded one kind of error for another.** The base model's 22 gallery failures are generic: 17 strings in single quotes and 4 with no `root` defined. Tuning removed all of them, and invented conditionals took their place.
+- **It starts early and stays.** `if(` appears by step 25 and comparisons by step 50. Ternaries appear from about step 150 and don't go away. More steps don't fix it.
+- **It happens only outside the training distribution.** Synthetic dev shows no conditionals at any checkpoint, and its compile failures fall from 93/200 to 5/200. Synthetic dev therefore can't detect this problem; only gallery dev and test can.
+
+**Likely cause.** This is inferred from the counts, not proven.
+- The training data never shows a value that varies per list item and comes from the data. Of 5,199 rows, 257 bind an icon to an absolute path, and **none** binds an icon to a per-item field inside a template (`Icon($icon)`). The 60 bound media inside templates are Images and CheckBoxes.
+- Tuning taught data-bound lists. Faced with an item that has to vary (a step's state, a change's sign), the model improvises the logic it knows from programming languages.
+- The frozen system prompt may encourage this. Rule 7 is headed "Logic and validation" and uses a `?` prefix for check rules, and `and`/`or`/`not` are listed as "logic functions". Nothing says that Express has no conditionals.
+
+**What this means for run 2.**
+- Add synthetic rows where list items carry their own icon, image or variant in the data model, bound with `$field` inside the template.
+- Add intents that describe states ("completed steps", "losses shown differently") whose references encode the state as data, not logic. Open question: whether precomputed per-row presentation values (such as `variant` in the data model) suit the explorer's real query results. Settle this before building the data.
+- Track the share of invented conditionals on gallery dev per checkpoint, as a cheap signal next to slot F1.
+- Optional, and only if run 2 changes the prompt anyway: add one line saying Express has no conditionals and that values which differ per item go in the data model. The prompt is frozen, and changing it invalidates the run 1 adapter (ADR 0015).
+- At inference, a compile check with one retry is a cheap safety net, but it treats the symptom.
+
+## 8. Run 2 preparation: measurement (2026-11-02)
+
+Spec: `SPEC.md` "Run 2 preparation: measurement". Files: `runs/sft1/rescore-20261102b/` (git-ignored).
+
+**Decisions** (the user delegated them):
+- ADR 0021's placeholder score stays. A consistent renaming would catch two inputs bound to one path, and that happens in 0 of 526 compiled `s225`/`s250` full-dev rows.
+- Run 2 is generic only. The explorer-shaped run is run 3 (`SPEC.md`).
+- Run 2's prompt change only appends a line.
+- Muse Wonder and Gemini baselines are dropped (user).
+
+**Outside-the-catalog rate** (new check; gallery rows flagged / rows):
+
+| Ckpt | Gallery | Synthetic | Kinds on gallery |
+|---|---|---|---|
+| s000.full (base) | 2/84 | 0/200 | operator 2 (`"…" + formatDate(…)`, a mangled closing tag) |
+| s025 | 4/32 | 0/32 | unknown_function 3, operator 2 |
+| s050 | 7/32 | 0/32 | operator 7, unknown_function 4 |
+| s075–s150 | 3–5/32 | 0/32 | operator, unknown_function |
+| s175 | 1/32 | 0/32 | operator 1 |
+| s200 | 4/32 | 0/32 | operator 4, unknown_function 1 |
+| s225.full | 17/84 | 0/200 | operator 16, unknown_function 2, unknown_component 1 (`Table`) |
+| s250.full | 14/84 | 1/200 | operator 14, unknown_function 4 |
+| s275–s325 | 3–4/32 | 0–1/32 | operator, unknown_function |
+
+- The check finds what compile failures alone miss. `dev/27_stats-card/0011` (s250) compiles but puts `== ... ? :` inside a `formatString` interpolation, which fails at render time. s225 has 3 such rows.
+- Two synthetic rows show other inventions: a pipe `"…" |> formatDate(…)` (s250) and string concatenation with `+` (s300).
+- Base invents almost nothing (2/84). Tuning introduces it from step 25 on, as section 7 found.
+- Selection and blind scores are unchanged. `selection_blind_ci` for s250.full is 0.696–0.755, and for s225.full 0.670–0.735; they overlap.
+
+**Item 3 (the 14th row):** settled from the saved prediction, with no sampling. It's a model error (a dropped parenthesis), not truncation or a stop sequence. Nothing to fix in serving.
+
+**Tokens per row** (answer text from the saved predictions, Glimmer tokenizer; system prompt 4,914 tokens):
+
+| Ckpt | Gallery p50 / p95 | Synthetic p50 / p95 |
+|---|---|---|
+| s000 | 145 / 353 | 314 / 530 |
+| s225 | 280 / 387 | 336 / 557 |
+| s250 | 287 / 365 | 334 / 554 |
+
+Caveat: these count the answer only. The smoke run measured base sampling about 4x more tokens than the tuned model, so base very likely spends tokens on reasoning that `get_text_content` drops. The real sampled count and latency need a fresh sample with usage recorded (run 2 trainer change). The base row is shorter on gallery because 22 of its gallery answers fail early.
+
+**Baselines with grammar: not run.** Findings (research sub-agent, sources in brackets):
+- The training SDK's sampler takes no grammar: `SamplingParams` has `max_tokens`, `seed`, `stop`, `temperature`, `top_k`, `top_p` only (`trainer/.venv/.../sampling_params.py:6-23`).
+- Fireworks supports GBNF grammars through `response_format: {"type": "grammar"}` on its inference API (docs.fireworks.ai, structured-output-grammar-based). Whether Glimmer 30B is still on serverless is unclear: the model page reportedly says serverless was deprecated from 2026-09-25. Whether a LoRA adapter can be served serverless is unknown. An on-demand H100 costs $8/h (fireworks.ai/pricing).
+- Latency measured on the shared training sampler would not stand for serving latency.
+
+**Sampling prices** on the training SDK for Glimmer 30B: prefill $1.96, cached prefill $0.39, sampled $4.88 per 1M tokens (`docs/fireworks_training_guide.md:462`, fireworks.ai/pricing). One full-dev setup is about 1.4M prefill tokens (mostly the cacheable system prompt) and about 0.1M sampled tokens: roughly US$1–3.50.
+
+**Free SFT cut-off:** Fireworks says "free … until November 30, 2026" with no time or timezone (docs.fireworks.ai/fine-tuning/models; fireworks.ai/pricing). Sampling is billed. The repo's "2026-12-01 08:00 UTC" has no source; treat 2026-11-30 as the last safe day to start a job.
+
+**Meta Model API terms, for item 10** (dev.meta.ai/legal/terms-of-service, last updated 2026-10-09, section 10.1(ix)). The fetch tool returned fragments only, quoted here exactly: "the Outputs of the Services, to train, fine-tune, distill," … "or otherwise improve or create any artificial intelligence or machine learning model" … "that competes with Meta's models or services"; also "systematically collect Outputs or other data to build training datasets"; "without Meta's prior written authorization"; with a carve-out "solely for evaluation, benchmarking, or quality assessment of your own systems". The full clause still has to be read directly. No interpretation is made here. It bears on ADR 0009, where Spark writes the synthetic vocabulary that becomes training data.
+
+**Review queue:** the 84 gallery dev rows of `s250.full` are in the review page, worst first:
+`uv run python -m a2ui_eval.review --predictions runs/sft1/predictions/s250.full.jsonl --scores runs/sft1/rescore-20261102b/s250.full.json`

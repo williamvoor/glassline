@@ -17,3 +17,5 @@ Glimmer's intents never name data paths or event names (glimmer-tune SPEC, rules
 - Score files gain `slot_f1_blind` (per row and per source) and `selection_blind`. Old score files lack them until they are rescored.
 - A model that reuses one path for two inputs scores full name-blind F1. Reading failures, not this score, has to catch that.
 - If the name-blind score becomes the selection score for run 2, it needs the same bootstrap interval as `selection`.
+
+**Amendment (2026-11-02):** after the run 1 rescore had been read, run 2 selects checkpoints on the name-blind score (`selection_blind`). Score files now carry its interval (`selection_blind_ci`). The literal score stays as a secondary metric. The consistent one-to-one renaming is still not built: two inputs bound to one path happened in 0 of 526 compiled rows of `s225` and `s250` on full dev.

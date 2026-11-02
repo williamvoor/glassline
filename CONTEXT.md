@@ -57,6 +57,10 @@ _Avoid_: Prompt, intent (an intent is a user's own request, as used in training 
 A chart, table or metric on a Surface, built by a Macro from one Result. Every Visual shows the SQL behind it.
 _Avoid_: Widget, graphic
 
+**Tone**:
+A row's state, written as a value from a small fixed vocabulary (such as positive, negative, done, pending) in a column of the Result, and computed by the query. A Macro decides how each Tone looks; the model only names the column.
+_Avoid_: Status (an ordinary data column), style, variant (a catalog property)
+
 **Repair**:
 A further attempt at a Turn's Surface after it failed the checks, using the same Results.
 _Avoid_: Retry (also used for model API retries), fix-up

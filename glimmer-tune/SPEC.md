@@ -1034,10 +1034,69 @@ cd glimmer-tune && uv run pytest tests/test_score.py tests/test_align.py tests/t
 cd glimmer-tune && uv run pytest
 ```
 
+## Run 2 preparation: measurement (spec, 2026-11-02)
+
+Status: built from the reviewer brief of 2026-11-02, with decisions delegated to the assistant. The user dropped Muse Wonder and Gemini baselines.
+
+### Decisions (assistant, on the user's delegation)
+
+- **Name-blind score:** ADR 0021's placeholders stay. A consistent one-to-one renaming would only add a check for two inputs sharing one path. Across the compiled rows of `s225.full` and `s250.full` (526 rows) there are 0 such cases, and 1 in base. Not built.
+- **Run 2 scope:** generic only (basic catalog, the current intent input). The explorer-shaped run (Brief plus Result schemas in, Macros out; ADR 0014) is run 3. Its Brief wording and Macro catalog are not specified yet, and the explorer session owns them. Run 3 must start before the free SFT cut-off (2026-11-30).
+- **Prompt change for run 2:** only append one line after the SDK snippet. Rule 7's heading comes from the upstream SDK (`a2ui/inference_formats/express/prompt_generator.py`); renaming it would fork upstream text that the explorer must send byte-identically. Not done.
+- **Grammar baselines: dropped.** The training SDK's `SamplingParams` has no grammar option (fields: `max_tokens`, `seed`, `stop`, `temperature`, `top_k`, `top_p`). Grammar decoding would need serverless inference (Glimmer's serverless status is unclear) or an on-demand deployment (H100 $8/h). Constrained decoding isn't a serving candidate until a serving path is chosen.
+
+### Run 2 decisions (grilling round, 2026-11-02; the user delegated, then confirmed)
+
+- **Per-row state:** ADR 0022 accepted. In the explorer, SQL computes a Tone column. Generic run 2 references store presentation values per item (`{icon: "check"}` with `Icon($icon)`), the only way the basic catalog can express it.
+- **Baselines:** run once, under the frozen run 2 prompt: base, and base plus 3 few-shot examples (3 train gallery rows from different families, seed 0). Sampled tokens are recorded per row. Hard cap US$15.
+- **Selection:** run 2 selects on name-blind slot F1. The outside-the-catalog rate is reported, not gated. ADR 0021 is amended.
+- **The user's reading of the 84 gallery rows** doesn't block run 2 data. Verdicts feed in before full-size generation.
+- **2c-2 deferred** (update turns and text-only rows). The explorer never updates a Surface (one new Surface per Turn), and Glimmer never writes text-only answers there.
+- **Timeline:** run 2 launches by 2026-11-12. The run 3 spec (Brief and Macros) comes from the explorer session by 2026-11-20. Run 3 launches by 2026-11-25. Free SFT ends 2026-11-30.
+- **Item 7:** coverage per (component, property) × (literal | absolute `$/path` | per-item `$field` in a template), with at least 30 train rows in every cell the schema allows. Per-item rows bind an icon, image, variant or text. State intents ("completed steps") have references that store per-item presentation values. The coverage report and 10 rendered samples come before full-size generation.
+- **Item 8:** append one line after the SDK snippet, "Express has no conditionals or operators. Values that vary per item belong in the data model.", and freeze it under ADR 0015. Rule 7's upstream heading stays. Run 1 becomes historical.
+- **Item 9:** run 1's settings, except:
+  - unembed off, with every `train_*` flag recorded in the manifest;
+  - name-blind selection, with the outside-the-catalog rate in subset scoring;
+  - sampled tokens recorded per row;
+  - `service.close()` called at the end.
+  - Still 1 epoch, with a checkpoint every 25 steps.
+- **Item 10:** amend ADR 0003 for ADR 0009's exception, and resolve the report's source conflicts. The Meta Model API terms are out of scope (user).
+
+### Behaviour
+
+- **Score files** carry `selection_blind_ci` (the same bootstrap as `selection_ci`, on `slot_f1_blind`; family-level on test) and `scorer: {commit, dirty}` (git HEAD, and whether `a2ui_eval/` had uncommitted changes).
+- **Outside-the-catalog check** (`a2ui_eval/catalog_check.py`). A lexer follows `Express.g4`'s tokens. It flags:
+  - `operator`: any character sequence the grammar can't tokenise (`?` outside a check rule, comparisons, `==`, `&&`, `||`, `!`, arithmetic, `|>`), and a signed number right after a value (`$a -1`). Also operators inside `${...}` in non-raw strings, which compile but fail at render time.
+  - `unknown_function` / `unknown_component`: a call or `?check` whose name isn't a catalog function, a catalog component, or one of `surface`, `deleteSurface`, `Event`, `_template`.
+  - `unknown_property`: a keyword argument that the callee doesn't accept (its catalog slots or args, plus the compiler's reserved keywords).
+  - Not flagged: `/` or `-` glued to names on both sides (`$/a b/c`, `$/a-b`). These are broken paths, not arithmetic.
+- **Rows** carry `outside_catalog` and `outside_catalog_kinds`; sources carry the rate.
+- **Export** refuses any train target with a finding (`export_sft(..., catalog_check=)`, always passed by `data_cli export`). The run 1 mix has 0 findings in 5199 rows.
+- **Review page, prediction mode:** `python -m a2ui_eval.review --predictions P --scores S` shows gallery dev rows worst-first by name-blind F1, with reference and prediction rendered side by side. Verdicts are `ok | model | reference | scorer` with an optional note, saved next to the scores file (`S` with `.review.jsonl`).
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| P1 | `selection_ci` and `family_ci` take the score key | `test_checkpoints.py::test_selection_ci_takes_the_score_key` |
+| P2 | Score files carry `selection_blind_ci` and the scorer version; no git gives `None`s | `test_checkpoints.py::test_score_output_carries_blind_ci_and_scorer_version`, `::test_scorer_version_without_git` |
+| P3 | Legal Express (strings, raw strings, checks, comments, interpolations, Event keywords) has no findings, and every dev reference is clean | `test_catalog_check.py::test_legal_express_has_no_findings`, `::test_every_dev_reference_is_clean` |
+| P4 | Section 7's two idioms, and each operator, are flagged | `test_catalog_check.py::test_ternary_icon_from_section_7`, `::test_if_with_a_comparison_from_section_7`, `::test_operators` |
+| P5 | Unknown components, functions, checks and properties are flagged | `test_catalog_check.py::test_unknown_names` |
+| P6 | Broken paths are not operators (regression from the base rescore) | `test_catalog_check.py::test_broken_paths_are_not_operators` |
+| P7 | Rows and sources carry the outside-catalog flag and rate | `test_checkpoints.py::test_score_reports_outside_catalog_per_row_and_source` |
+| P8 | Export refuses a target outside the catalog | `test_export.py::test_rejects_targets_outside_the_catalog` |
+| P9 | Prediction review: gallery only, worst first, prediction compiled or its error shown, verdicts validated and upserted, served over HTTP | `test_review_predictions.py` |
+
+### Rescore
+
+All 17 run 1 prediction files are rescored into `runs/sft1/rescore-20261102b/` (git-ignored). Literal and blind selection match `rescore-20261102/` exactly. They were rescored after commit `34fcfbd`, so the scorer version they record is clean.
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.
-- **2c-3:** reword each intent into 1–3 phrasings, drop any rewording that loses a required identifier (S9's check), and log the model per row. Keys come from `explorer/.env` without printing them. Tests stub the model.
+- **2c-3:** reword each intent into 1–3 phrasings, drop any rewording that loses a required identifier (S9's check), and log the model per row. Keys come from the repo root's `.env` (`genUI/.env`) without printing them. Tests stub the model.
 
 ## Test command
 
