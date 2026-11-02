@@ -32,6 +32,10 @@ MODEL_FAILED_PROSE = "The model service failed ({name}). Please try again."
 # The provider blocked the question itself; asking again gets the same answer, so no "try again".
 CONTENT_POLICY_PROSE = "The model provider declined to answer this question. Rephrasing it may help."
 REPAIR_STATUS = "Fixing the view"
+# Logged with the UI errors that start a Repair, so a failed view can be diagnosed from the log.
+REPAIR_LOG = "view failed the checks, asking for a Repair: "
+NO_REPAIR_LOG = "view failed the checks, no Repair left: "
+LOGGED_ERRORS_MAX = 500  # the errors can quote the model's reply; keep log lines bounded
 REPAIR_MESSAGE = (
     "Your reply could not be shown: {errors}. Reply again with the corrected UI in the same output "
     "format, reusing the same result IDs. SQL is not available while fixing the view."
@@ -228,8 +232,9 @@ class LlmLoop:
             turn.calls_left = self.config.max_tool_iterations - i - 1
             message = await self._call_model(conv, turn)
             if message.tool_calls and turn.repairing:
-                # tool_choice="none" should prevent this; if the provider ignores it, the calls
-                # are not run (a Repair never queries) and the attempt counts as a failed Repair.
+                # Meta accepts only tool_choice="auto", so nothing stops the model calling tools
+                # here. The calls are not run (a Repair never queries); the attempt counts as a
+                # failed Repair.
                 conv.history.append({"role": "assistant", "content": message.content or ""})
                 errors = [TOOLS_DURING_REPAIR]
                 if not await self._ask_for_repair(conv, turn, errors, status):
@@ -255,10 +260,15 @@ class LlmLoop:
 
     async def _ask_for_repair(self, conv: Conversation, turn: _Turn, errors: list[str], status: StatusFn) -> bool:
         """Queue a Repair, unless the Repairs are used up. The next model call runs no SQL."""
+        joined = "; ".join(errors)
+        if len(joined) > LOGGED_ERRORS_MAX:
+            joined = joined[:LOGGED_ERRORS_MAX] + "…"
         if turn.repairs >= self.config.max_ui_retries or turn.calls_left == 0:
+            log.warning("%s%s", NO_REPAIR_LOG, joined)
             return False  # no Repair left, or no model call left to make it with
         turn.repairs += 1
         turn.repairing = True
+        log.warning("%s%s", REPAIR_LOG, joined)
         await status(REPAIR_STATUS)
         conv.history.append({"role": "user", "content": REPAIR_MESSAGE.format(errors="; ".join(errors))})
         return True
@@ -276,7 +286,7 @@ class LlmLoop:
             return conv.history
         return compact_history(conv.history, conv.turn_starts[-1])
 
-    def _request(self, conv: Conversation, turn: _Turn) -> dict[str, Any]:
+    def _request(self, conv: Conversation) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": self.config.model,
             "messages": [{"role": "system", "content": self.system_prompt}, *self._history(conv)],
@@ -286,9 +296,8 @@ class LlmLoop:
         }
         if self.config.reasoning_effort is not None:
             kwargs["reasoning_effort"] = self.config.reasoning_effort
-        if turn.repairing:
-            # Same tools list (the cached prefix stays identical), but no tool may be called.
-            kwargs["tool_choice"] = "none"
+        # A Repair sends the same tools (the cached prefix stays identical) and no tool_choice:
+        # Meta rejects anything but "auto" with HTTP 400. The loop keeps Repairs SQL-free.
         return kwargs
 
     def _retry_fits(self, turn: _Turn) -> bool:
@@ -300,7 +309,7 @@ class LlmLoop:
         for attempt in (1, 2):
             start = self.clock()
             try:
-                response = await self.completion(**self._request(conv, turn))
+                response = await self.completion(**self._request(conv))
                 message = response.choices[0].message
                 break
             except Exception as e:  # API errors and malformed responses alike

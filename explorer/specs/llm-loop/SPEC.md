@@ -144,11 +144,17 @@ dataset directory. `UiError` carries `prose`, the reply's filled prose, when onl
        the errors.
        Then continue the loop with a **Repair call**. Otherwise stop.
    - **Repair calls run no SQL.**
-     - A Repair call is sent with `tool_choice="none"` and the same `tools` list, so the prompt
-       prefix stays byte-identical and the cache still hits.
-     - If the model returns tool calls anyway, they are **not run**. Meta's support for
-       `tool_choice` is unverified until step 4. The attempt counts as a failed Repair, and
-       its error is `the reply called tools while fixing the view`.
+     - A Repair call is sent with the same `tools` list and **no `tool_choice`**, so the prompt
+       prefix stays byte-identical and the cache still hits. (Amended 2026-11-02, ADR 0017: Meta
+       accepts only `tool_choice="auto"` and rejects `"none"` with HTTP 400, so every Repair
+       failed.)
+     - If the model returns tool calls anyway, they are **not run**. The attempt counts as a
+       failed Repair, and its error is `the reply called tools while fixing the view`.
+     - Each Repair asked for logs one WARNING with its errors (`REPAIR_LOG`,
+       `view failed the checks, asking for a Repair: <errors>`), including the tool-calls-during-
+       a-Repair case. A failure with no Repair left logs one WARNING with `NO_REPAIR_LOG`
+       (`view failed the checks, no Repair left: <errors>`). The errors can quote the model's
+       reply, so the logged text is capped at 500 characters.
      - The assistant message is appended to the history with its tool calls removed, so the
        history never holds a tool call without a result.
 3. **Limits reached.** Return a `UiResult` with no messages and explanatory prose:
@@ -296,7 +302,9 @@ responses (tool calls or text, with a usage block) and records every call's kwar
 | L10 | Malformed JSON in tool arguments → a tool error result, not an exception | `test_llm.py::test_bad_tool_arguments` |
 | L11 | `compact`: on Turn 2, Turn 1's `run_sql` result is the one-line summary (ID, purpose, columns, rows, truncated, SQL), and Turn 2's own results are full. `full`: Turn 1's result is unchanged. Tool calls and results stay paired in both | `test_llm.py::test_history_compact`, `::test_history_full` |
 | L12 | Turn 2 renders a `BarChart` of `r1` from Turn 1 without new SQL | `test_llm.py::test_follow_up_reuses_earlier_result` (db) |
-| L13 | A Repair call is sent with `tool_choice="none"` and the same `tools`. A first call has no `tool_choice`. Tool calls returned during a Repair are never run (the runner records no SQL) and count as a failed Repair | `test_llm.py::test_repair_runs_no_sql` (db) |
+| L13 | No call sends `tool_choice`; a Repair call sends the same `tools`. Tool calls returned during a Repair are never run (the runner records no SQL) and count as a failed Repair (amended 2026-11-02, ADR 0017) | `test_llm.py::test_repair_runs_no_sql` (db) |
+| L13a | A stub that rejects any `tool_choice` but `"auto"`, as Meta does, still gets a repaired view | `test_llm.py::test_repair_request_is_one_meta_accepts` |
+| L13b | One `REPAIR_LOG` line per Repair, including tool calls during a Repair; one `NO_REPAIR_LOG` line when no Repair is left; logged errors capped | `test_llm.py::test_ui_errors_that_start_a_repair_are_logged`, `::test_each_repair_and_the_final_failure_are_logged`, `::test_tools_during_a_repair_are_logged`, `::test_logged_repair_errors_are_capped` |
 | L14 | A 429 then success → one retry, the answer succeeds, and the iteration count is unchanged. Two 429s → the model-error prose. A 400 → no retry. A retry that would cross the budget → skipped | `test_llm.py::test_model_retry_*` (injected sleep and clock) |
 | L15 | `TURN_TIMEOUT_S=1` with a stub model that hangs → the "in time" prose within about 1 s, and the model call is cancelled. With a query `pg_sleep(5)` (guard disabled) → the query is cancelled and the pool's next query works. A Turn over `SLOW_TURN_S` logs the slow-Turn WARNING | `test_llm.py::test_turn_timeout_*`, `::test_slow_turn_logged` (db for the query case) |
 | U1 | A component prop the merged catalog doesn't define → `UiError` naming the component and prop; envelope keys pass | `test_ui.py::test_unknown_prop_rejected`, `::test_envelope_keys_allowed` |
@@ -327,8 +335,14 @@ changed, and the client fixture still matches.
 - **Results cross Turns** (Q1): reuse is the fastest follow-up. Eviction after 50 Results is
   rare and recoverable.
 - **No SQL in a Repair** (Q3/Q6): a Repair re-renders with the same Results. Letting it query
-  would cost a model round trip. Blocking is done with `tool_choice="none"` rather than by
-  dropping `tools`, which would likely break the cached prefix.
+  would cost a model round trip. The loop blocks it by not running tool calls during a Repair.
+  `tool_choice="none"` was the first plan, but Meta rejects it (ADR 0017). Dropping `tools` would
+  likely break the cached prefix. Once a Turn has asked for a Repair, every later call in it is a
+  Repair call (`repairing` is not reset).
+- **Risk to watch (2026-11-02):** with no `tool_choice`, a Repair can answer with tool calls,
+  which burns it. The most likely case is an unknown Result ID when no Result exists yet, whose
+  error says "call run_sql first" while the Repair message says SQL isn't available. The
+  `REPAIR_LOG` lines will show how often this happens before the prompt is changed.
 - **Unknown props are rejected, not stripped** (Q4): nothing reaches the screen unchecked.
 - **One model retry** (Q9/Q12) for 429, 5xx and timeouts only, within the time budget.
 - **Turn time** (Q10/Q11): 30 s is the target, logged as slow above it. 60 s is the hard

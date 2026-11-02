@@ -10,7 +10,10 @@ from explorer_agent.executor import Conversation
 from explorer_agent.llm import (
     CONTENT_POLICY_PROSE,
     MODEL_FAILED_PROSE,
+    LOGGED_ERRORS_MAX,
+    NO_REPAIR_LOG,
     NO_VIEW_PROSE,
+    REPAIR_LOG,
     REPAIR_STATUS,
     STEP_LIMIT_PROSE,
     TIMEOUT_PROSE,
@@ -397,7 +400,7 @@ async def test_repair_runs_no_sql(runner, catalog):
     assert ui.messages
     assert sql_seen == [TOP_SQL]  # the Repair's tool call never ran
     assert "tool_choice" not in model.calls[0] and "tool_choice" not in model.calls[1]
-    assert model.calls[2]["tool_choice"] == "none" and model.calls[3]["tool_choice"] == "none"
+    assert "tool_choice" not in model.calls[2] and "tool_choice" not in model.calls[3]  # Meta: "auto" only
     assert model.calls[2]["tools"] == model.calls[0]["tools"] == TOOL_SCHEMAS
     assert TOOLS_DURING_REPAIR in model.calls[3]["messages"][-1]["content"]  # counted as a failed Repair
     assert_paired(conv.history)
@@ -741,3 +744,69 @@ async def test_model_retry_budget_boundary(fail_at, retried):
     clock.now = 0.0
     ui = await loop(new_conv(), "q", Statuses())
     assert (ui.prose == "Hi.") is retried
+
+
+# Regression (live check 2026-11-02): Meta's API accepts only tool_choice="auto". Repairs sent
+# tool_choice="none", so every Repair failed with HTTP 400 and the Turn ended "model service failed".
+def meta_tool_choice(step):
+    def respond(kwargs):
+        if kwargs.get("tool_choice", "auto") != "auto":
+            return litellm.exceptions.BadRequestError(
+                message='only "auto" is supported for `tool_choice`', llm_provider="meta", model="m"
+            )
+        return step
+    return respond
+
+
+BROKEN_VIEW = '<a2ui>\nroot = Column([c])\nc = Metric("r9", "value", "Label")\n</a2ui>'
+
+
+async def test_repair_request_is_one_meta_accepts():
+    model = ScriptedCompletion([meta_tool_choice(text(BROKEN_VIEW)), meta_tool_choice(text("Fixed."))])
+    loop = LlmLoop(LoopConfig(), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model)
+    ui = await loop(new_conv(), "q", Statuses())
+    assert ui.prose == "Fixed."
+    assert len(model.calls) == 2
+    assert model.calls[1]["tools"] == model.calls[0]["tools"]  # the cached prefix is unchanged
+
+
+async def test_ui_errors_that_start_a_repair_are_logged(caplog):
+    model = ScriptedCompletion([text(BROKEN_VIEW), text("Fixed.")])
+    loop = LlmLoop(LoopConfig(), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model)
+    with caplog.at_level(logging.WARNING, logger="explorer_agent.llm"):
+        await loop(new_conv(), "q", Statuses())
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith(REPAIR_LOG)]
+    assert len(lines) == 1 and "r9" in lines[0]
+
+
+async def test_each_repair_and_the_final_failure_are_logged(caplog):
+    model = ScriptedCompletion([text(BROKEN_VIEW), text(BROKEN_VIEW)])
+    loop = LlmLoop(LoopConfig(max_ui_retries=1), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model)
+    with caplog.at_level(logging.WARNING, logger="explorer_agent.llm"):
+        ui = await loop(new_conv(), "q", Statuses())
+    assert NO_VIEW_PROSE in ui.prose
+    messages = [r.getMessage() for r in caplog.records]
+    assert len([m for m in messages if m.startswith(REPAIR_LOG)]) == 1
+    assert len([m for m in messages if m.startswith(NO_REPAIR_LOG)]) == 1
+
+
+async def test_tools_during_a_repair_are_logged(caplog):
+    model = ScriptedCompletion([
+        text(BROKEN_VIEW),
+        tool_calls(("run_sql", {"sql": "SELECT 1 AS one", "purpose": "sneaky"})),
+        text("Fixed."),
+    ])
+    with caplog.at_level(logging.WARNING, logger="explorer_agent.llm"):
+        await LlmLoop(LoopConfig(), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model)(new_conv(), "q", Statuses())
+    repairs = [r.getMessage() for r in caplog.records if r.getMessage().startswith(REPAIR_LOG)]
+    assert len(repairs) == 2 and TOOLS_DURING_REPAIR in repairs[1]
+
+
+async def test_logged_repair_errors_are_capped(caplog):
+    long_name = "x" * 2000
+    reply = f'<a2ui>\nroot = Column([c])\nc = Metric("{long_name}", "value", "Label")\n</a2ui>'
+    model = ScriptedCompletion([text(reply), text("Fixed.")])
+    with caplog.at_level(logging.WARNING, logger="explorer_agent.llm"):
+        await LlmLoop(LoopConfig(), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model)(new_conv(), "q", Statuses())
+    line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith(REPAIR_LOG))
+    assert len(line) <= len(REPAIR_LOG) + LOGGED_ERRORS_MAX + 1 and line.endswith("…")
