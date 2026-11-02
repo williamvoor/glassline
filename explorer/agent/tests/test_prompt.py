@@ -99,6 +99,17 @@ def test_prompt_has_no_per_request_values():
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", a)  # no UUIDs
 
 
+# Regression (effort check 2026-11-02): a share computed as a fraction (0.066) was shown with
+# `pct` as "0.1%". Every macro that takes a format must say which value each percent format expects.
+@pytest.mark.parametrize("fmt_name", FORMATS)
+def test_prompt_explains_percent_formats(fmt_name):
+    prompt = build_system_prompt(UiPipeline(fmt_name).format, dataset_context(DEMO, DEMO_SCHEMA))
+    for macro in ("BarChart", "LineChart", "Metric", "Cite"):
+        assert macro in prompt
+    assert prompt.count("pct = value already in percent (6.6 -> 6.6%)") >= 4
+    assert prompt.count("fraction_pct = value is a fraction (0.066 -> 6.6%)") >= 4
+
+
 # P4: changes to the prompt are deliberate. Rewrite with UPDATE_SNAPSHOTS=1.
 @pytest.mark.db
 @pytest.mark.parametrize("fmt_name", FORMATS)

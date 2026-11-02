@@ -301,7 +301,7 @@ def BarChart(
         title: Chart title, plain text.
         color: Optional column to stack by; the top 8 groups are kept, the rest become "Other".
         horizontal: Draw bars horizontally (good for long category names).
-        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct.
+        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct. pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     return _chart(
         _result(result_id), mark="bar", x=x, y=y, title=title, color=color, fmt=format,
@@ -327,7 +327,7 @@ def LineChart(
         y: Numeric column for the vertical axis.
         title: Chart title, plain text.
         color: Optional column with one line per group; the top 8 are kept, the rest become "Other".
-        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct.
+        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct. pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     return _chart(
         _result(result_id), mark="line", x=x, y=y, title=title, color=color, fmt=format,
@@ -354,7 +354,7 @@ def DataTable(result_id: str, title: str, columns: str = "", format: str = "") -
         result_id: ID of a stored query result, e.g. "r1".
         title: Table title, plain text.
         columns: Optional comma-separated columns to show, in order (default: all).
-        format: Optional comma-separated column:format pairs, e.g. "value:currency_m,share:pct".
+        format: Optional comma-separated column:format pairs, e.g. "value:currency_m,share:fraction_pct". pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     result = _result(result_id)
     shown = [_column(result, c.strip()) for c in columns.split(",") if c.strip()] or result.columns
@@ -391,7 +391,7 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
         column: Column holding the value.
         label: Short label shown above the value, plain text.
         row: Row index (0 = first row).
-        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct, text, date.
+        format: Value format: auto, currency, currency_m, int, decimal, pct, fraction_pct, text, date. pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
     """
     result = _result(result_id)
     _column(result, column)
@@ -445,7 +445,7 @@ def Cite(template: str) -> Text:
     """A sentence with numbers filled in from stored results, so they are never retyped.
 
     Args:
-        template: Markdown text with placeholders like {r1[0].value|currency_m}: result ID, row index, column, optional format.
+        template: Markdown text with placeholders like {r1[0].value|currency_m}: result ID, row index, column, optional format (the Metric formats; pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%)).
     """
     return Text(text=_fill(template))
 
