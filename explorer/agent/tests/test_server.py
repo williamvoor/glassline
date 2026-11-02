@@ -74,6 +74,24 @@ async def test_agent_card():
     assert ext[0]["params"]["supportedCatalogIds"] == [EXPLORER_CATALOG_ID]
 
 
+async def test_agent_card_carries_the_dataset_description_and_examples():
+    app = build_app(
+        stub_answerer, url=URL, client_origin=ORIGIN,
+        description="Demo contracts", examples=("Top suppliers?", "Spend by year?"),
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL) as c:
+        card = (await c.get("/.well-known/agent-card.json")).json()
+    assert card["description"] == "Demo contracts"
+    (skill,) = card["skills"]
+    assert skill["examples"] == ["Top suppliers?", "Spend by year?"]
+
+
+async def test_agent_card_without_examples_has_no_skills():
+    async with client_for() as c:
+        card = (await c.get("/.well-known/agent-card.json")).json()
+    assert card["skills"] == []
+
+
 async def test_stream_returns_status_then_prose_and_a2ui():
     async with client_for() as c:
         events = await stream(c)

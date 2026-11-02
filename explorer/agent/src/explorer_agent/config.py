@@ -52,6 +52,7 @@ class Dataset:
     glossary: str
     currency: Currency
     comment_overlay: CommentOverlay | None = None
+    examples: tuple[str, ...] = ()  # example questions for the client; never in the prompt
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,9 @@ def load_dataset(dataset_dir: Path) -> Dataset:
         if not isinstance(path, str) or not path.strip():
             raise ConfigError(f"{toml_path}: comments.overlay must be a file name")
         overlay = load_overlay(dataset_dir / path, allowed)
+    examples = data.get("examples", [])
+    if not isinstance(examples, list) or not all(isinstance(e, str) and e.strip() for e in examples):
+        raise ConfigError(f"{toml_path}: examples must be a list of non-empty strings")
     return Dataset(
         name=str(key("name")),
         description=str(key("description")),
@@ -163,6 +167,7 @@ def load_dataset(dataset_dir: Path) -> Dataset:
             symbol=str(key("symbol", currency, "currency.")),
         ),
         comment_overlay=overlay,
+        examples=tuple(e.strip() for e in examples),
     )
 
 

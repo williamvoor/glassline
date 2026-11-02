@@ -70,7 +70,10 @@ async def _serve(settings: Settings) -> None:
         )
         loop = LlmLoop(LoopConfig.from_settings(settings), prompt, pipeline, runner, catalog)
         url = f"http://{settings.agent_host}:{settings.agent_port}"
-        app = build_app(loop, url=url, client_origin=settings.client_origin)
+        app = build_app(
+            loop, url=url, client_origin=settings.client_origin,
+            description=settings.dataset.description, examples=settings.dataset.examples,
+        )
         server = uvicorn.Server(
             uvicorn.Config(app, host=settings.agent_host, port=settings.agent_port, log_level="warning")
         )

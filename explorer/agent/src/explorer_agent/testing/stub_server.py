@@ -76,7 +76,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     url = f"http://{args.host}:{args.port}"
-    app = build_app(stub_answerer, url=url, client_origin=args.client_origin)
+    app = build_app(
+        stub_answerer, url=url, client_origin=args.client_origin,
+        description="Stub agent: every answer is the same fixture", examples=("Which suppliers received the most?",),
+    )
     server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="warning"))
 
     async def serve() -> None:

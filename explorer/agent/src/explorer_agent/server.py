@@ -6,7 +6,7 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.agent_execution import SimpleRequestContextBuilder
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import AgentCapabilities, AgentCard
+from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 from a2ui.a2a import get_a2ui_agent_extension
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
@@ -15,10 +15,18 @@ from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.executor import Answerer, Conversations, ExplorerExecutor
 
 
-def agent_card(url: str) -> AgentCard:
+DEFAULT_DESCRIPTION = "Answers questions about a database with prose, charts and tables."
+
+
+def agent_card(url: str, description: str | None = None, examples: tuple[str, ...] = ()) -> AgentCard:
+    # The client shows the description in its header and the examples in its empty state.
+    skills = [
+        AgentSkill(id="ask", name="Ask", description="Ask a question about the data.", tags=["data"],
+                   examples=list(examples))
+    ] if examples else []
     return AgentCard(
         name="Explorer",
-        description="Answers questions about a database with prose, charts and tables.",
+        description=description or DEFAULT_DESCRIPTION,
         url=url,
         version="0.1.0",
         capabilities=AgentCapabilities(
@@ -27,7 +35,7 @@ def agent_card(url: str) -> AgentCard:
         ),
         default_input_modes=["text"],
         default_output_modes=["text"],
-        skills=[],
+        skills=skills,
     )
 
 
@@ -37,8 +45,10 @@ def build_app(
     url: str,
     client_origin: str,
     conversations: Conversations | None = None,
+    description: str | None = None,
+    examples: tuple[str, ...] = (),
 ) -> Starlette:
-    card = agent_card(url)
+    card = agent_card(url, description, examples)
     conversations = executor_conversations = conversations or Conversations()
     executor = ExplorerExecutor(answerer, executor_conversations, card)
     task_store = InMemoryTaskStore()

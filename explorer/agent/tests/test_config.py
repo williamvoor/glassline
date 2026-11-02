@@ -244,3 +244,23 @@ def test_overlay_error_never_quotes_comment_text(tmp_path):
     with pytest.raises(ConfigError) as e:
         load_dataset(d)
     assert "SECRET-ish" not in str(e.value)
+
+
+# Example questions for the client's empty state (optional, shown in the agent card).
+def test_examples_default_to_none(tmp_path):
+    write_dataset(tmp_path)
+    assert load_settings(env_for(tmp_path), tmp_path).dataset.examples == ()
+
+
+def test_examples_load(tmp_path):
+    base = 'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "glossary.md"\nnotes = "notes.md"\n'
+    write_dataset(tmp_path, toml=base + 'examples = ["One?", "Two?"]\n[currency]\ncode = "EUR"\nsymbol = "€"\n')
+    assert load_settings(env_for(tmp_path), tmp_path).dataset.examples == ("One?", "Two?")
+
+
+@pytest.mark.parametrize("value", ['"one"', "[1]", '[""]', '["  "]'])
+def test_bad_examples_are_a_config_error(tmp_path, value):
+    base = 'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "glossary.md"\nnotes = "notes.md"\n'
+    write_dataset(tmp_path, toml=base + f"examples = {value}\n[currency]\ncode = \"EUR\"\nsymbol = \"€\"\n")
+    with pytest.raises(ConfigError, match="examples"):
+        load_settings(env_for(tmp_path), tmp_path)

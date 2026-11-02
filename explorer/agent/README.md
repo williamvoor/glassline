@@ -21,6 +21,12 @@ exits 1.
 - The client (`../client`) calls the agent directly (ADR 0007). For a UI without a model or
   database, use the stub server: `uv run python -m explorer_agent.testing.stub_server --port 10002`.
 
+To run it with the client in one command, use `../run.sh --real`.
+
+### Example questions
+
+`examples = ["…", "…"]` in `dataset.toml` is optional. The agent card carries the examples, and the client shows them before the first question. They never go into the prompt. Keep them apart from `scenarios.toml`, which is evaluation data.
+
 ### Comment overlay
 
 For a database we can't add comments to, a Dataset can keep table and column descriptions in a
