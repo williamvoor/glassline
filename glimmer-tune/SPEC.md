@@ -1341,6 +1341,28 @@ The user approved 10 seed-31 samples from this generator; Spark Open, reviewing 
 | S8 | Synthetic rows and the gallery still pass the linter | `test_synth_lint.py::test_gallery_passes`, `::test_synthetic_passes` (existing) |
 | C3 | Every key still reached | `test_synth_coverage.py::test_every_key_reached`, plus the full-size report on seeds 0 and 1 |
 
+## Run 2 baselines (2026-11-03)
+
+As decided in the run 2 grilling round: run once under the frozen run 2 prompt, sampled tokens recorded per row, hard cap US$15.
+
+- **Base:** run 1's `s000` sampler checkpoint (the untrained adapter) on `exports/sft_dev.jsonl`, through `glimmer_trainer sample`.
+- **Few-shot:** the same checkpoint on `exports/sft_dev_fewshot3.jsonl`, written by `export-dev --fewshot 3 --out …`. `fewshot_examples` draws 3 train gallery families with `random.Random(0)` and takes each family's first single-turn case by id: `train/11_purchase-complete/0000`, `train/34_child-list-template/0000`, `train/13_coffee-order/0000`. `with_fewshot` puts each as a user turn and its wrapped answer between the system text and the question. Ids, sources and the subset don't change.
+- Outputs (git-ignored): `runs/baselines-run2/{base,fewshot3}.jsonl` and `.full.json`.
+
+| Setup | Selection blind (95% CI) | Gallery blind | Synthetic blind | Gallery compiles | Synthetic compiles | Sampled tokens (p50) |
+|---|---|---|---|---|---|---|
+| Base | 0.279 (0.245–0.314) | 0.245 | 0.312 | 0.774 | 0.490 | 343,410 (1,240) |
+| Base + 3 examples | 0.410 (0.374–0.447) | 0.474 | 0.346 | 0.810 | 0.515 | 212,821 (755) |
+
+- For reference, run 1's tuned `s250` scored gallery blind 0.514 and synthetic 0.937 on run 1's dev. The synthetic half of dev has since been regenerated, so that number isn't directly comparable.
+- Three examples nearly double the gallery score and cut sampled tokens by about 40%. They also raise the gallery's outside-the-catalog rate from 0 to 0.155.
+- Cost, at list prices with no cache discount: about $5.00 (base) and $5.00 (few-shot), so at most about $10.00. The bill hasn't been checked.
+
+| # | Criterion | Test |
+|---|---|---|
+| BL1 | Few-shot examples are single-turn train gallery cases from distinct families, deterministic by seed | `test_checkpoints.py::test_fewshot_examples_are_train_gallery_from_distinct_families` |
+| BL2 | The few-shot export puts the examples between the system text and the question, and keeps ids, sources and the subset | `test_checkpoints.py::test_fewshot_dev_export_puts_examples_between_system_and_question` |
+
 ## Run 2 item 10: source conflicts resolved (2026-11-03)
 
 The conflicts are listed in `docs/tuning-report-20261102.md` section 4 ("Conflicts in the sources"). The Meta Model API terms stay out of scope (user).

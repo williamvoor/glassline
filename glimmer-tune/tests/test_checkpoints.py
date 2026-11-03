@@ -496,3 +496,33 @@ def test_a_rootless_surface_is_unreachable(dev_rows):
     rootless = wrap(cases[g]["reference_express"].replace("\nroot = ", "\nrootx = ", 1))
     out = score_predictions([{"id": g, "checkpoint": "s025", "text": rootless, "finish": "stop"}], dev_rows, DATA)
     assert out["rows"][0]["unreachable"] == ["(no root)"]
+
+
+# Run 2 baselines (SPEC "Run 2 baselines"): base plus 3 few-shot examples.
+
+
+def test_fewshot_examples_are_train_gallery_from_distinct_families():
+    from a2ui_eval.checkpoints import fewshot_examples
+
+    ex = fewshot_examples(DATA, k=3, seed=0)
+    train = {c["id"]: c for c in read_jsonl(DATA / "train" / "cases.jsonl")}
+    assert len(ex) == 3 and len({c["family"] for c in ex}) == 3
+    for c in ex:
+        assert c["id"] in train and train[c["id"]]["split"] == "train"
+        assert not c.get("existing_surface") and c.get("expect_ui", True)
+    assert [c["id"] for c in ex] == [c["id"] for c in fewshot_examples(DATA, k=3, seed=0)]  # deterministic
+    assert [c["id"] for c in ex] != [c["id"] for c in fewshot_examples(DATA, k=3, seed=1)]
+
+
+def test_fewshot_dev_export_puts_examples_between_system_and_question(dev_rows):
+    from a2ui_eval.checkpoints import fewshot_examples, with_fewshot
+
+    ex = fewshot_examples(DATA, k=3, seed=0)
+    rows = with_fewshot(dev_rows, ex)
+    assert [(r["id"], r["source"], r["subset"]) for r in rows] == [(r["id"], r["source"], r["subset"]) for r in dev_rows]
+    shots = []
+    for c in ex:
+        shots += [{"role": "user", "content": c["intent"]}, {"role": "assistant", "content": wrap(c["reference_express"])}]
+    for r, d in zip(rows, dev_rows):
+        assert r["messages"] == [d["messages"][0], *shots, d["messages"][1]]
+    assert dev_rows[0]["messages"][1]["role"] == "user" and len(dev_rows[0]["messages"]) == 2  # input not mutated

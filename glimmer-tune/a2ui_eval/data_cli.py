@@ -179,12 +179,19 @@ def cmd_freeze_prompt(args) -> None:
 
 
 def cmd_export_dev(args) -> None:
-    from .checkpoints import DEV_EXPORT, export_dev
+    from .checkpoints import DEV_EXPORT, export_dev, fewshot_examples, with_fewshot
 
     rows = export_dev(checked_system_prompt(ExpressSDK(CATALOG)), args.data, seed=args.seed)
+    extra = {}
+    if args.fewshot:
+        if args.out is None:
+            raise SystemExit("--fewshot needs --out (the plain dev export stays at its usual path)")
+        ex = fewshot_examples(args.data, k=args.fewshot, seed=args.seed)
+        rows = with_fewshot(rows, ex)
+        extra = {"fewshot": [c["id"] for c in ex]}
     write_jsonl(args.out or DEV_EXPORT, rows)
     subset = [r for r in rows if r["subset"]]
-    print(json.dumps({"rows": len(rows), "subset": len(subset), "out": str(args.out or DEV_EXPORT)}))
+    print(json.dumps({"rows": len(rows), "subset": len(subset), "out": str(args.out or DEV_EXPORT), **extra}))
 
 
 def cmd_export_test(args) -> None:
@@ -301,6 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     ed = sub.add_parser("export-dev", help="dev prompts for checkpoint scoring (gallery + synthetic, with a fixed subset)")
     ed.add_argument("--out", type=Path, default=None)
     ed.add_argument("--seed", type=int, default=0)
+    ed.add_argument("--fewshot", type=int, default=0, help="put K train gallery examples before each question (needs --out)")
     ed.set_defaults(fn=cmd_export_dev)
     et = sub.add_parser("export-test", help="test prompts for the one-time final evaluation (gallery only, with families)")
     et.add_argument("--out", type=Path, default=None)

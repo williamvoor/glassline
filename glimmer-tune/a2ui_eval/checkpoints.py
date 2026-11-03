@@ -78,6 +78,29 @@ def export_dev(system_prompt: str, data: Path = DATA, seed: int = 0, per_source:
     ]
 
 
+def fewshot_examples(data: Path = DATA, k: int = 3, seed: int = 0) -> list[dict[str, Any]]:
+    """`k` single-turn gallery train cases from `k` different families (SPEC "Run 2 baselines"):
+    families drawn by `random.Random(seed)` from the sorted train families, then each family's
+    first case by id."""
+    cases = [c for c in read_jsonl(data / "train" / "cases.jsonl") if c.get("split") == "train" and not c.get("existing_surface") and c.get("expect_ui", True)]
+    by_family: dict[str, list[dict[str, Any]]] = {}
+    for c in sorted(cases, key=lambda c: c["id"]):
+        by_family.setdefault(c["family"], []).append(c)
+    families = random.Random(seed).sample(sorted(by_family), k)
+    return [by_family[f][0] for f in families]
+
+
+def with_fewshot(rows: list[dict[str, Any]], examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copies of prompt rows with each example as a user turn and its answer, between the system
+    text and the question. Ids, sources and the subset are unchanged, so the rows score as usual."""
+    from .generate import wrap
+
+    shots: list[dict[str, str]] = []
+    for c in examples:
+        shots += [{"role": "user", "content": c["intent"]}, {"role": "assistant", "content": wrap(c["reference_express"])}]
+    return [{**r, "messages": [r["messages"][0], *shots, *r["messages"][1:]]} for r in rows]
+
+
 def export_test(system_prompt: str, data: Path = DATA) -> list[dict[str, Any]]:
     """One prompt row per frozen test case, id-sorted. Test is gallery only; each row keeps its
     family for the family-level bootstrap. No subset: every row is sampled."""
