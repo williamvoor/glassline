@@ -115,17 +115,19 @@ def test_numeric_format_on_text_is_an_error():
 
 def test_bar_chart_shape_and_sorting(ctx):
     comps = expand("BarChart", result_id="r1", x="supplier", y="value", title="Top", format="currency_m")
-    assert kinds(comps) == ["Column", "SqlDetails", "Text", "VegaChart"]
-    assert root(comps)["component"] == "Column"
+    # Every Visual is a Card holding title, Visual and SQL (SPEC §16).
+    assert kinds(comps) == ["Card", "Column", "SqlDetails", "Text", "VegaChart"]
+    assert root(comps)["component"] == "Card"
     title = by_type(comps, "Text")[0]
     assert (title["text"], title["variant"]) == ("Top", "h4")
     spec = by_type(comps, "VegaChart")[0]["spec"]
     assert spec["mark"] == {"type": "bar"}
-    assert spec["encoding"]["x"]["sort"] == "-y"
+    # An explicit domain in displayed order (by value), not "-y" (SPEC §15): server and screen agree.
+    assert spec["encoding"]["x"]["sort"] == ["Acme_[x]", "Beta", "Gamma"]
     assert spec["encoding"]["y"]["title"] == "Value ($M)"
     assert spec["encoding"]["x"]["title"] == "Supplier"
     assert spec["encoding"]["y"]["axis"]["format"] == ",.1f"
-    assert spec["data"]["values"][1] == {"supplier": "Acme_[x]", "value": pytest.approx(3441.812603)}
+    assert spec["data"]["values"][0] == {"supplier": "Acme_[x]", "value": pytest.approx(3441.812603), "_row": 1}
     assert "url" not in spec["data"]
     sql = by_type(comps, "SqlDetails")[0]
     assert (sql["sql"], sql["summary"]) == (SUPPLIERS_SQL, "top suppliers")
@@ -143,7 +145,7 @@ def test_horizontal_bar_chart_puts_categories_on_y(ctx):
     spec = by_type(expand("BarChart", result_id="r1", x="supplier", y="value", title="T", horizontal=True),
                    "VegaChart")[0]["spec"]
     assert spec["encoding"]["y"]["field"] == "supplier"
-    assert spec["encoding"]["y"]["sort"] == "-x"
+    assert spec["encoding"]["y"]["sort"] == ["Acme_[x]", "Beta", "Gamma"]
     assert spec["encoding"]["x"]["field"] == "value"
 
 
@@ -177,7 +179,8 @@ def test_color_keeps_top_groups_and_folds_the_rest_into_other():
 def test_data_table_columns_alignment_and_formats(ctx):
     comps = expand("DataTable", result_id="r1", title="Suppliers", columns="value, supplier",
                    format="value:currency_m")
-    assert kinds(comps) == ["Column", "DataGrid", "SqlDetails", "Text"]
+    assert kinds(comps) == ["Card", "Column", "DataGrid", "SqlDetails", "Text"]
+    assert root(comps)["component"] == "Card"
     grid = by_type(comps, "DataGrid")[0]
     assert grid["columns"] == [{"key": "value", "label": "Value", "align": "end"},
                                {"key": "supplier", "label": "Supplier"}]
@@ -453,7 +456,7 @@ def test_horizontal_negative_chart_currency_compact():
     assert spec["encoding"]["x"]["title"] == "Value (€B)"
     assert spec["encoding"]["x"]["axis"]["format"] == ",.1f"
     assert spec["encoding"]["tooltip"][-1]["format"] == ",.1f"
-    assert [v["value"] for v in spec["data"]["values"]] == [-2.5, 0.3]
+    assert [v["value"] for v in spec["data"]["values"]] == [0.3, -2.5]  # displayed order: by value
 
 
 
@@ -472,7 +475,7 @@ def test_chart_field_references_are_escaped():
     assert enc["y"]["field"] == "value\\[aud\\]"
     assert enc["color"]["field"] == "kind\\.x"
     assert [t["field"] for t in enc["tooltip"]] == ["agency\\.name", "kind\\.x", "value\\[aud\\]"]
-    assert spec["data"]["values"][0] == {"agency.name": "A", "kind.x": "k", "value[aud]": 1.0}
+    assert spec["data"]["values"][0] == {"agency.name": "A", "kind.x": "k", "value[aud]": 1.0, "_row": 0}
     assert enc["x"]["title"] == "Agency.name"  # titles are labels, not field references
 
 
@@ -481,3 +484,20 @@ def test_chart_field_references_are_escaped():
 @pytest.mark.parametrize("text", ["FY2024-25", "FY24-25", "fy2023–24"])
 def test_fy_prefixed_years_are_not_bare_numbers(ctx, text):
     assert fill_prose(f"In {text}, about 6.6% went overseas.").bare_numbers == ["6.6"]
+
+
+def test_line_chart_is_a_card(ctx):
+    comps = expand("LineChart", result_id="r1", x="supplier", y="value", title="T")
+    assert kinds(comps) == ["Card", "Column", "SqlDetails", "Text", "VegaChart"]
+    card = root(comps)
+    column = next(c for c in comps if c["id"] == card["child"])
+    assert [next(c for c in comps if c["id"] == i)["component"] for i in column["children"]] == [
+        "Text", "VegaChart", "SqlDetails"]
+
+
+
+def test_visual_specs_carry_no_vega_config(ctx):
+    # Look and feel lives in the client (ADR 0026): the agent sends no colours or fonts.
+    for name, args in [("BarChart", {"x": "supplier", "y": "value"}), ("LineChart", {"x": "supplier", "y": "value"})]:
+        spec = by_type(expand(name, result_id="r1", title="T", **args), "VegaChart")[0]["spec"]
+        assert "config" not in spec

@@ -196,7 +196,7 @@ def test_dataset_context_is_pure():
 # P6
 def test_instructions_are_generic():
     text = instructions()
-    assert len(text) < 2000
+    assert len(text) < 2600  # raised from 2,000 for the Clicks section (SPEC §15)
     for word in ("austender", "mart", "supplier", "agency", "contract"):
         assert word not in text.lower()
 

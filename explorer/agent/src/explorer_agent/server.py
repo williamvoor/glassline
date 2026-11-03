@@ -12,7 +12,7 @@ from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
-from explorer_agent.executor import Answerer, Conversations, ExplorerExecutor
+from explorer_agent.executor import Answerer, Conversations, DrillDowns, ExplorerExecutor
 
 
 DEFAULT_DESCRIPTION = "Answers questions about a database with prose, charts and tables."
@@ -47,10 +47,12 @@ def build_app(
     conversations: Conversations | None = None,
     description: str | None = None,
     examples: tuple[str, ...] = (),
+    drills: DrillDowns | None = None,
+    model: str | None = None,
 ) -> Starlette:
     card = agent_card(url, description, examples)
     conversations = executor_conversations = conversations or Conversations()
-    executor = ExplorerExecutor(answerer, executor_conversations, card)
+    executor = ExplorerExecutor(answerer, executor_conversations, card, drills, model)
     task_store = InMemoryTaskStore()
     handler = DefaultRequestHandler(
         agent_executor=executor,

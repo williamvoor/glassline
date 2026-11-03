@@ -30,6 +30,17 @@
             "height": {
               "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicNumber",
               "description": "Optional height of the chart in pixels. Defaults to 290."
+            },
+            "action": {
+              "description": "Optional. Makes marks (VegaChart: data with a _row field) or rows (DataGrid: by index) clickable. source: the server's action source ID; rows: the clickable row indices; drillable: a click runs a Drill-down (true) or asks the agent after confirmation (false).",
+              "type": "object",
+              "properties": {
+                "source": {"type": "string"},
+                "rows": {"type": "array", "items": {"type": "integer"}},
+                "drillable": {"type": "boolean"}
+              },
+              "required": ["source", "rows", "drillable"],
+              "additionalProperties": false
             }
           },
           "required": ["component", "spec"]
@@ -72,6 +83,17 @@
             },
             "caption": {
               "type": "string"
+            },
+            "action": {
+              "description": "Optional. Makes marks (VegaChart: data with a _row field) or rows (DataGrid: by index) clickable. source: the server's action source ID; rows: the clickable row indices; drillable: a click runs a Drill-down (true) or asks the agent after confirmation (false).",
+              "type": "object",
+              "properties": {
+                "source": {"type": "string"},
+                "rows": {"type": "array", "items": {"type": "integer"}},
+                "drillable": {"type": "boolean"}
+              },
+              "required": ["source", "rows", "drillable"],
+              "additionalProperties": false
             }
           },
           "required": ["component", "columns", "rows"]

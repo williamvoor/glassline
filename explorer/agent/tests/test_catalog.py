@@ -15,14 +15,17 @@ def test_merged_catalog_has_basic_and_custom_components():
 def test_inference_catalog_exposes_only_macros_and_passthrough():
     inference = macro_expander().transform_to_inference_catalog(explorer_catalog())
     names = set(inference.to_json()["components"])
-    assert names == {"BarChart", "LineChart", "DataTable", "Metric", "Cite"} | set(PASSTHROUGH_COMPONENTS)
-    assert len(MACROS) == 5
+    assert names == {"BarChart", "LineChart", "DataTable", "Metric", "Cite", "FollowUp"} | set(PASSTHROUGH_COMPONENTS)
+    assert len(MACROS) == 6
 
 
 def test_macro_schemas_keep_parameter_types_and_order():
     comps = macro_expander().transform_to_inference_catalog(explorer_catalog()).to_json()["components"]
     bar = comps["BarChart"]
-    assert list(bar["properties"]) == ["result_id", "x", "y", "title", "color", "horizontal", "format"]
+    assert list(bar["properties"]) == [
+        "result_id", "x", "y", "title", "color", "horizontal", "format",
+        "clickable", "drill_sql", "drill_as", "drill_x", "drill_y", "drill_title",
+    ]
     assert bar["required"] == ["result_id", "x", "y", "title"]
     assert bar["properties"]["horizontal"]["type"] == "boolean"
     assert comps["Metric"]["properties"]["row"]["type"] == "integer"

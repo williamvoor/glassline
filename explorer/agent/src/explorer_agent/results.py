@@ -96,6 +96,13 @@ class ResultStore:
             self._results.popitem(last=False)
         return result
 
+    def readd(self, result: StoredResult) -> StoredResult:
+        """Put an evicted Result back under a fresh ID (an Ask on an old Visual, SPEC §15)."""
+        return self.add(
+            sql=result.sql, purpose=result.purpose, columns=result.columns,
+            column_types=result.column_types, rows=result.rows, truncated=result.truncated,
+        )
+
     def get(self, result_id: str) -> StoredResult | None:
         return self._results.get(result_id)
 

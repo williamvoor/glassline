@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 from psycopg_pool import PoolTimeout
 
 from explorer_agent.config import ConfigError, Settings, load_settings
+from explorer_agent.drill import Prefetcher
+from explorer_agent.executor import Conversations, DrillDowns
 from explorer_agent.llm import LlmLoop, LoopConfig
 from explorer_agent.prompt import build_system_prompt, dataset_context
 from explorer_agent.schema import SchemaCatalog, overlay_problems, render_schema_section
@@ -70,9 +72,17 @@ async def _serve(settings: Settings) -> None:
         )
         loop = LlmLoop(LoopConfig.from_settings(settings), prompt, pipeline, runner, catalog)
         url = f"http://{settings.agent_host}:{settings.agent_port}"
+        prefetcher = Prefetcher(
+            runner, rows=settings.drill_prefetch_rows, timeout_ms=settings.drill_prefetch_timeout_ms,
+            max_held=settings.max_prefetched,
+        )
+        conversations = Conversations(
+            max_action_sources=settings.max_action_sources, max_pending_pairs=settings.max_pending_pairs
+        )
         app = build_app(
-            loop, url=url, client_origin=settings.client_origin,
+            loop, url=url, client_origin=settings.client_origin, conversations=conversations,
             description=settings.dataset.description, examples=settings.dataset.examples,
+            drills=DrillDowns(runner, pipeline, prefetcher, settings.rows_to_model), model=settings.model,
         )
         server = uvicorn.Server(
             uvicorn.Config(app, host=settings.agent_host, port=settings.agent_port, log_level="warning")

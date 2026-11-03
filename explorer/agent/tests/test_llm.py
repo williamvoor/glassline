@@ -432,7 +432,7 @@ async def test_history_modes(mode):
         assert json.loads(turn1["content"])["rows_preview"] == [{"sql": "SELECT 1 AS one"}]
     assert json.loads(turn2["content"])["result_id"] == "r2"  # the current Turn is always in full
     assert_paired(final[1:])
-    assert conv.history[conv.turn_starts[0] + 2]["content"].startswith("{")  # stored in full either way
+    assert conv.history[conv.run_starts[0] + 2]["content"].startswith("{")  # stored in full either way
 
 
 def test_compact_summary_of_errors_and_schema_lookups():
@@ -448,7 +448,7 @@ def test_compact_summary_of_errors_and_schema_lookups():
         {"role": "assistant", "content": "reply"},
         {"role": "user", "content": "next"},
     ]
-    out = compact_history(history, current_turn_start=5)
+    out = compact_history(history, current_run_start=5)
     assert [m["content"] for m in out[2:4]] == ["failed: boom", "(schema lookup; omitted)"]
     assert compact_history(history, 5) == out  # stable
 
@@ -637,8 +637,8 @@ async def test_slow_turn_logged(caplog):
     caplog.set_level(logging.WARNING)
     await LlmLoop(LoopConfig(slow_turn_s=30), SYSTEM, UiPipeline(), FakeRunner(), None, completion=model,
                   clock=clock)(new_conv(), "q", Statuses())
-    slow = [r.getMessage() for r in caplog.records if r.getMessage().startswith("slow turn:")]
-    assert slow == ["slow turn: 31.0 s (target 30 s), model_calls=1 repairs=0 queries=0"]
+    slow = [r.getMessage() for r in caplog.records if r.getMessage().startswith("slow model run:")]
+    assert slow == ["slow model run: 31.0 s (target 30 s), model_calls=1 repairs=0 queries=0"]
 
 
 # Regression: LiteLLM loads the nearest .env on import (find_dotenv from its own folder), which
@@ -718,8 +718,8 @@ async def test_slow_turn_counts_queries_and_repairs(caplog):
     caplog.set_level(logging.WARNING)
     await LlmLoop(LoopConfig(slow_turn_s=30), SYSTEM, UiPipeline(), FakeRunner(0), None, completion=model,
                   clock=clock)(new_conv(), "q", Statuses())
-    slow = [r.getMessage() for r in caplog.records if r.getMessage().startswith("slow turn:")]
-    assert slow == ["slow turn: 33.0 s (target 30 s), model_calls=3 repairs=1 queries=2"]
+    slow = [r.getMessage() for r in caplog.records if r.getMessage().startswith("slow model run:")]
+    assert slow == ["slow model run: 33.0 s (target 30 s), model_calls=3 repairs=1 queries=2"]
 
 
 @pytest.mark.parametrize(("fail_at", "retried"), [(55.1, True), (55.2, False)])

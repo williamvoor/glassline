@@ -272,3 +272,20 @@ def test_bad_examples_are_a_config_error(tmp_path, value):
     write_dataset(tmp_path, toml=base + f"examples = {value}\n[currency]\ncode = \"EUR\"\nsymbol = \"€\"\n")
     with pytest.raises(ConfigError, match="examples"):
         load_settings(env_for(tmp_path), tmp_path)
+
+
+# SPEC §15: Actions and drill-down settings
+def test_drill_settings_defaults_and_overrides(tmp_path):
+    write_dataset(tmp_path)
+    s = load_settings(env_for(tmp_path), tmp_path)
+    assert (s.drill_prefetch_rows, s.drill_prefetch_timeout_ms, s.drill_check_timeout_ms) == (3, 3000, 2000)
+    assert (s.max_drills_per_surface, s.max_action_sources, s.max_prefetched, s.max_pending_pairs) == (2, 50, 30, 5)
+    s = load_settings(env_for(tmp_path, DRILL_PREFETCH_ROWS="0", MAX_DRILLS_PER_SURFACE="1"), tmp_path)
+    assert (s.drill_prefetch_rows, s.max_drills_per_surface) == (0, 1)
+
+
+@pytest.mark.parametrize(("key", "value"), [("DRILL_PREFETCH_ROWS", "-1"), ("MAX_PENDING_PAIRS", "0"), ("DRILL_CHECK_TIMEOUT_MS", "x")])
+def test_bad_drill_settings(tmp_path, key, value):
+    write_dataset(tmp_path)
+    with pytest.raises(ConfigError, match=key):
+        load_settings(env_for(tmp_path, **{key: value}), tmp_path)

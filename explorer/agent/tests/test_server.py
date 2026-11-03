@@ -58,10 +58,10 @@ def surface_ids(messages: list[dict]) -> set[str]:
     return {b["surfaceId"] for m in messages for b in m.values() if isinstance(b, dict) and "surfaceId" in b}
 
 
-def turn_surface(messages: list[dict], n: int) -> str:
-    """The one surface ID in `messages`, checked to be Turn `n`'s (`turn-<n>-<tag>`)."""
+def turn_surface(messages: list[dict], n: int, level: int = 1) -> str:
+    """The one surface ID in `messages`, checked to be Turn `n`'s Level `level` (`turn-<n>-<l>-<tag>`)."""
     (sid,) = surface_ids(messages)
-    assert re.fullmatch(rf"turn-{n}-[0-9a-f]{{6}}", sid), sid
+    assert re.fullmatch(rf"turn-{n}-{level}-[0-9a-f]{{6}}", sid), sid
     return sid
 
 

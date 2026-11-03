@@ -34,6 +34,7 @@ class VegaChart(ComponentBuilderNode):
     component: Literal["VegaChart"] = "VegaChart"
     spec: dict[str, Any]
     height: int | None = None
+    action: dict[str, Any] | None = None  # {source, rows, drillable}: clickable marks (SPEC §15)
 
 
 class DataGrid(ComponentBuilderNode):
@@ -41,6 +42,7 @@ class DataGrid(ComponentBuilderNode):
     columns: list[dict[str, str]]
     rows: list[list[str]]
     caption: str | None = None
+    action: dict[str, Any] | None = None  # {source, rows, drillable}: clickable rows (SPEC §15)
 
 
 class SqlDetails(ComponentBuilderNode):

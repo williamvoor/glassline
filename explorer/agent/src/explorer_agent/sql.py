@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -269,6 +269,15 @@ class SqlRunner:
                 raise StartupError(f"allowed schema has no tables visible to this login: {', '.join(empty)}")
 
     async def run(self, sql: str) -> SqlOk | SqlFail:
+        return await self._run(sql, None, self.timeout_ms)
+
+    async def run_bound(self, sql: str, params: Sequence[Any], *, timeout_ms: int | None = None) -> SqlOk | SqlFail:
+        """Run SQL with native `$n` parameters (a Drill query, SPEC §15) through psycopg's raw
+        cursor, so `%` in the SQL needs no escaping. Values are always bound, never put into
+        the text. Same guard, transaction, timeout and row cap as `run`."""
+        return await self._run(sql, list(params), self.timeout_ms if timeout_ms is None else int(timeout_ms))
+
+    async def _run(self, sql: str, params: list[Any] | None, timeout_ms: int) -> SqlOk | SqlFail:
         if self.guard_enabled:
             try:
                 guard(sql, self.allowed_schemas)
@@ -278,13 +287,13 @@ class SqlRunner:
             async with self.pool.connection() as conn:
                 await conn.execute("BEGIN READ ONLY")
                 try:
-                    await conn.execute(f"SET LOCAL statement_timeout = {self.timeout_ms}")
+                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
                     start = time.perf_counter()
-                    cur = conn.cursor()
+                    cur = conn.cursor() if params is None else psycopg.AsyncRawCursor(conn)
                     # Streamed in chunks, so the agent holds at most row_cap + 1 rows plus one
                     # chunk; leaving the loop early cancels the rest of the query.
                     fetched: list[tuple[Any, ...]] = []
-                    async for row in cur.stream(sql, size=STREAM_CHUNK):
+                    async for row in cur.stream(sql, params, size=STREAM_CHUNK):
                         fetched.append(row)
                         if len(fetched) > self.row_cap:
                             break
@@ -292,7 +301,7 @@ class SqlRunner:
                         # A stream that yields no rows leaves no column description. Ask for the
                         # columns without producing rows; the newlines keep a trailing comment inside.
                         body = sql.strip().rstrip(";").rstrip()
-                        await cur.execute(f"SELECT * FROM (\n{body}\n) AS _explorer_empty LIMIT 0")
+                        await cur.execute(f"SELECT * FROM (\n{body}\n) AS _explorer_empty LIMIT 0", params)
                     elapsed_ms = round((time.perf_counter() - start) * 1000)
                     if cur.description is None:
                         return SqlFail(sqlstate=None, message="the statement returned no rows")

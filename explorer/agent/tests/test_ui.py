@@ -7,7 +7,7 @@ import pytest
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.results import ResultStore
-from explorer_agent.testing.stub_server import FIXED_REPLY, seed_fixture
+from explorer_agent.testing.stub_server import FIXED_REPLY, FIXTURE_SCHEMAS, seed_fixture
 from explorer_agent.catalog import explorer_catalog
 from explorer_agent.ui import BARE_NUMBERS_LOG, UiError, UiPipeline, check_known_props, known_props, validate
 
@@ -24,7 +24,7 @@ def fixture_store() -> ResultStore:
 
 @pytest.fixture(scope="module")
 def pipeline() -> UiPipeline:
-    return UiPipeline()
+    return UiPipeline(allowed_schemas=FIXTURE_SCHEMAS)
 
 
 def surface_ids(messages: list[dict]) -> set[str]:
@@ -160,7 +160,7 @@ def test_every_component_schema_resolves():
 
 # U2
 def test_currency_from_dataset(fixture_store):
-    ui = UiPipeline(currency_symbol="€").build(FIXED_REPLY, fixture_store, "turn-1")
+    ui = UiPipeline(currency_symbol="€", allowed_schemas=FIXTURE_SCHEMAS).build(FIXED_REPLY, fixture_store, "turn-1")
     assert "€" in ui.prose and "$" not in ui.prose
     rendered = json.dumps(ui.messages, ensure_ascii=False)
     assert "€" in rendered and "$" not in rendered.replace("$schema", "")
@@ -183,7 +183,7 @@ def test_pipeline_runs_unknown_prop_check(monkeypatch, fixture_store):
 
     monkeypatch.setattr(MacroExpander, "transform_to_transport", leaky)
     with pytest.raises(UiError, match="has no property 'placeholder'"):
-        UiPipeline().build(FIXED_REPLY, fixture_store, "turn-1")
+        UiPipeline(allowed_schemas=FIXTURE_SCHEMAS).build(FIXED_REPLY, fixture_store, "turn-1")
 
 
 # Text the model writes on the Surface follows the prose rules: placeholders are filled from

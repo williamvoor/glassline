@@ -1,8 +1,10 @@
 """The tool loop (parent spec §2, specs/llm-loop/SPEC.md). The only module that imports litellm.
 
-One Turn: the user's text goes into the Conversation's history; the model is called with the
-system prompt, the history and the tools; tool calls run (in parallel) and their results go
-back; a reply without tool calls is the final answer and goes through the UI pipeline.
+One model run (a typed question or an Ask, SPEC §15): the user's text goes into the
+Conversation's history, then any synthetic tool results waiting for it; the model is called with
+the system prompt, the history and the tools; tool calls run (in parallel) and their results go
+back; a reply without tool calls is the final answer and goes through the UI pipeline, then its
+Drill queries are checked against the database (check step 2).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from typing import Any
 
 import litellm
 
+from explorer_agent.drill import check_drill
 from explorer_agent.executor import Conversation, StatusFn
 from explorer_agent.schema import SchemaCatalog
 from explorer_agent.sql import SqlRunner
@@ -40,6 +43,10 @@ REPAIR_MESSAGE = (
     "Your reply could not be shown: {errors}. Reply again with the corrected UI in the same output "
     "format, reusing the same result IDs. SQL is not available while fixing the view."
 )
+DRILL_REPAIR_NOTE = (
+    " You may correct a drill_sql or remove it; run_sql is still unavailable."
+)
+DRILLS_DROPPED_LOG = "drill queries dropped, Repairs used up: visuals "
 TOOLS_DURING_REPAIR = "the reply called tools while fixing the view"
 TIMEOUT_PROSE = "I couldn't finish this answer in time."
 RETRY_WAIT_S = 1.0
@@ -60,6 +67,7 @@ class LoopConfig:
     history_mode: str = "compact"
     turn_timeout_s: float = 60
     slow_turn_s: float = 30
+    drill_check_timeout_ms: int = 2000
 
     @classmethod
     def from_settings(cls, settings: Any) -> LoopConfig:
@@ -73,17 +81,18 @@ class LoopConfig:
             history_mode=settings.history_mode,
             turn_timeout_s=settings.turn_timeout_s,
             slow_turn_s=settings.slow_turn_s,
+            drill_check_timeout_ms=settings.drill_check_timeout_ms,
         )
 
 
 @dataclass
-class _Turn:
-    """State of one Turn that outlives a single model call."""
+class _Run:
+    """State of one model run that outlives a single model call."""
 
     last_prose: str | None = None  # filled prose of the last reply whose prose was fine
     repairs: int = 0  # Repairs asked for so far
     repairing: bool = False  # the next model call is a Repair: no SQL
-    deadline: float = float("inf")  # clock time the Turn must end by
+    deadline: float = float("inf")  # clock time the model run must end by
     calls_left: int = 0  # model calls still allowed after the current one
     model_calls: int = 0
     queries: int = 0
@@ -113,8 +122,8 @@ def _fmt(value: int | None) -> str:
 
 
 def _summary(result: dict[str, Any], call: dict[str, Any] | None) -> str:
-    """One line for an earlier Turn's tool result, built from the history alone (never the
-    ResultStore, which evicts), so a finished Turn's summary never changes."""
+    """One line for an earlier model run's tool result, built from the history alone (never the
+    ResultStore, which evicts), so a finished run's summary never changes."""
     name = call["function"]["name"] if call else ""
     if "error" in result:
         return f"failed: {result['error'].get('message')}"
@@ -131,8 +140,8 @@ def _summary(result: dict[str, Any], call: dict[str, Any] | None) -> str:
     )
 
 
-def compact_history(history: list[dict[str, Any]], current_turn_start: int) -> list[dict[str, Any]]:
-    """Earlier Turns' tool results become one-line summaries; the current Turn stays in full.
+def compact_history(history: list[dict[str, Any]], current_run_start: int) -> list[dict[str, Any]]:
+    """Earlier model runs' tool results become one-line summaries; the current run stays in full.
     Message order and the pairing of tool calls with results are unchanged."""
     calls: dict[str, dict[str, Any]] = {}
     out = []
@@ -140,7 +149,7 @@ def compact_history(history: list[dict[str, Any]], current_turn_start: int) -> l
         if m["role"] == "assistant":
             for tc in m.get("tool_calls") or ():
                 calls[tc["id"]] = tc
-        if i < current_turn_start and m["role"] == "tool":
+        if i < current_run_start and m["role"] == "tool":
             try:
                 result = json.loads(m["content"])
             except json.JSONDecodeError:
@@ -196,20 +205,22 @@ class LlmLoop:
         self._latencies: deque[float] = deque(maxlen=50)  # seconds per recent model call, agent-wide
 
     async def __call__(self, conv: Conversation, text: str, status: StatusFn) -> UiResult:
-        conv.turn_starts.append(len(conv.history))
+        conv.run_starts.append(len(conv.history))
         if conv.unknown_context:
             text = f"{UNKNOWN_CONTEXT_NOTE}\n\n{text}"
         conv.history.append({"role": "user", "content": text})
+        # Synthetic tool results for clicks since the last run (SPEC §15), after the run boundary.
+        conv.history.extend(conv.actions.take_pairs())
         start = self.clock()
-        turn = _Turn(deadline=start + self.config.turn_timeout_s)
+        run = _Run(deadline=start + self.config.turn_timeout_s)
         try:
             async with asyncio.timeout(self.config.turn_timeout_s):
-                return await self._turn(conv, status, turn)
+                return await self._run(conv, status, run)
         except TimeoutError:
             # The model call or the queries in flight were cancelled (psycopg cancels the
             # statement server-side; the pool resets the connection).
-            log.warning("turn timed out after %.0f s", self.config.turn_timeout_s)
-            return self._give_up(TIMEOUT_PROSE, turn.last_prose, [])
+            log.warning("model run timed out after %.0f s", self.config.turn_timeout_s)
+            return self._give_up(TIMEOUT_PROSE, run.last_prose, [])
         except _ModelFailed as e:
             cause = e.cause
             # Class and status only: a provider's error body can echo request content.
@@ -222,55 +233,98 @@ class LlmLoop:
             elapsed = self.clock() - start
             if elapsed > self.config.slow_turn_s:
                 log.warning(
-                    "slow turn: %.1f s (target %.0f s), model_calls=%d repairs=%d queries=%d",
-                    elapsed, self.config.slow_turn_s, turn.model_calls, turn.repairs, turn.queries,
+                    "slow model run: %.1f s (target %.0f s), model_calls=%d repairs=%d queries=%d",
+                    elapsed, self.config.slow_turn_s, run.model_calls, run.repairs, run.queries,
                 )
 
-    async def _turn(self, conv: Conversation, status: StatusFn, turn: _Turn) -> UiResult:
+    async def _run(self, conv: Conversation, status: StatusFn, run: _Run) -> UiResult:
         tools = ToolBox(self.runner, self.catalog, conv.store, self.config.rows_to_model)
         for i in range(self.config.max_tool_iterations):
-            turn.calls_left = self.config.max_tool_iterations - i - 1
-            message = await self._call_model(conv, turn)
-            if message.tool_calls and turn.repairing:
+            run.calls_left = self.config.max_tool_iterations - i - 1
+            message = await self._call_model(conv, run)
+            if message.tool_calls and run.repairing:
                 # Meta accepts only tool_choice="auto", so nothing stops the model calling tools
                 # here. The calls are not run (a Repair never queries); the attempt counts as a
                 # failed Repair.
                 conv.history.append({"role": "assistant", "content": message.content or ""})
                 errors = [TOOLS_DURING_REPAIR]
-                if not await self._ask_for_repair(conv, turn, errors, status):
-                    return self._give_up(NO_VIEW_PROSE, turn.last_prose, errors)
+                if not await self._ask_for_repair(conv, run, errors, status):
+                    return self._give_up(NO_VIEW_PROSE, run.last_prose, errors)
                 continue
             if message.tool_calls:
                 # The assistant message and its results go into the history together, after every
                 # tool finished: a failure or cancellation in between leaves no unanswered calls.
-                results = await self._run_tools(tools, message.tool_calls, status, turn)
+                results = await self._run_tools(tools, message.tool_calls, status, run)
                 conv.history.append(_assistant_message(message))
                 conv.history.extend(results)
                 continue
             reply = message.content or ""
             conv.history.append({"role": "assistant", "content": reply})
             try:
-                return self.pipeline.build(reply, conv.store, conv.surface_id)
+                return await self._build(conv, reply)
             except UiError as e:
                 if e.prose:
-                    turn.last_prose = e.prose
-                if not await self._ask_for_repair(conv, turn, e.messages, status):
-                    return self._give_up(NO_VIEW_PROSE, turn.last_prose, e.messages)
-        return self._give_up(STEP_LIMIT_PROSE, turn.last_prose, [])
+                    run.last_prose = e.prose
+                if not await self._ask_for_repair(conv, run, e.messages, status, drill=bool(e.drill_visuals)):
+                    if e.only_drill:
+                        salvaged = await self._without_drills(conv, reply, e.drill_visuals)
+                        if salvaged is not None:
+                            return salvaged
+                    return self._give_up(NO_VIEW_PROSE, run.last_prose, e.messages)
+        return self._give_up(STEP_LIMIT_PROSE, run.last_prose, [])
 
-    async def _ask_for_repair(self, conv: Conversation, turn: _Turn, errors: list[str], status: StatusFn) -> bool:
+    async def _build(self, conv: Conversation, reply: str, ignore_drills: frozenset[int] = frozenset()) -> UiResult:
+        """UI pipeline, then check step 2 of every Drill query. Raises UiError."""
+        ui = self.pipeline.build(reply, conv.store, conv.surface_id, conv.actions.ids, ignore_drills)
+        errors, failing = await self._check_drills(ui)
+        if errors:
+            raise UiError(errors, prose=ui.prose or None, drill_visuals=failing, only_drill=True)
+        return ui
+
+    async def _check_drills(self, ui: UiResult) -> tuple[list[str], set[int]]:
+        sources = {s.id: s for s in ui.sources}
+        errors: list[str] = []
+        failing: set[int] = set()
+        for spec in ui.drills:
+            row = sources[spec.source].result.rows[sources[spec.source].rows[0]]
+            problems = await check_drill(self.runner, spec, row, self.config.drill_check_timeout_ms)
+            if problems:
+                log.info("drill check failed: source=%s visual=%d", spec.source, spec.visual)
+                errors.extend(problems)
+                failing.add(spec.visual)
+        return errors, failing
+
+    async def _without_drills(self, conv: Conversation, reply: str, visuals: frozenset[int]) -> UiResult | None:
+        """Repairs ran out and only Drill queries are wrong: show the answer without them."""
+        ignore = set(visuals)
+        for _ in range(2):  # a rebuild can expose a later Visual's step 2 failure once
+            try:
+                ui = await self._build(conv, reply, frozenset(ignore))
+            except UiError as e:
+                if not e.only_drill:
+                    return None
+                ignore |= e.drill_visuals
+                continue
+            log.warning("%s%s", DRILLS_DROPPED_LOG, ", ".join(str(v) for v in sorted(ignore)))
+            return ui
+        return None
+
+    async def _ask_for_repair(
+        self, conv: Conversation, run: _Run, errors: list[str], status: StatusFn, *, drill: bool = False
+    ) -> bool:
         """Queue a Repair, unless the Repairs are used up. The next model call runs no SQL."""
         joined = "; ".join(errors)
         if len(joined) > LOGGED_ERRORS_MAX:
             joined = joined[:LOGGED_ERRORS_MAX] + "…"
-        if turn.repairs >= self.config.max_ui_retries or turn.calls_left == 0:
+        if run.repairs >= self.config.max_ui_retries or run.calls_left == 0:
             log.warning("%s%s", NO_REPAIR_LOG, joined)
             return False  # no Repair left, or no model call left to make it with
-        turn.repairs += 1
-        turn.repairing = True
+        run.repairs += 1
+        run.repairing = True
         log.warning("%s%s", REPAIR_LOG, joined)
         await status(REPAIR_STATUS)
-        conv.history.append({"role": "user", "content": REPAIR_MESSAGE.format(errors="; ".join(errors))})
+        message = REPAIR_MESSAGE.format(errors="; ".join(errors)) + (DRILL_REPAIR_NOTE if drill else "")
+        conv.history.append({"role": "user", "content": message})
         return True
 
     @staticmethod
@@ -282,9 +336,9 @@ class LlmLoop:
         return UiResult(prose="\n\n".join(parts), messages=[], bare_numbers=[])
 
     def _history(self, conv: Conversation) -> list[dict[str, Any]]:
-        if self.config.history_mode == "full" or not conv.turn_starts:
+        if self.config.history_mode == "full" or not conv.run_starts:
             return conv.history
-        return compact_history(conv.history, conv.turn_starts[-1])
+        return compact_history(conv.history, conv.run_starts[-1])
 
     def _request(self, conv: Conversation) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
@@ -300,12 +354,12 @@ class LlmLoop:
         # Meta rejects anything but "auto" with HTTP 400. The loop keeps Repairs SQL-free.
         return kwargs
 
-    def _retry_fits(self, turn: _Turn) -> bool:
+    def _retry_fits(self, run: _Run) -> bool:
         latencies = sorted(self._latencies)
         median = latencies[len(latencies) // 2] if latencies else DEFAULT_CALL_LATENCY_S
-        return self.clock() + RETRY_WAIT_S + median <= turn.deadline
+        return self.clock() + RETRY_WAIT_S + median <= run.deadline
 
-    async def _call_model(self, conv: Conversation, turn: _Turn) -> Any:
+    async def _call_model(self, conv: Conversation, run: _Run) -> Any:
         for attempt in (1, 2):
             start = self.clock()
             try:
@@ -313,12 +367,12 @@ class LlmLoop:
                 message = response.choices[0].message
                 break
             except Exception as e:  # API errors and malformed responses alike
-                if attempt == 1 and _retryable(e) and self._retry_fits(turn):
+                if attempt == 1 and _retryable(e) and self._retry_fits(run):
                     log.warning("model call retry: %s status=%s", type(e).__name__, getattr(e, "status_code", "-"))
                     await self.sleep(RETRY_WAIT_S)
                     continue
                 raise _ModelFailed(e) from e
-        turn.model_calls += 1  # the retry is the same call, repeated: it doesn't count
+        run.model_calls += 1  # the retry is the same call, repeated: it doesn't count
         elapsed = self.clock() - start
         self._latencies.append(elapsed)
         latency_ms = round(elapsed * 1000)
@@ -333,10 +387,10 @@ class LlmLoop:
         )
         return message
 
-    async def _run_tools(self, tools: ToolBox, calls: list[Any], status: StatusFn, turn: _Turn) -> list[dict[str, Any]]:
+    async def _run_tools(self, tools: ToolBox, calls: list[Any], status: StatusFn, run: _Run) -> list[dict[str, Any]]:
         queries: list[str] = []
 
-        async def run(call: Any) -> dict[str, Any]:
+        async def one(call: Any) -> dict[str, Any]:
             name = call.function.name
             try:
                 args = json.loads(call.function.arguments or "{}")
@@ -354,6 +408,6 @@ class LlmLoop:
             return {"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)}
 
         try:
-            return list(await asyncio.gather(*(run(c) for c in calls)))
+            return list(await asyncio.gather(*(one(c) for c in calls)))
         finally:
-            turn.queries += len(queries)
+            run.queries += len(queries)

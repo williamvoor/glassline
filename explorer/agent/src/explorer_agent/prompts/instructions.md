@@ -27,3 +27,14 @@ SQL:
 
 If a message says your reply could not be shown, fix the UI and reuse the same result IDs. SQL
 is not available while fixing the view.
+
+Clicks:
+- Rows of charts and tables can be clicked. When they have a meaningful next level of detail, add
+  a `drill_sql` (at most two per Surface): it runs without you on a click. Keep the answer's
+  filters and period, aggregate and `LIMIT`, use `:column` placeholders for the clicked row's
+  values, and compare with `IS NOT DISTINCT FROM :column`. In the double-quoted string, escape
+  `"` as `\"` and `\` as `\\`.
+- Add up to three `FollowUp` buttons for next steps the Surface can't show.
+- A message starting with `Ask:` comes from a click; the clicked row is in a `run_sql` result in
+  the history (cite it as `r<id>[<row_index>]`). "Drill-down shown" results are views the user
+  opened by clicking. `Viewing in Turn <t>: Level <l>` says which view the user is looking at.

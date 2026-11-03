@@ -77,6 +77,14 @@ class Settings:
     turn_timeout_s: int
     slow_turn_s: int
     dataset: Dataset
+    # Actions and drill-down (SPEC §15)
+    drill_prefetch_rows: int = 3
+    drill_prefetch_timeout_ms: int = 3000
+    drill_check_timeout_ms: int = 2000
+    max_drills_per_surface: int = 2
+    max_action_sources: int = 50
+    max_prefetched: int = 30
+    max_pending_pairs: int = 5
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
         return f"Settings(model={self.model!r}, format={self.format!r}, dataset={self.dataset.name!r})"
@@ -92,6 +100,13 @@ _INTS = {
     "AGENT_PORT": 10002,
     "TURN_TIMEOUT_S": 60,
     "SLOW_TURN_S": 30,
+    "DRILL_PREFETCH_ROWS": 3,
+    "DRILL_PREFETCH_TIMEOUT_MS": 3000,
+    "DRILL_CHECK_TIMEOUT_MS": 2000,
+    "MAX_DRILLS_PER_SURFACE": 2,
+    "MAX_ACTION_SOURCES": 50,
+    "MAX_PREFETCHED": 30,
+    "MAX_PENDING_PAIRS": 5,
 }
 
 
@@ -105,6 +120,19 @@ def _positive_int(env: Mapping[str, str], key: str) -> int:
         raise ConfigError(f"{key} must be a positive integer") from None
     if value <= 0:
         raise ConfigError(f"{key} must be a positive integer")
+    return value
+
+
+def _non_negative_int(env: Mapping[str, str], key: str) -> int:
+    raw = env.get(key, "").strip()
+    if not raw:
+        return _INTS[key]
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ConfigError(f"{key} must be a whole number, 0 or more") from None
+    if value < 0:
+        raise ConfigError(f"{key} must be a whole number, 0 or more")
     return value
 
 
@@ -252,4 +280,11 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         turn_timeout_s=_positive_int(env, "TURN_TIMEOUT_S"),
         slow_turn_s=_positive_int(env, "SLOW_TURN_S"),
         dataset=dataset,
+        drill_prefetch_rows=_non_negative_int(env, "DRILL_PREFETCH_ROWS"),
+        drill_prefetch_timeout_ms=_positive_int(env, "DRILL_PREFETCH_TIMEOUT_MS"),
+        drill_check_timeout_ms=_positive_int(env, "DRILL_CHECK_TIMEOUT_MS"),
+        max_drills_per_surface=_positive_int(env, "MAX_DRILLS_PER_SURFACE"),
+        max_action_sources=_positive_int(env, "MAX_ACTION_SOURCES"),
+        max_prefetched=_positive_int(env, "MAX_PREFETCHED"),
+        max_pending_pairs=_positive_int(env, "MAX_PENDING_PAIRS"),
     )

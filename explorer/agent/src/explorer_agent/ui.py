@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import functools
 import logging
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 from a2ui.core.processing.message_processor import MessageProcessor, MessageProcessorOptions
@@ -18,21 +19,27 @@ from a2ui.core.validation.payload_validator import STRICT_VALIDATION
 from a2ui.core.schema.v0_9.common_types import Checkable, ComponentCommon
 from a2ui.core import Catalog
 from a2ui.core.exceptions import A2uiError
+from a2ui.builder.core import flatten_component_tree
 from a2ui.parser import A2uiPart, TextPart
 from pydantic import TypeAdapter
 
-from explorer_agent.catalog import explorer_catalog
+from explorer_agent.actions import FollowUpSpec, IdAllocator, SourceSpec
+from explorer_agent.catalog import EXPLORER_CATALOG_ID, explorer_catalog
+from explorer_agent.drill import DrillSpec
 from explorer_agent.macros import (
     DEFAULT_CURRENCY_SYMBOL,
+    MAX_DRILLS_PER_SURFACE,
     TABLE_ROW_CAP,
     FilledProse,
+    MacroContext,
+    drill_down_view,
     fill_prose,
     fill_surface_text,
     macro_context,
     macro_expander,
 )
 from explorer_agent.prompt import make_format
-from explorer_agent.results import ResultStore
+from explorer_agent.results import ResultStore, StoredResult
 
 log = logging.getLogger(__name__)
 
@@ -44,12 +51,17 @@ BARE_NUMBERS_LOG = "reply has numbers typed by the model: "
 class UiError(Exception):
     """The reply can't become a valid UI. `messages` are meant for the model."""
 
-    def __init__(self, messages: list[str], prose: str | None = None):
+    def __init__(self, messages: list[str], prose: str | None = None, drill_visuals: Iterable[int] = (),
+                 only_drill: bool = False):
         super().__init__("; ".join(messages))
         self.messages = messages
         # The reply's filled prose when the prose itself was fine (only the UI failed), so a
-        # Turn that runs out of Repairs can still show it.
+        # model run that runs out of Repairs can still show it.
         self.prose = prose
+        # Visual indices whose Drill query failed a check, and whether those are all the errors:
+        # then the reply can be shown with those Drill queries dropped (SPEC §15).
+        self.drill_visuals = frozenset(drill_visuals)
+        self.only_drill = only_drill
 
 
 @dataclass
@@ -57,6 +69,10 @@ class UiResult:
     prose: str
     messages: list[dict[str, Any]]
     bare_numbers: list[str]
+    # Actions (SPEC §15): reserved, not yet registered.
+    sources: list[SourceSpec] = field(default_factory=list)
+    drills: list[DrillSpec] = field(default_factory=list)
+    follow_ups: list[FollowUpSpec] = field(default_factory=list)
 
 
 # `$ref`s in a component schema that the merged catalog doesn't carry in its own $defs.
@@ -146,18 +162,45 @@ class UiPipeline:
         fmt_name: str = "express",
         currency_symbol: str = DEFAULT_CURRENCY_SYMBOL,
         table_row_cap: int = TABLE_ROW_CAP,
+        allowed_schemas: Iterable[str] = (),
+        max_drills: int = MAX_DRILLS_PER_SURFACE,
     ):
         self._currency_symbol = currency_symbol
         self._table_row_cap = table_row_cap
+        self._allowed_schemas = tuple(sorted(allowed_schemas))
+        self._max_drills = max_drills
         self._expander = macro_expander()
         self.inference_catalog = self._expander.transform_to_inference_catalog(explorer_catalog())
         self.format = make_format(fmt_name, self.inference_catalog)
 
     @classmethod
     def from_settings(cls, settings: Any) -> UiPipeline:
-        return cls(settings.format, settings.dataset.currency.symbol, settings.table_row_cap)
+        return cls(
+            settings.format, settings.dataset.currency.symbol, settings.table_row_cap,
+            settings.dataset.allowed_schemas, settings.max_drills_per_surface,
+        )
 
-    def build(self, reply: str, store: ResultStore, surface_id: str) -> UiResult:
+    def _context(self, store: ResultStore, ids: IdAllocator | None, ignore_drills: Iterable[int] = ()):
+        return macro_context(
+            store, currency_symbol=self._currency_symbol, table_row_cap=self._table_row_cap,
+            ids=ids or IdAllocator(), allowed_schemas=self._allowed_schemas, max_drills=self._max_drills,
+            ignore_drills=frozenset(ignore_drills),
+        )
+
+    @staticmethod
+    def _error(ctx: MacroContext, messages: list[str]) -> UiError:
+        return UiError(messages, drill_visuals=ctx.drill_errors, only_drill=bool(ctx.drill_errors) and ctx.drill_error_count == len(ctx.errors))
+
+    def build(
+        self,
+        reply: str,
+        store: ResultStore,
+        surface_id: str,
+        ids: IdAllocator | None = None,
+        ignore_drills: Iterable[int] = (),
+    ) -> UiResult:
+        """`ids` reserves action source and Follow-up IDs (the Conversation's); `ignore_drills`
+        rebuilds with those Visuals' drill arguments ignored."""
         # Any SDK error here comes from what the model wrote (syntax, dangling references, bad
         # macro arguments, duplicate surfaces), so it goes back to the model as a UiError.
         try:
@@ -170,9 +213,7 @@ class UiPipeline:
 
         prose: FilledProse | None = None
         try:
-            with macro_context(
-                store, currency_symbol=self._currency_symbol, table_row_cap=self._table_row_cap
-            ) as ctx:
+            with self._context(store, ids, ignore_drills) as ctx:
                 prose = fill_prose(prose_raw)
                 prose_ok = not ctx.errors
                 bare = prose.bare_numbers + fill_surface_text(c for m in typed for c in _components(m))
@@ -181,9 +222,11 @@ class UiPipeline:
                         [_MESSAGE.validate_python(m) if isinstance(m, dict) else m for m in typed]
                     )
                 except A2uiError as e:
-                    raise UiError(list(ctx.errors) or [f"invalid UI: {e}"]) from e
+                    if ctx.errors:
+                        raise self._error(ctx, list(ctx.errors)) from e
+                    raise UiError([f"invalid UI: {e}"]) from e
                 if ctx.errors:
-                    raise UiError(list(ctx.errors))
+                    raise self._error(ctx, list(ctx.errors))
 
             if bare:
                 log.warning("%s%s", BARE_NUMBERS_LOG, ", ".join(bare))
@@ -194,8 +237,26 @@ class UiPipeline:
             if messages:  # a prose-only reply is valid; the processor rejects an empty list
                 check_known_props(messages, explorer_catalog())
                 validate(messages)
-            return UiResult(prose=prose.text, messages=messages, bare_numbers=bare)
+            return UiResult(
+                prose=prose.text, messages=messages, bare_numbers=bare,
+                sources=list(ctx.sources), drills=list(ctx.drills), follow_ups=list(ctx.follow_ups),
+            )
         except UiError as e:
             if prose is not None and prose_ok and prose.text:
                 e.prose = prose.text
             raise
+
+    def build_drill_down(
+        self, result: StoredResult, spec: DrillSpec, title: str, surface_id: str, ids: IdAllocator
+    ) -> UiResult:
+        """The Surface of a Drill-down Level, built without the model: the `drill_as` Visual of
+        the new Result, its SQL and an Ask button. No prose. `title` is display text."""
+        with self._context(ResultStore(), ids) as ctx:
+            components = flatten_component_tree(drill_down_view(result, spec, title), root_id="root")
+            messages = [
+                {"version": "v0.9", "createSurface": {"surfaceId": surface_id, "catalogId": EXPLORER_CATALOG_ID}},
+                {"version": "v0.9", "updateComponents": {"surfaceId": surface_id, "components": components}},
+            ]
+            check_known_props(messages, explorer_catalog())
+            validate(messages)
+            return UiResult(prose="", messages=messages, bare_numbers=[], sources=list(ctx.sources))
