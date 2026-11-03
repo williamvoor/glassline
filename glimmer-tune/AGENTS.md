@@ -40,13 +40,15 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
 ## Hard rules
 
 - **Models.** Muse Glimmer 30B (base or our adapters) only generates A2UI. `meta/muse-spark-1.3` is
-  the only other model (`data_cli vocab`). No Gemini, no Wonder, no other baselines.
+  the only other model (`data_cli vocab`), plus Muse Spark Open via Baseten, scoped by ADR 0025
+  (`python -m a2ui_eval.teacher baseline`; its Express is never an SFT target). No Gemini, no
+  Wonder, no other baselines.
 - **Reasoning strength is `low` everywhere:** every eval setup, model and training row. The chat
   template defaults to `high`, so a row without it mismatches inference. The one exception is a
   dev-only base-model setup at `high`.
 - **Tests never call a model or the network.** Stub the model. Fireworks is touched only by
   `glimmer_trainer train --launch` and `sample`.
-- **Don't spend money unasked.** Don't run `train --launch`, `sample`, `vocab` or any eval sampling
+- **Don't spend money unasked.** Don't run `train --launch`, `sample`, `vocab`, `teacher baseline` or any eval sampling
   unless the user asks. Eval sampling is billed. SFT is free only for jobs started before
   2026-12-01 Pacific. State the cost before a paid step.
 - **The test split is frozen.** Nothing reads `data/test` except the one-time final evaluation
@@ -64,7 +66,7 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
   names or prop rules.
 - **Dataset text is ours, not a model's,** except where a spec says otherwise (vocab, 2c-3
   rewording). Intents for dev and test are hand-reviewed (`reviewed: true`).
-- **Secrets.** `FIREWORKS_API_KEY` and `META_API_KEY` live in the repo root's `.env`. Code reads env
+- **Secrets.** `FIREWORKS_API_KEY`, `META_API_KEY` and `BASETEN_API_KEY` live in the repo root's `.env`. Code reads env
   vars only. Never print or log them.
 - **Don't modify `../a2ui/`** or depend on paths inside it at runtime. `../explorer/` belongs to its
   own session. Don't change it from here.
