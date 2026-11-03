@@ -1201,7 +1201,7 @@ Status: written by the assistant on the user's delegation (2026-11-03). Item 7 o
    - Every other cell needs 30 train rows.
 3. **Per-item state, built by code (ADR 0022):** a list whose entity has a boolean field may show it per item in one of two ways. The field's value is in the record either way, and the intent quotes it.
    - **State icon:** each record also stores `<field> icon` (for example `vegetarianIcon`, by the label rule): a tick when true, and a cross, warning triangle or error icon when false (whichever of these the catalog enum has). Amended in the build: one true icon only, because padlock, bell and eye pairs don't read as "true is good". The item shows `Icon($vegetarianIcon)`. The Intent says, in the user's words, which icon goes with which state ("a tick when its \"Verified\" is true, otherwise a cross").
-   - **Checklist:** each item is a CheckBox with `label` bound to its first column and `value` bound to the boolean field. Templates only (amended after the refuter's review): 2–4 bound static CheckBoxes make a form, and the linter's `form_submit` rule rightly rejects a form with no submit button.
+   - **Checklist:** each item is a CheckBox with `label` bound to its first column and `value` bound to the boolean field. The first column is the label, so the item has no value Text for it (fix from the sample review, `docs/item7-sample-review-20261103.md` A1). While their cells still need rows, a list whose entity has a boolean field prefers a state icon or checklist over media (p 0.75 within the hungry draw, which itself happens with p 0.6), which fit any list (amended 2026-11-03: after A1 shifted the random stream, state icons fell to 3 in 1000 rows). Templates only (amended after the refuter's review): 2–4 bound static CheckBoxes make a form, and the linter's `form_submit` rule rightly rejects a form with no submit button.
 4. **Per-item media:** each record may also carry a media URL (Image, Video or AudioPlayer, chosen by coverage weight), built by code from the record's first column. Its description, if set, is bound to the first column. Images that aren't per item can bind `description` next to a bound `url` (`Image.description:absolute`).
 5. **All list modes:** template lists use relative `$field`, bound static lists use `/list/i/field`, and literal static lists use literals. A per-item prop never takes its first sibling's value; siblings share only their enums and weights. While an absolute per-item cell (Icon or media) still needs rows, a static list leans bound (p 0.8). Checklists are templates only (decision 3).
 6. **Report before full size:** the coverage report and 10 rendered samples (mixing all three per-item kinds) come before full-size generation, as item 7 requires.
@@ -1215,6 +1215,7 @@ Status: written by the assistant on the user's delegation (2026-11-03). Item 7 o
 | C3 | Every cell is reached in a generated run | `test_synth_coverage.py::test_every_key_reached` (existing) |
 | C4 | A state icon's record icon matches its boolean, and the Intent names both icons and the field | `test_synth_plausibility.py::test_state_icons_follow_their_field`, `::test_state_rule_is_stated_once` |
 | C4a | In every list mode, item i shows record i's own icon and media; checklists are template-only (refuter blocker) | `test_synth_plausibility.py::test_per_item_values_track_their_record` |
+| C5a | A checklist item shows its first column once: as the checkbox label, with no Text bound to the same field, and the Intent doesn't name it twice (sample review A1, 2026-11-03) | `test_synth_plausibility.py::test_checklist_label_is_not_repeated`, `::test_checklist_intent_names_the_label_once` |
 | C5 | A checklist binds label and value per item, and passes the linter | `test_synth_plausibility.py::test_checklists_bind_per_item` |
 | C6 | Per-item media URLs are unique per record and per surface | `test_synth_plausibility.py::test_media_never_repeated_in_a_surface` (extended to per-item URLs) |
 | C7 | All rows still compile, round-trip, pass the catalog check and parse in web_core | `test_synth_pipeline.py::test_rows_valid`, `test_synth_coverage.py::test_generated_templates_parse_in_web_core` |
@@ -1225,6 +1226,33 @@ Status: written by the assistant on the user's delegation (2026-11-03). Item 7 o
 cd glimmer-tune && uv run pytest tests/test_synth_coverage.py tests/test_synth_plausibility.py tests/test_synth_pipeline.py
 cd glimmer-tune && uv run pytest
 ```
+
+## Sample review fixes B1, B3, B4, B6 (spec, 2026-11-03)
+
+Source: `docs/item7-sample-review-20261103.md`, with counts from a 3640-row dry run (same file). The user approved B1, B4, B6, then B3 with a coverage recheck. B5 waits for a check of how gallery References show money and dates. B2 and C1 are not in this section.
+
+### Decisions
+
+1. **B1 (6.8% of rows):** a section heading directly before a list, among the same siblings, takes the list entity's name. The section title it drew is dropped.
+2. **B6:**
+   - A section heading that is the last of its siblings is dropped (3.3% of rows), unless it is the only one; then the whole run of siblings is empty and the caller's fallback applies.
+   - A tab whose content is only dividers also gets a body text (0.6%). If the topic's body texts have run out, the surface is rejected (`GrowError`) and regenerated.
+   - Dividers don't dangle either (refuter finding: dropping a heading left `[body, divider]` runs and divider-only Cards). A run of siblings drops dividers at either end, and a run that is only dividers is empty: an open slot returns nothing so the caller falls back, and a skeleton list raises `GrowError` (rejected and regenerated). The same happens to a skeleton list left with only a heading.
+   - All are tree rules in the grower, applied wherever siblings are built (skeleton lists and open slots). No linter rule (non-goal: the grower makes them impossible).
+3. **B4 (1.2%):** `formatNumber` sets `decimals: 2` only for a non-integer value. Integers get no `decimals` or 0. List siblings still share the first item's format, so a column looks alike.
+4. **B3 (10.2%):** outside skeletons tagged `media`, a surface has at most one standalone media block (`b_media`). Per-item media (item 7) is not capped. The coverage report must still have no gaps at full size, on seeds 0 and 1.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| B1 | A heading directly before a list names the list's entity | `test_synth_plausibility.py::test_heading_before_a_list_names_it` |
+| B6a | No sibling run ends with a section heading after other content | `test_synth_plausibility.py::test_no_trailing_heading` |
+| B6b | Every tab has content other than dividers | `test_synth_plausibility.py::test_tabs_hold_more_than_dividers` |
+| B6c | No run of siblings is only dividers, or starts or ends with one | `test_synth_plausibility.py::test_no_dangling_dividers` |
+| B4 | No `formatNumber` with 2 decimals on an integer value | `test_synth_plausibility.py::test_no_decimals_on_integers` |
+| B3 | At most one standalone media per surface outside media skeletons | `test_synth_plausibility.py::test_standalone_media_capped` |
+| C3 | Every key still reached | `test_synth_coverage.py::test_every_key_reached`, plus the full-size report on seeds 0 and 1 |
 
 ## Run 2 item 10: source conflicts resolved (2026-11-03)
 
