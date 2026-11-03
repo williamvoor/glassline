@@ -26,7 +26,7 @@ _Avoid_: Schema prompt, domain layer
 A database schema the agent may read from. Anything outside the Allowed schemas does not exist as far as the agent is concerned.
 
 **Result**:
-The stored rows, columns and SQL of one query the agent ran in a Conversation, referenced by a Result ID such as `r3`. Results are the only source of numbers on screen.
+The stored rows, columns and SQL of one query run in a Conversation, written by the agent (directly, or as a Drill query), referenced by a Result ID such as `r3`. Results are the only source of numbers on screen.
 _Avoid_: Query result, dataset, data frame
 
 ### Conversation
@@ -36,12 +36,42 @@ The sequence of Turns sharing one context, together with its Results. It lives o
 _Avoid_: Session, chat, thread
 
 **Turn**:
-One user question and the agent's answer to it: prose plus at most one Surface.
+One typed question and everything explored from it: a stack of Levels, of which one is shown at a time. The first Level is the agent's answer to the question.
 _Avoid_: Message, exchange
 
+**Level**:
+What one question or Action produced inside a Turn: prose plus at most one Surface.
+_Avoid_: Page, step, view
+
 **Surface**:
-The generated UI attached to one Turn.
+The generated UI of one Level.
 _Avoid_: Panel, widget, card
+
+### Interaction
+
+**Action**:
+Something the user does on a Surface (clicking a mark, a row or a button) that produces a new Level in the same Turn.
+_Avoid_: Event, interaction, user action
+
+**Drill query**:
+A query the agent writes ahead of time for a Visual, giving the next level of detail below any one of its rows, with that row's values filled in when it is used.
+_Avoid_: Drill-through, sub-query, template query
+
+**Drill-down**:
+An Action that opens the next level of detail below one row of a Visual by running its Drill query. The agent is not consulted.
+_Avoid_: Drill-through, zoom, filter
+
+**Ask**:
+An Action that consults the agent, always confirmed by the user first: about a row without a Drill query, about a Drill-down, or through a Follow-up.
+_Avoid_: Question (a question is typed), request, query
+
+**Follow-up**:
+A button the agent offers on a Surface for a next step it can't already show; pressing it is an Ask.
+_Avoid_: Suggestion, chip, next step
+
+**Breadcrumb**:
+The list of a Turn's Levels shown above its Surface, which lets the user go back to an earlier Level.
+_Avoid_: History, trail, path
 
 ### Generated UI
 
@@ -62,9 +92,9 @@ A row's state, written as a value from a small fixed vocabulary (such as positiv
 _Avoid_: Status (an ordinary data column), style, variant (a catalog property)
 
 **Repair**:
-A further attempt at a Turn's Surface after it failed the checks, using the same Results.
+A further attempt at a Level's Surface after it failed the checks, using the same Results.
 _Avoid_: Retry (also used for model API retries), fix-up
 
 **Cite**:
-The Macro that places values from a Result inside a sentence, either in the Turn's prose or on its Surface, so numbers in text are never retyped.
+The Macro that places values from a Result inside a sentence, either in a Level's prose or on its Surface, so numbers in text are never retyped.
 _Avoid_: Fact (reads as a data concept, as in "fact table"), quote

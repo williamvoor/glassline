@@ -289,7 +289,7 @@ responses (tool calls or text, with a usage block) and records every call's kwar
 | P3 | The prompt doesn't depend on the turn's surface ID, the conversation or the time | `test_prompt.py::test_prompt_has_no_per_request_values` |
 | P4 | Snapshot sha256 per format against the seed DB; a change fails until `UPDATE_SNAPSHOTS=1` rewrites it | `test_prompt.py::test_prompt_snapshot` (db) |
 | P5 | `dataset_context` works without a database (made-up schema string), so other callers can use it | `test_prompt.py::test_dataset_context_is_pure` |
-| P6 | `instructions.md` has no dataset words (`austender`, `mart`, `supplier`, `agency`, `contract`) and stays under 2,000 characters | `test_prompt.py::test_instructions_are_generic` |
+| P6 | `instructions.md` has no dataset words (`austender`, `mart`, `supplier`, `agency`, `contract`) and stays under 2,600 characters (raised from 2,000 by SPEC §15) | `test_prompt.py::test_instructions_are_generic` |
 | L1 | Typo path: `run_sql` with `valu` → SQL error result → corrected `run_sql` → Express reply. The `UiResult` is built from seed rows, and the statuses are `Running SQL: …`, `SQL failed: …`, `Running SQL: …` | `test_llm.py::test_sql_error_is_corrected` (db) |
 | L2 | Two `run_sql` calls in one reply run concurrently (both started before either finished), and their results are appended in the model's order | `test_llm.py::test_parallel_tool_calls` (db) |
 | L3 | Iteration cap: a model that only ever calls tools → after `MAX_TOOL_ITERATIONS` calls, the step-limit prose and no exception | `test_llm.py::test_iteration_cap` |

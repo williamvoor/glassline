@@ -677,3 +677,381 @@ and a chat view that shows progress, failures and where to start.
 | C4 | The client reads description and examples from the card | `a2a.test.ts` |
 | C5 | Examples, Enter/Shift+Enter, New conversation, Retry, unreachable-agent banner | `app.test.ts` |
 | C6 | Existing suites and build pass | `uv run pytest`, `npm run build`, `npm test` |
+
+## 15. Amendment: Actions and drill-down (2026-11-03)
+
+Status: **approved** (2026-11-03), after a design review (refuter, 2026-11-03). Amends §1
+(UI actions were out of scope), §2 (request flow), §4 (catalog), §5 (macros), §6 (surface IDs)
+and §9 (bound parameters). Idea taken from the "Follow the Contract" prototype
+(`../docs/Follow the Contract · SaC prototype.html`): the user explores by clicking the UI, not
+only by typing. Data still reaches the screen only through Macros over stored Results, and every
+Visual still shows its SQL (ADR 0001 holds). Terms (in `../CONTEXT.md`): **Level**, **Action**,
+**Drill query**, **Drill-down**, **Ask**, **Follow-up**, **Breadcrumb**; **Turn** is a typed
+question plus the stack of Levels explored from it. Decision: ADR 0024.
+
+### The two speeds
+
+| Kind | What happens | Model call | Typical time | Confirmation |
+|---|---|---|---|---|
+| **Drill-down** | Run the Visual's Drill query for the clicked row, show a Visual | no | prefetched: instant; else one query (target < 1 s) | none |
+| **Ask** | A model run: new SQL and a new Surface | yes | a full model run (~8 s) | always |
+
+A typed question is a model run too, and needs no confirmation (typing it is the request).
+
+### Turns, Levels and model runs
+
+- A typed question starts Turn `t+1` with Level 1. A Drill-down or an Ask adds Level `l+1` to
+  the Turn it came from. Numbers are never reused, even after going back.
+- Surface IDs become `turn-<t>-<l>-<tag>`. The Conversation keeps a map from every issued surface
+  ID to its Turn, Level and label. Level 1's label is the constant "Overview"; later labels come
+  from the server (below), never from the client.
+- In code, what §2 and `llm.py` call a "Turn" (one tool loop: `conv.turns`, `_Turn`,
+  `turn_starts`, `compact_history`) is renamed **model run**. A typed question and an Ask each
+  start a model run, and each model run is a compaction boundary (`run_starts`). A Drill-down
+  starts none.
+- **Locking.** Every message, typed or Action, runs under the Conversation's lock. The
+  Conversation has a `busy` flag, set while the lock is held or awaited by a model run. A
+  Drill-down that finds it set is rejected at once ("busy"), never queued behind a model run
+  (checking `lock.locked()` alone misses a woken waiter); an Ask waits like a typed question. An
+  Action is validated before it cancels prefetch or waits for the lock, so an invalid one changes
+  nothing. The client also disables clicks while anything runs.
+
+### Clickable Visuals
+
+- `BarChart`, `LineChart` and `DataTable` are clickable unless the model passes `clickable=False`.
+  `Metric` and `Cite` never are. Clickable by default is deliberate: any row can be asked about
+  (an Ask, confirmed), and a Drill query makes it instant.
+- **Action sources.** When a clickable Visual is built, the server registers an action source
+  `v<n>` in the Conversation, **after the whole reply has passed both checks** (failed attempts
+  and Repairs register nothing; their reserved IDs are skipped, never reused). A source holds a
+  **reference** to the source Result's stored object (no copy), its title, the Drill query if
+  any, and per clickable row its index and label. The ResultStore evicting the Result (after 50)
+  doesn't affect the source, which keeps the object alive. At most `MAX_ACTION_SOURCES` (default
+  50) per Conversation, oldest dropped, so memory stays within about twice the store's bound; an
+  Action on a dropped source fails with "This view is too old to explore; ask the question
+  again."
+- **Which marks are clickable, and their labels.** Each clickable chart datum carries a hidden
+  `_row` field (its index in the source Result's rows). Not clickable: the "Other" category, a
+  mark that `_chart_values` folded from more than one row (same `x` and `color`), and rows past
+  `TABLE_ROW_CAP` (charts too). One row is one mark: a bar or stack segment, or a line point. A
+  Visual with no clickable rows is not clickable, and its drill arguments are ignored with a log
+  line, not an error. Label:
+  the `x` value, or `<x> · <color>` with a color series, formatted as on screen. Table rows: the
+  text values of the shown columns joined with " · ", at most 80 characters.
+- **Displayed order** is computed by the macro, not left to Vega: bars by `y` descending, ties
+  by label ascending (stacked: by the bar total), passed to Vega as an explicit sort domain so the
+  screen order and the server's order agree; line points and table rows in Result order. This
+  replaces the current `sort: "-y"`, so the existing sort assertions in `test_macros.py` are
+  rewritten on purpose.
+- The component carries only `{source, rows: [int], drillable: bool}` (`VegaChart.action?`,
+  `DataGrid.action?`); `rows` are the clickable `_row` indices.
+
+### Drill query
+
+The model may add one to a clickable Visual:
+
+| Argument | Meaning |
+|---|---|
+| `drill_sql` | One `SELECT`/`WITH` statement for the next level of detail below a row, with `:column` placeholders naming columns of the Visual's Result (`WHERE agency_name IS NOT DISTINCT FROM :agency_name`) |
+| `drill_as` | `"table"` (default), `"bar"` or `"line"`: how the Drill-down is shown |
+| `drill_x`, `drill_y` | Required for `bar`/`line`: output columns of the Drill query |
+| `drill_title` | Title of the Drill-down Visual (Cite placeholders filled as for any title); default the Visual's title. The row label is appended: "<title> · <label>" |
+
+At most `MAX_DRILLS_PER_SURFACE` (default 2) per Surface.
+
+**Placeholders.** Syntax `:name`, with `name` matching `[a-z_][a-z0-9_]*` and naming a column of
+the Visual's Result. They are found with the Postgres scanner (`pglast.parser.scan`): a `:` token
+followed directly by an identifier token, outside string literals, comments and quoted
+identifiers. `::` is a cast token, never a placeholder. Inside `[…]` (array slices) a `:` is not a
+placeholder. The text is rewritten to native `$n` parameters, one per distinct name. That `$n`
+form is what the guard checks and what runs, through psycopg's `AsyncRawCursor`, which uses
+`$n` natively and leaves `%` untouched (verified: `ILIKE '%def%'` with bound `$1` runs).
+Values are always bound, never put into the SQL text. Bindability is decided by the **stored
+value's type** (§3 converts values when storing): `str`, `int`, `float`, `bool` or `None` bind;
+a column holding lists or dicts (arrays, JSON) can't be a placeholder (macro error). Dates and
+UUIDs are stored as ISO strings and bind fine against date and timestamp columns (verified).
+Caveat: `numeric` is stored as `float`, so a numeric key above 2^53 loses precision; use a text
+or integer key column for such IDs. Before wrapping (check step 2, a click, prefetch), a trailing
+`;` is removed and the statement is put on its own lines, as `SqlRunner.run`'s zero-row fallback
+does, so a trailing `--` comment stays inside.
+
+**Checks, in two steps. Any failure goes back to the model as a Repair.**
+
+1. *In the macro* (synchronous, no database): at least one placeholder; every placeholder a
+   column of the Result and bindable; the `$n` form passes the SQL guard (§9; pglast parses `$n`);
+   comparisons that silently drop NULLs (`=`, `<>`, `IN`, `= ANY` with a `$n` operand, found by
+   walking the parsed tree) are rejected when that column is NULL in any clickable row ("use IS
+   NOT DISTINCT FROM"); `drill_as`, `drill_x`, `drill_y` well-formed; no more than
+   `MAX_DRILLS_PER_SURFACE`. Macro errors from these checks are tagged as drill errors.
+
+   **What `build` carries.** `UiPipeline.build(reply, store, surface_id, ids)` gets an ID
+   allocator from the Conversation (it reserves `v<n>` and `f<n>` while macros run; nothing is
+   registered yet). `UiResult` gains `sources` (per clickable Visual: reserved ID, Visual index =
+   macro call order on the Surface, source Result reference, title, clickable rows and labels),
+   `drills` (per Drill query: source ID, Visual index, `$n` SQL, ordered placeholder names,
+   `drill_as`/`drill_x`/`drill_y`/`drill_title`) and `follow_ups` (reserved ID, request text).
+   `build(..., ignore_drills={visual indices})` rebuilds with those Visuals' drill arguments
+   ignored.
+2. *In the model run, after `UiPipeline.build` succeeds* (async): each Drill query runs as
+   `SELECT * FROM (<$n form>) AS _explorer_drill LIMIT 0` with the first clickable row's values
+   bound, in the usual read-only transaction with a `DRILL_CHECK_TIMEOUT_MS` (default 2000)
+   timeout. This plans the query without producing rows, and gives the output columns and types:
+   unknown columns, type errors and bad casts fail here; `drill_x`/`drill_y` must be output
+   columns, `drill_y` numeric, and for `line` a `drill_x` that is text, date or numeric.
+   Only then are the action sources registered.
+
+**When the Repairs run out** and **every** remaining error is a drill error (step 1's tagged
+errors, or a step 2 failure), the failing Drill queries are dropped instead of the answer: the
+reply is built again with `ignore_drills` set to their Visual indices (their rows become Asks),
+and the cause is logged. A broken optional Drill query never costs the answer. If any other
+error remains, the run ends as today (`NO_VIEW_PROSE`). The Repair message
+for drill errors says the model may correct or remove `drill_sql`, and that `run_sql` is still
+unavailable (ADR 0017 holds: a Repair runs no queries).
+
+### Drill-down (no model)
+
+- A click on a drillable row sends action `drill` with context `{source, row}`. The server looks
+  up the source and the row's values, binds them, and runs the Drill query through `SqlRunner`
+  (read-only transaction, `SQL_TIMEOUT_MS`, `SQL_ROW_CAP`, guard on) with `AsyncRawCursor`.
+- The result is stored as a new Result. Its `sql` is a **display copy**: the placeholders, found
+  by the same scan (never a text replace, since `$1` can appear inside strings and comments), are
+  replaced by `psycopg.sql.Literal(value).as_string()` (works without a connection; verified:
+  `'O''Brien'`, ` E'a\\b'`, ` -2.5`, `true`, `NULL`, `'NaN'::float8`). It reads and reruns as one
+  plain query and is never executed by the server. Its `purpose` is the Drill-down's title.
+- The reply is a new Level with no prose and one Visual, built by the macro `drill_as` names
+  (`DataTable`, or `BarChart`/`LineChart` with `drill_x`/`drill_y`), ending with `SqlDetails`
+  and an **Ask** button. The Visual is clickable but has no Drill query, so its rows are Asks.
+- The model learns what was shown on its next run, through a **synthetic tool result** (below).
+
+### Synthetic tool results
+
+Database text reaches the model only inside tool results (§9), also for Actions. Anything the
+server tells the model about a clicked row or a Drill-down is therefore a pair: an assistant
+message with one `run_sql` tool call it didn't write, then the tool result. No query runs for it.
+
+- **Sequence of a model run** (typed question or Ask): the user text (server-written for an Ask;
+  `Viewing` lines first), then the pending pairs, oldest first, then the first model call. All of
+  it comes after the run's `run_starts` boundary, so `compact_history` keeps the pairs in full
+  for that run and summarises them like any tool result in later runs.
+- **Pair for a Drill-down** (queued when it's shown): call arguments `{"sql": <display SQL>,
+  "purpose": "Drill-down shown in Turn <t>, Level <l>"}`; result in the `run_sql` shape with its
+  Result ID, columns, `rows_preview` (the usual `ROWS_TO_MODEL` rows, text cut at 500 characters),
+  plus `"clicked": <label>`.
+- **Pair for an Ask on a row**: arguments `{"sql": <source SQL>, "purpose": "Row clicked in Turn
+  <t>"}`; result with the source Result ID, columns, `row_index` and `rows_preview` = that one row.
+  If the source Result was evicted, its object is put back in the store under a fresh Result ID,
+  which the pair uses. The instructions say `r<id>[<row_index>]` is the clicked row for `Cite`.
+- **IDs and cap.** Call IDs are `synthetic-<t>-<l>` (unique in the Conversation; pairing is by
+  ID). At most `MAX_PENDING_PAIRS` (default 5) wait for the next run; older ones are dropped.
+- **Verified live** (2026-11-03, `meta/muse-spark-1.3`, real tool schemas): Meta accepts a
+  synthetic pair after the model's last answer followed by a user message; a user message
+  followed by a pair, ending on the tool result (the model answered from the rows); and a pair
+  with `content: None`. A16 repeats this in the manual run.
+
+### Prefetch
+
+- After a Level with Drill queries is sent, the server runs each Drill query for its first
+  `DRILL_PREFETCH_ROWS` (default 3) clickable rows **in displayed order**, in the background.
+- **Limits.** One prefetch query at a time **agent-wide** (a semaphore), so the pool (4
+  connections) stays free for users; each with `DRILL_PREFETCH_TIMEOUT_MS` (default 3000); at
+  most `MAX_PREFETCHED` (default 30) held results agent-wide, oldest dropped. Held results are
+  kept apart from the ResultStore and become a Result only when clicked.
+- **Cancellation.** A typed question or an Ask cancels the Conversation's prefetch **before**
+  waiting for the lock: the task is cancelled, psycopg cancels the statement server-side, and the
+  connection goes back to the pool to be reset. Prefetch never starts while a model run of the
+  Conversation runs. A newer Level **with Drill queries** replaces an older Level's prefetch; a
+  Drill-down Level (it has none) doesn't, so going back still finds the rows prefetched.
+- A click on a held row runs no query. A click on a row whose prefetch is **running** waits for
+  it; if it is still **queued** on the semaphore, the click cancels it and runs the query itself;
+  if the prefetch is cancelled while the click waits, the click runs the query itself. A
+  prefetch failure is logged with the source ID and row index only; the click then runs the
+  query again and, if that fails too, shows the error with an Ask.
+
+### Ask (model, confirmed)
+
+| Trigger | Context | Message to the model |
+|---|---|---|
+| Click on a row without a Drill query | `{source, row}` | User text: `Ask: the user clicked a row of a Visual in Turn <t> (Result <id>, row <row_index>). Show the next level of detail for that row, keeping the same filters and period.` The row itself arrives in a synthetic tool result |
+| Ask button on a Drill-down | `{source}` (the Drill-down's) | `Ask: explain the Drill-down in Turn <t>, Level <l> (Result <id>).` Its synthetic tool result is already queued or in the history |
+| Follow-up button | `{follow_up}` | The Follow-up's `request`, looked up on the server |
+
+- Before sending, the client shows a confirmation next to what was clicked: *"Ask the agent:
+  <label>. This takes a few seconds."* with **Ask** and **Cancel** (Escape cancels). Only `ask`
+  may call the model; the executor never calls it for `drill`.
+- `FollowUp(label, request)` is a new macro. It expands to a `Button` (with a `Text` child)
+  whose action is `ask` with `{follow_up: "f<n>"}`; the server registers `f<n>` with the request
+  text after the reply passes its checks. `request` is non-blank, at most 500 characters. At
+  most three per Surface (a fixed rule in the macro, macro error beyond). `Button` stays out of
+  the passthrough list, so no other button reaches the agent.
+
+### Wire format and what's on screen
+
+- The client sends an Action as an A2A message whose only part is a `DataPart` (`mimeType`
+  `application/json+a2ui`, data `{"version": "v0.9", "action": …}` with the required `name`,
+  `surfaceId`, `sourceComponentId`, `timestamp`, `context`), plus the usual metadata and
+  `contextId`. The A2A SDK accepts it; `get_user_input()` is then empty, so the executor reads
+  the part itself.
+- Rejected with a short error, no model call and no query: a missing required field; an unknown
+  name; a `surfaceId` the Conversation didn't issue; an unknown or dropped source or Follow-up;
+  a row that isn't one of the source's clickable rows; `drill` on a source without a Drill query.
+- Every message carries `explorerViewing` in its metadata: the surface IDs of Levels shown that
+  aren't their Turn's latest. The server drops unknown IDs and puts `Viewing in Turn <t>: Level
+  <l>` lines before the next model run's user text. No labels or titles in user text: titles of
+  Drill-downs contain row labels (database text), so the model gets them only in tool results.
+- A Drill-down reply has an empty prose part; the client shows no prose block for it.
+- Logs name source IDs, row indices and drill numbers, never bound values or labels.
+
+### Client
+
+- The answer to an Action becomes a new Level, shown in place of the Turn's current one. Above
+  the Surface a Breadcrumb lists the Levels (`Overview › Defence › Tarnwell Digital`). Clicking
+  an earlier Level shows it from memory with no agent call; a new Action from there drops the
+  Levels after it. A typed question starts a new Turn. Older Turns stay live.
+- While a Level is loading, the current Surface stays, dimmed and not clickable, under the
+  status line and timer. A failed Action shows the error and Retry in place; earlier Levels stay
+  usable.
+- Drillable marks and rows show a pointer cursor; Ask-only ones show a different cue (to be
+  settled with the look and feel amendment). Rows in `DataGrid` are focusable and work with
+  Enter.
+- `a2a.ts`: `ask` is renamed `askQuestion`; `act(action, contextId, viewing)` sits beside it.
+
+### Prompt
+
+Layer 2 (instructions) gains a short section: when to write a Drill query (a Visual whose rows
+have a meaningful next level), keep the answer's filters and period in it, aggregate and `LIMIT`
+it, compare with `IS NOT DISTINCT FROM`, write it in double quotes with `"` escaped as `\"` and
+`\` as `\\`; when
+to offer Follow-ups (next steps the Surface can't already show); what Ask messages, Drill-down
+tool results and `Viewing` lines mean. Layer 1 gains `FollowUp`, `clickable`, `drill_sql`,
+`drill_as`, `drill_x`, `drill_y`, `drill_title` through the inference catalog (generated from the
+macro signatures and docstrings). This changes the cached prefix once; the snapshot hashes are
+updated on purpose.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DRILL_PREFETCH_ROWS` | `3` | Rows per Drill query prefetched after a Level is sent; `0` turns prefetch off |
+| `DRILL_PREFETCH_TIMEOUT_MS` | `3000` | `statement_timeout` for a prefetch query |
+| `DRILL_CHECK_TIMEOUT_MS` | `2000` | `statement_timeout` for the `LIMIT 0` check |
+| `MAX_DRILLS_PER_SURFACE` | `2` | Visuals per Surface with a Drill query |
+| `MAX_ACTION_SOURCES` | `50` | Action sources kept per Conversation |
+| `MAX_PREFETCHED` | `30` | Prefetched results held agent-wide |
+| `MAX_PENDING_PAIRS` | `5` | Synthetic tool results waiting for the next model run |
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/src/explorer_agent/macros.py` | `clickable`, drill arguments on `BarChart`, `LineChart`, `DataTable` (check step 1, `_row`, labels, displayed order); `FollowUp`; the Drill-down Visual |
+| `agent/src/explorer_agent/drill.py` (new) | placeholder scan and `$n` rewrite; NULL-comparison walk; check step 2; running a Drill-down; display SQL; prefetch with its semaphore, cap and cancellation |
+| `agent/src/explorer_agent/actions.py` (new) | action sources and Follow-ups per Conversation; parsing and validating actions; Ask texts, synthetic tool results, `Viewing` lines |
+| `agent/src/explorer_agent/sql.py` | `run_bound(sql, params)` with `AsyncRawCursor`, same guard, transaction, timeout and cap; the zero-row fallback binds the parameters too |
+| `agent/src/explorer_agent/ui.py` | `build(reply, store, surface_id, ids, ignore_drills=())`; `UiResult.sources`, `.drills`, `.follow_ups` (see "What `build` carries") |
+| `agent/src/explorer_agent/llm.py` | "Turn" → model run; check step 2 after `build`; drill-aware Repair text; dropping drills when Repairs run out; synthetic tool results before the first call |
+| `agent/src/explorer_agent/executor.py` | Turn/Level counters and the surface map; routing `drill` and `ask`; try-lock for Drill-downs; prefetch start and cancel |
+| `agent/src/explorer_agent/config.py`, `.env.example` | the settings above |
+| `agent/src/explorer_agent/prompts/instructions.md` | the Prompt section |
+| `agent/src/explorer_agent/testing/stub_server.py` | canned answers with a Drill query and a Follow-up |
+| `catalog/explorer_custom_components.json`, `catalog.py`, client zod schemas | `VegaChart.action?`, `DataGrid.action?` |
+| `client/src/vendor/vegachart/vegaChart.ts` | with `action`, clicks on marks with a `_row` dispatch `drill` or `ask`; change noted in `NOTICE` |
+| `client/src/components/data-grid.ts` | clickable, focusable rows |
+| `client/src/a2a.ts`, `client/src/app.ts`, `client/index.html` | as in Client above |
+| `../CONTEXT.md` | done during the design review |
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| A1 | Clickable Visuals carry `{source, rows, drillable}`; `_row` on each datum except "Other" and rows past the cap; labels for plain, stacked and line marks; displayed order with ties equals the Vega sort domain; `clickable=False` removes it | `test_macros.py` |
+| A2 | Placeholder scan: `::numeric`, `'HH24:MI'`, `"a:b"`, a comment, `x[1:n]` and an unknown or upper-case name are not placeholders (or are errors where stated); a repeated name binds one `$n`; `ILIKE '%x%'` survives | `test_drill.py` (pure) |
+| A3 | Check step 1 errors: no placeholder, unbindable column, guard failure (two statements, write), `=`/`<>`/`IN`/`= ANY` on a column NULL in a clickable row, bad `drill_as`/`drill_x`/`drill_y`, a third Drill query, a fourth Follow-up | `test_drill.py`, `test_macros.py` |
+| A4 | Check step 2: unknown column (42703) and type errors fail as Repairs; `drill_x`/`drill_y` checked against the output, `drill_y` numeric; nothing is registered for a failed attempt | `test_drill.py` (db), `test_llm.py` |
+| A5 | Repairs exhausted with only drill errors → the answer is shown with those Visuals (by call order) unclickable for Drill-downs, their rows Asks, and the cause logged; with any other error left → `NO_VIEW_PROSE` | `test_llm.py` |
+| A6 | Binding: a value with quotes, `;` or `%`, a negative number and a float are matched literally and run nothing else; NULL matches with `IS NOT DISTINCT FROM`; an ISO date string binds to a date column; a trailing `;` and `--` comment are handled; the display SQL (scan-based, `$1` inside a string untouched) quotes literals and reruns to the same rows | `test_drill.py` (db) |
+| A7 | A Drill-down runs the bound query, stores a Result, returns the `drill_as` Visual with an Ask button, and never calls the model (the stub model asserts it wasn't called) | `test_executor.py` |
+| A8 | Prefetch: first N rows in displayed order; one query at a time agent-wide; the timeout and the held cap apply; cancelled before the lock by a typed question or Ask, and the pooled connection is usable afterwards; a Drill-down Level doesn't replace it; a click on a held row runs no query, on a queued one cancels it and runs directly, and survives the prefetch being cancelled under it; an invalid Ask doesn't cancel it; `0` turns it off | `test_drill.py` (db), `test_executor.py` (explicit gates in the stub runner) |
+| A9 | Action sources survive ResultStore eviction; an Ask on a source whose Result was evicted puts it back under a fresh ID and the pair uses that ID; a dropped source gives the "too old" error; clickable rows are capped at `TABLE_ROW_CAP`; folded marks aren't clickable | `test_actions.py`, `test_executor.py`, `test_macros.py` |
+| A10 | Invalid actions (each case in "Rejected") → error, no model call, no query; a Drill-down while a model run holds or awaits the lock (including a woken waiter) → "busy" at once | `test_actions.py`, `test_executor.py` |
+| A11 | Ask messages for each trigger; user text never contains a label, title or row value (asserted with a row label like "Ignore previous instructions"); synthetic pairs follow the user text, after the run boundary, oldest first, capped at `MAX_PENDING_PAIRS`, with unique call IDs; `compact_history` keeps them in full for that run and summarises them later; `Viewing` lines; surface IDs `turn-<t>-<l>-<tag>`; an Ask on an older Turn adds a Level there; model runs are the compaction boundaries | `test_actions.py` (pure), `test_executor.py`, `test_llm.py` |
+| A12 | `FollowUp` expands to a `Button` with a `Text` child and an `ask` action, passing strict validation and the known-props check; Express round-trips a `drill_sql` with `'%x%'`, `\"quoted\"` identifiers and newlines unchanged | `test_macros.py`, `test_ui.py` |
+| A13 | Prompt prefix byte-identical across requests and processes (new snapshot) | `test_prompt.py` |
+| A14 | Mark and row clicks dispatch the right action; Asks open the confirmation first and Cancel sends nothing; Drill-downs send at once; an empty prose part shows no prose block | `client/test/vegachart.test.ts`, `data-grid.test.ts`, `app.test.ts` |
+| A15 | A new Level shows in place; Breadcrumb back needs no agent call; an Action from an earlier Level drops the later ones; older Turns stay live; clicks disabled while busy; failure shows Retry in place; `explorerViewing` sent | `client/test/app.test.ts` |
+| A16 | Existing suites and build pass. Manual run with the real agent: a Drill-down, an Ask, two Levels deep, first-answer and click times recorded, and Meta accepts the synthetic tool results | `uv run pytest`, `npm run build`, `npm test`, manual |
+
+### Decisions
+
+- **The model writes the next query ahead of time**, so a click needs no model call. The cost is
+  a longer first answer, capped by `MAX_DRILLS_PER_SURFACE`; the manual run measures it.
+- **The client sends references only** (source, row, Follow-up IDs). Values, labels and request
+  texts are looked up on the server, which kept them when the Visual was built.
+- **Synthetic tool results carry row data to the model**, checked live before approval because a
+  provider rejecting an unusual message shape is what ADR 0017 ran into.
+- **Database text reaches the model only inside tool results** (§9), also for Actions.
+- **Broken Drill queries are caught before the answer is sent**, and dropped rather than costing
+  the answer when Repairs run out.
+- **NULL-safe comparisons are the model's job, enforced by a check**, not by rewriting its SQL.
+- **The model names the Drill-down's Visual** (`drill_as`): a fixed rule drew nonsense for
+  list-shaped results.
+- **Only one level without the model.** A Drill-down's Visual has no Drill query.
+- **Every model round trip from the UI is confirmed.** Typed questions are not.
+- **Sliders, pickers and other inputs: later.** A Drill query's bound placeholders are the same
+  mechanism they would use, binding an input's value instead of a row's.
+- **Vega-Lite selections and parameters that re-slice rows already on screen:** later.
+- **New hand-written catalog components** (e.g. treemap, timeline, waterfall) are how we go beyond
+  the basic catalog, each as a Macro over a Result. Generating UI code at runtime is out: it
+  breaks ADR 0001 and 0002, needs a sandbox, and is slow.
+- **Answer cache for Asks: later, low priority.** Prefetch and the Breadcrumb cover most repeat
+  views.
+
+### Build notes (2026-11-03)
+
+Decisions made while building, where the text above was silent or had to change:
+
+- **Wire format.** Every answer's final message carries metadata `explorerLevel: {turn, level,
+  label, surfaceId}`; the client takes Breadcrumb labels from it. A failed or rejected Action
+  answers with text only and `explorerActionFailed: true`, and adds no Level (its number isn't
+  used). A failed Drill-down offers Retry and "Ask the agent instead" (an Ask on the same row,
+  confirmed).
+- **More rejections:** a context with keys other than `source`, `row` or `follow_up`; a source
+  or Follow-up that belongs to another Level than `surfaceId`; `ask` without a row except on a
+  Drill-down's own Visual (its Ask button).
+- **Placeholders.** `:` before an upper-case or quoted identifier is an error, as is a `$n` the
+  model wrote. `[…]` right after `ARRAY` is a constructor, where placeholders count (`= ANY(ARRAY[:a])`
+  is also checked for NULLs); other brackets are subscripts. A `;` before a trailing comment is
+  removed too. The display SQL has psycopg's leading space before negative numbers and `E''`
+  strings (`b =  -2.5`), which keeps `=-` from becoming a comment.
+- **Visual index** counts `BarChart`, `LineChart` and `DataTable` calls only, in call order.
+- **Displayed order** of bars with a date `x`: by date. Table row labels join the non-numeric
+  shown columns (the first cell if all are numeric).
+- **A Drill-down with no rows** still registers a source for its Ask button.
+- **`build(..., ids)`**: `ids` is optional (a fresh allocator), for callers outside a Conversation.
+- **Instructions length.** The Clicks section doesn't fit the 2,000-character cap of
+  `specs/llm-loop` P6; the cap is now 2,600. Argument details live in the macro docstrings.
+- **Client.** The Ask confirmation sits above the Level's Surface, not next to the mark. Its label
+  comes from the clicked datum or row (sent by the component as A2UI's client-only
+  `userMessage`, stripped before sending) or from a Button's Text. Ask-only marks and rows get a
+  `help` cursor until the look and feel amendment.
+- **Prefetch.** Cancelling keeps already-held results; an evicted Conversation's prefetch is
+  dropped.
+- **Step 2 errors carry no row values** (refuter, 2026-11-03). Postgres quotes the bound value in
+  data exceptions, and Repair text is user text. A class 22 error (bad input, cast or range) goes
+  back as its SQLSTATE and a fixed message; other messages and hints have the bound values masked
+  (`<value>`). The same text is what gets logged.
+- **The row label in a Drill-down's title is markdown-escaped**, like Cite values; the Breadcrumb
+  label and the tool result keep it raw (they're shown or sent as text).
+- **Retry counts as the confirmation**: the user confirmed that Ask, and Retry is an explicit
+  click on it.
+- **Known limit:** if more than `MAX_PENDING_PAIRS` Drill-downs happen between two model runs,
+  the oldest pairs are dropped, and an Ask about such a Drill-down reaches the model without its
+  rows.
+- **A16 manual run (2026-11-03), by the user, real agent and database:** Drill-downs, Asks and
+  the Breadcrumb worked, and Meta accepted the synthetic tool results. Each Ask took about 8 s, as
+  expected for a full model run. Not measured: Drill-down click times and the first-answer time
+  against the pre-§15 baseline.
+- **A16 measured (2026-11-03, Playwright, real agent):** first answers 8.6 s, 7.1 s and 6.2 s for
+  the three Dataset examples; a confirmed Ask 6.1 s. **No answer had a Drill query**: all six
+  Visuals were Ask-only, so no click could be a Drill-down. The "Clicks" instruction makes
+  `drill_sql` optional and Muse Spark never wrote one. Drill-down speed is therefore unmeasured
+  with the real model. Open, not yet specified: make Drill queries happen.
