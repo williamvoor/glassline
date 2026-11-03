@@ -1254,6 +1254,46 @@ Source: `docs/item7-sample-review-20261103.md`, with counts from a 3640-row dry 
 | B3 | At most one standalone media per surface outside media skeletons | `test_synth_plausibility.py::test_standalone_media_capped` |
 | C3 | Every key still reached | `test_synth_coverage.py::test_every_key_reached`, plus the full-size report on seeds 0 and 1 |
 
+## Sample review fixes B5 and B2 (spec, 2026-11-03)
+
+The user approved both before regeneration.
+
+### Facts
+
+- **Gallery practice (train and dev References; test not read):**
+  - Dates appear only through `formatDate`: 456 times, 0 bound raw, 0 ISO literals.
+  - Bound money appears only through `formatCurrency`: 544 times, 0 raw. The one exception is 13 hand-typed "$12.99"-style strings in `00_row-layout`.
+- **Synthetic Text displays today** (2994 grown surfaces):
+  - Dates: 656 of 886 raw (233 bound by path, 224 in a plain `Label: ${/date}` template, 199 literal).
+  - Money: 137 of 212 raw or number-formatted (41 path, 36 plain template, 31 literal, 29 `formatNumber`).
+- **Icon rows** pick any topic icon (`_icons()`: action and entity icons), so 402 of 552 icon rows in a 3640-row run show an action icon (delete, share, add) next to an unrelated field.
+
+### Decisions
+
+1. **B5:** a displayed ISO date or money-labelled number (`is_money`) is always shown through its formatter, as the gallery does.
+   - In a value plan, it is either the standalone formatter or the same formatter inside a template (`Label: ${formatDate(...)}`). It is never a literal, a plain path, a section-nested path or a plain template.
+   - List columns: an ISO date always uses `formatDate`, and money always uses `formatCurrency`.
+   - A static list with such a column is bound, because a literal can't be formatted from the data.
+   - A count (`pluralize`) of an entity whose name contains a money word isn't money and isn't affected.
+   - Per-item labels (checklist labels, per-item media descriptions) show a column as it is. So they use the list's first column that isn't a date or money, and a list with no such column gets no checklist or per-item media (refuter finding: a date first column was shown raw).
+2. **B2:** an icon row's icon fits its field, chosen in code from the field's kind, then its label:
+   - by kind: email → mail, date → calendar, time → event, money → payment;
+   - by label words: phone → phone, address, location, city, venue, place or destination → map pin, a person word (full, first or last name, owner, contact, host, guest, member, author, instructor, coach, doctor, agent, payee, holder; not bare "name") → person, rating or stars → star, photo, image or picture → photo.
+   - No word icon for a count, kind or measure of a thing (count, capacity, number of, type, style, layout, level, score): "Guest count" and "Room type" get none. Amended after the refuter found about half the person icons on non-people ("Item name").
+   - Only icons in the catalog enum are used. A field with no fitting icon gets no icon row; the open slot picks another block. Action and entity icons are never used for icon rows.
+3. **Coverage** must still reach every key at full size, on seeds 0 and 1.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| B5a | No displayed date or money is literal, a plain path or a plain template | `test_synth_plausibility.py::test_dates_and_money_are_formatted` |
+| B5b | List columns of dates and money use their formatter, and such static lists are bound | `test_synth_plausibility.py::test_date_and_money_columns_are_formatted` |
+| B2 | An icon row's icon is its field's fitting icon, never an action or entity icon | `test_synth_plausibility.py::test_icon_rows_fit_their_field` |
+| B2a | The field-icon table, with over-matches as negatives | `test_synth_plausibility.py::test_field_icon_table` |
+| B5c | No emitted Text, label or description shows a raw date; per-item labels never use a date column | `test_synth_plausibility.py::test_no_raw_date_or_money_is_shown`, `::test_per_item_labels_are_never_dates` |
+| C3 | Every key still reached | `test_synth_coverage.py::test_every_key_reached`, plus the full-size report on seeds 0 and 1 |
+
 ## Run 2 item 10: source conflicts resolved (2026-11-03)
 
 The conflicts are listed in `docs/tuning-report-20261102.md` section 4 ("Conflicts in the sources"). The Meta Model API terms stay out of scope (user).
