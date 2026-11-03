@@ -97,3 +97,17 @@ _Avoid_: Leak string
 **Coverage key**:
 One catalog feature that synthetic data must exercise a target number of times, such as a component, a prop, a slot pattern, a binding kind, a check kind or an action kind.
 _Avoid_: Feature, pattern (a slot pattern is one kind of Coverage key)
+
+### Review
+
+**Verdict**:
+A reviewer's judgement on one scored prediction, naming who is to blame for its score: ok (the score is fair and the output is fine), model (the output is wrong), reference (the Reference asks for things its Intent never says) or scorer (the output is right but the score says otherwise).
+_Avoid_: Label, grade, rating
+
+**Unreachable component**:
+A component that is defined in an output but never attached to the tree under the surface's root, so nothing shows it.
+_Avoid_: Orphan, dead component
+
+**Verbatim string**:
+A string the Intent quotes, which must appear on screen exactly as quoted. It may be built from bound data, as long as the rendered text matches.
+_Avoid_: Literal string (a Verbatim string need not be a literal)

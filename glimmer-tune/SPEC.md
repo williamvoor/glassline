@@ -759,7 +759,7 @@ Each level has at least 3 openings and 2 joining styles, picked by the row's rng
 
 | In the target | Rule |
 |---|---|
-| input, list, bound-value and media paths | the label rule: `path_for_label(label)`, with ` icon`, ` image`, ` video`, ` audio`, ` count`, ` earliest` and ` latest` suffixes as now; nested values are under `path_for_label(section)`, and the intent says "in the <section> part of the data"; template paths `key_for_label(column)`; static bound items `<list>/<i>/<key>` |
+| input, list, bound-value and media paths | the label rule: `path_for_label(label)`, with ` icon`, ` image`, ` video`, ` audio`, ` count`, ` earliest`, ` latest` and (2026-11-03, item 7 cells) ` description` suffixes; nested values are under `path_for_label(section)`, and the intent says "in the <section> part of the data"; template paths `key_for_label(column)`; static bound items `<list>/<i>/<key>` |
 | event names | `snake_case(button label)` (true for all 320 vocabulary actions) |
 | event context | the form button sends every input, keyed by `key_for_label(label)`, and the intent says "that submits the form". An item button in a template list sends `{key_for_label(first column): {path: key_for_label(first column)}}`, and the intent says "that sends this item's <column>". Every other button is bare. The random display-path context is gone. |
 | ChoicePicker option values | `key_for_label(option label)` |
@@ -1092,6 +1092,153 @@ Status: built from the reviewer brief of 2026-11-02, with decisions delegated to
 ### Rescore
 
 All 17 run 1 prediction files are rescored into `runs/sft1/rescore-20261102b/` (git-ignored). Literal and blind selection match `rescore-20261102/` exactly. They were rescored after commit `34fcfbd`, so the scorer version they record is clean.
+
+## Item 7 amendment: fixes from the s250 review (2026-11-03)
+
+Status: approved 2026-11-03 (grilling round; the user delegated the decisions, then confirmed). It widens item 7. Source: the refuter's 84 verdicts in `runs/sft1/rescore-20261102b/s250.full.review.jsonl` (model 56, ok 17, reference 5, scorer 6).
+
+### Facts
+
+- `required` passes on `false`: only null, undefined, `""` and `[]` count as empty (`a2ui/typescript/core/web_core/src/common/basic_functions.ts:105`). A `required` check on a CheckBox never blocks anything.
+- The generator emits it on two paths: a CheckBox's own checks (`a2ui_eval/synth/fill.py:436`, the `else` branch; 42 train rows) and form-level `and`/`or` checks over the first two inputs (`fill.py:514`; 22 rows). 59 of 3640 synthetic train rows are affected (5 have both); 0 gallery train rows.
+- Component checks are coerced by truthiness (web_core `generic-binder.ts`, `extractValidationResult`). `and`/`or` need at least 2 values (catalog `minItems: 2`, and `executeAnd` throws otherwise). `and([$/x])` compiles but is invalid.
+- formatString function calls take named arguments only (`expression_parser.ts`, `parseFunctionCall`; spec `a2ui_protocol.md:760`): `${formatDate(value:${/t}, format:'h:mm a')}`. `${formatDate($t, 'h:mm a')}` fails at render time.
+- The current train data (3640 synthetic, 1560 gallery rows) has 0 positional formatString arguments and 0 Unreachable components. The model invents both.
+
+### Decisions
+
+1. **Checkbox checks:** neither generator path puts `required` on a boolean input. Export refuses a `required` check, on any component and nested at any depth, whose value is a CheckBox's absolute path. Relative paths inside templates are out of scope: the generator emits only absolute input paths, and no gallery train row has one. Boolean inputs come from the catalog (`CatalogModel.boolean_inputs`: checkable, with a boolean `value`), not from a component name. Coverage targets change: a boolean input's `prop:<Component>.checks` key (`prop:CheckBox.checks`) leaves the universe, because no check is taught for it. Teaching "must be ticked" is deferred, because no clean valid form is known (`and([$/x, $/x])` is the only one).
+2. **No patching:** item 7's full-size generation replaces the current synthetic set.
+3. **`positional_arg` and `dollar_path`:** two new kinds for the outside-the-catalog check, inside `${...}` in a non-raw string. `positional_arg` flags a call argument with no `name:`, and a comma outside any call (arguments left after the call closed, as in `${pluralize(value: ${n}), '%', '%'}`). `dollar_path` flags a `$` path (`$t`, `$/t`): web_core's paths there are `${/t}`, `/t` or `t`. The Express compiler passes string contents through unchecked, so both fail only at render time. Not flagged: empty argument lists, nested calls, quoted commas or parentheses, a trailing comma, literals or paths with no call, and an escaped `\${`. Both kinds are reported on predictions, and export refuses them. Single-quoted Express strings are scanned too. The lexer is a heuristic that names the usual faults. **`interp_syntax`** covers the rest: any string with `${` that the SDK's port of web_core's parser (`a2ui.core.expressions.expression_parser`) rejects, when no other kind already explains it. That includes s250's `${/change}% ${from: 'from last week'}` (stats-card 0007, 0008, 0010), `${a)}` and an unclosed call. Added in the refuter's fix round. Amended in the build (2026-11-03): `dollar_path` and the stray comma were added after a researcher traced the parser (`expression_parser.ts`). On s250, they flag 4 rows (calendar-day 0002, 0009, 0011 and financial-data-grid 0002). They flag 0 of the 5200 train targets.
+4. **Coverage keys `formatString:<function>`:** one per catalog value function except formatString itself (`formatNumber`, `formatCurrency`, `formatDate`, `pluralize` in v0.9). A row counts when a formatString template calls that function. The generator writes only named arguments, and the catalog check refuses positional ones at export. The target is the usual 30. The tests run at target 2; the full-size coverage report checks 30. Amended in the build: one key per function, not one `formatString:call`, because pluralize alone already satisfied a single key, while the model's failures were with formatDate. The generator offers "this formatter inside a template" (`Label: ${fn(value: ${/p}, ...)}`) as a weighted option next to the standalone formatter, and the Intent states the format.
+4a. **Money labels** (a data bug found in the build): a label that matches the money words but also names another unit ("Total length hours", "Current Points Balance") is not money, so it never gets `formatCurrency`. A unit after `per` doesn't count ("Price per day" is money). Noun units count only in the plural, so "Item price" stays money.
+5. **`unreachable`:** a row finding with a rate per source, like `outside_catalog`. It lists the orphan ids that `check_structure` finds, and `(no root)` for a surface with no root, since nothing is attached then. Export refuses a train row with one. Slot F1 is unchanged. Deferred to 2c-2: export checks only the row's own messages and doesn't fold `existing_surface` in first (no row has one yet). The scorer does fold it in.
+6. **Verbatim strings:** an Intent's quoted string must appear on screen exactly as quoted. It may be built from bound data.
+7. **Dev fixes** (dev only; test stays frozen):
+   - The 5 notification-permission rows (`0000`, `0004`, `0005`, `0006`, `0009`) get Intents that state what their References have: Card, centring, icon, body variant.
+   - shipping-status `0002`'s Intent names its header icon.
+   - Known bias: notification-permission test scores are understated for the same reason.
+   - Done 2026-11-03 in `data/intents_draft.jsonl`, then `build-eval --split dev`. Only these 6 Intents changed; the References are untouched. Each Intent now names its icon with the house phrase (tick, shopping cart, map pin, bell, info) and asks for a centred card, body text and buttons side by side. "Yes and No options" became "buttons", because it read as a choice picker. Written by the assistant on the user's delegation, so they await the user's read.
+8. **Verdict changes:** shipping-status `0002` goes from scorer to model, because templates over data are the wanted behaviour. The 5 stats-card scorer verdicts stand: a literal equal to the rendered bound text is a known false negative, and the scorer is not changed before run 2.
+9. **Reference version:** score files carry `references: {commit, dirty}` for `data/dev`, `data/synth/dev` and `data/test`. The synthetic dev set is half of every dev score, and decision 2 replaces it (refuter finding). **No rescore** (amended 2026-11-03): decision 7 changed Intents, not References, and slot F1 compares with the Reference, so rescoring run 1 and s250 would reproduce the same numbers. Their predictions for those 6 rows answered the old Intents. The effect of the fix shows when run 2 is sampled on the new ones.
+10. **Priority** if time runs short before the 2026-11-12 launch: 1, 3–5, then 7–9. Decisions 7–9 don't affect training data.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| R1 | A synthetic row never has `required` on a CheckBox's own checks (regression) | `test_synth_pipeline.py::test_checkbox_never_gets_required` |
+| R2 | A form-level `and`/`or` check never uses `required` on a boolean input (regression) | `test_synth_pipeline.py::test_form_check_skips_boolean_inputs` |
+| R3 | Export refuses `required` on a CheckBox path: its own check, a form-level `and`, a nested condition | `test_export.py::test_rejects_required_on_checkbox` |
+| R3a | Boolean inputs come from the catalog | `test_synth_catalog.py::test_boolean_inputs` |
+| R4 | Positional arguments, stray commas and `$` paths inside `${...}` are flagged | `test_catalog_check.py::test_positional_args_in_format_string` |
+| R4a | Legal forms are not flagged: named arguments, empty argument lists, nested calls, quoted commas, no call | `test_catalog_check.py::test_named_args_in_format_string_are_legal` |
+| R5 | Unreachable components are flagged per row, with a rate per source | `test_checkpoints.py::test_score_reports_unreachable_per_row_and_source` |
+| R6 | Export refuses a target with an Unreachable component | `test_export.py::test_rejects_unreachable_components` |
+| R7 | Every `formatString:<function>` key is reached, and those rows pass the catalog check | `test_synth_coverage.py::test_format_string_call_key` |
+| R7a | Row keys count a call inside a formatString template, and not a standalone call | `test_synth_coverage.py::test_format_string_call_row_keys` |
+| R7b | Labels that name another unit are not money, but "per <unit>" labels are (regression) | `test_synth_plausibility.py::test_money_labels_have_no_other_unit` |
+| R7c | Every `${...}` string in generated references parses with the SDK's port of web_core's parser | `test_synth_coverage.py::test_generated_templates_parse_in_web_core` |
+| R7d | The Intent states a nested formatter's format | `test_synth_coverage.py::test_intent_states_a_nested_format` |
+| R8 | Score files carry the references version | `test_checkpoints.py::test_score_output_carries_references_version` |
+| R8a | The references version tracks every eval source, including synthetic dev | `test_checkpoints.py::test_references_version_tracks_every_eval_source` |
+| R5a | A rootless surface is reported as `(no root)`, by the scorer and by export | `test_checkpoints.py::test_a_rootless_surface_is_unreachable`, `test_export.py::test_rejects_unreachable_components` |
+
+## Run 2 items 8 and 9: build (2026-11-03)
+
+### Item 8, the prompt line
+
+- `a2ui_eval/prompt.py`: `RUN_2_RULE` goes between the upstream snippet (byte-identical) and the reasoning line.
+- `data/system_prompt.txt` was re-frozen with `freeze-prompt --force`, adding 2 lines. Run 1's adapter is now historical (ADR 0015).
+- Every export after this freeze carries the new prompt. The current synthetic set can't be exported anyway until it is regenerated (decision 2 of the item 7 amendment).
+
+### Item 9, trainer settings (`trainer/glimmer_trainer/loop.py`)
+
+- **LoRA targets:** `Config.train_mlp`, `train_attn` and `train_unembed` default to on, on and **off**. They are passed to `create_lora_training_client` and recorded through `manifest.config`.
+- **Selection:** `SELECTION_KEY = "selection_blind"` drives the subset ranking, the finalists and the winner, and the manifest records it as `selection_key`. `subset_scores` and `full_scores` change from one float to `{selection_blind, selection, outside_catalog}`. The outside-catalog value is the share of rows with a finding; it is reported, not gated. Run 1's manifest keeps its old shape.
+- **Sampled tokens:** every prediction row carries `tokens`, the number of completion tokens sampled. An error row has 0, and failed retries aren't counted.
+- **`service.close()`:** called once the run has finished and the session delete has been attempted, and never after a failure. The SDK's `close()` also closes its managed handle, and a failed run keeps its session so checkpoints can be promoted by hand. A failed close is recorded as `close_error`.
+- **Unchanged:** 1 epoch (one pass of `batches`), a checkpoint every 25 steps.
+- **Out of scope:** `glimmer_trainer sample` already closes its sampler. Its service client is short-lived and isn't covered by item 9.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| I8 | The run 2 line follows the upstream snippet, and the frozen prompt matches | `tests/test_prompt.py::test_run_2_rule_follows_the_sdk_snippet`, `::test_frozen_prompt_matches` |
+| I9a | Unembed is off and every `train_*` flag is in the manifest | `trainer/tests/test_loop.py::test_run_2_settings_are_recorded` |
+| I9b | Ranking and winner use the name-blind score; the manifest keeps both scores and the outside-catalog rate | `trainer/tests/test_loop.py::test_selection_is_name_blind_with_the_outside_catalog_rate` |
+| I9c | Prediction rows carry the sampled token count | `trainer/tests/test_loop.py::test_sampled_tokens_are_recorded_per_row` |
+| I9d | The service is closed after the delete (even a failed one), never after a failure, and a failed close is recorded | `trainer/tests/test_loop.py::test_run_end_to_end_with_fakes`, `::test_failure_keeps_session`, `::test_failed_delete_is_recorded`, `::test_failed_close_is_recorded` |
+| I9e | Error rows carry `tokens: 0`; the checkpoint interval defaults to 25 | `trainer/tests/test_loop.py::test_error_rows_carry_zero_tokens`, `::test_run_2_settings_are_recorded` |
+
+## Run 2 item 7: binding cells (spec, 2026-11-03)
+
+Status: written by the assistant on the user's delegation (2026-11-03). Item 7 of the run 2 decisions asks for coverage per (component, property) × (literal | absolute `$/path` | per-item `$field` in a template), with at least 30 train rows in every cell the schema allows.
+
+### Facts
+
+- **Bindable props** (catalog `Slot.bindable`): Text.text, Image.url/description, Icon.name, Video.url, AudioPlayer.url/description, and the inputs' labels and values. DateTimeInput also has min and max.
+- **No variant is bindable in v0.9.** Text.variant and Button.variant are static enums. So "per-item rows bind … a variant" falls outside the schema, and per-item state shows through a bound icon, image or text instead.
+- **Current train data (5200 rows), zero cells:**
+  - Icon.name per item: **0**. This is the pattern s250 faked with conditionals.
+  - Image.description, absolute and per item.
+  - Video.url, AudioPlayer.url and AudioPlayer.description per item.
+  - CheckBox.label and CheckBox.value per item.
+  - Every other cell outside the house rules is already above 30.
+- **76 of 160 vocabulary entities have a boolean field** (Verified, Approved, Graded, …). Today, boolean fields are dropped from list columns.
+
+### Decisions
+
+1. **Cell keys** `cell:<Component>.<prop>:<literal|absolute|item>`. In a row, a prop's form is:
+   - absolute: a path starting with `/`, including `/list/0/field` in a static list;
+   - item: a relative path;
+   - for a function call: the form of the path it wraps, or of the `${...}` paths in a formatString;
+   - literal: anything else.
+2. **The universe** is every bindable slot × the three forms, except where house rules forbid a form. These exclusions are derived from the catalog, not from component names:
+   - A checkable component (an input) keeps only `label:literal` and `value:absolute`. Inputs are always bound, and their bounds always bound (SPEC 2c-1 facts).
+   - A boolean input also gets `label:item` and `value:item`, for checklists.
+   - Every other cell needs 30 train rows.
+3. **Per-item state, built by code (ADR 0022):** a list whose entity has a boolean field may show it per item in one of two ways. The field's value is in the record either way, and the intent quotes it.
+   - **State icon:** each record also stores `<field> icon` (for example `vegetarianIcon`, by the label rule): a tick when true, and a cross, warning triangle or error icon when false (whichever of these the catalog enum has). Amended in the build: one true icon only, because padlock, bell and eye pairs don't read as "true is good". The item shows `Icon($vegetarianIcon)`. The Intent says, in the user's words, which icon goes with which state ("a tick when its \"Verified\" is true, otherwise a cross").
+   - **Checklist:** each item is a CheckBox with `label` bound to its first column and `value` bound to the boolean field. Templates only (amended after the refuter's review): 2–4 bound static CheckBoxes make a form, and the linter's `form_submit` rule rightly rejects a form with no submit button.
+4. **Per-item media:** each record may also carry a media URL (Image, Video or AudioPlayer, chosen by coverage weight), built by code from the record's first column. Its description, if set, is bound to the first column. Images that aren't per item can bind `description` next to a bound `url` (`Image.description:absolute`).
+5. **All list modes:** template lists use relative `$field`, bound static lists use `/list/i/field`, and literal static lists use literals. A per-item prop never takes its first sibling's value; siblings share only their enums and weights. While an absolute per-item cell (Icon or media) still needs rows, a static list leans bound (p 0.8). Checklists are templates only (decision 3).
+6. **Report before full size:** the coverage report and 10 rendered samples (mixing all three per-item kinds) come before full-size generation, as item 7 requires.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| C1 | Row keys give each bindable prop's form | `test_synth_coverage.py::test_cell_keys_by_form` |
+| C2 | The universe has the cells of decision 2, from the catalog | `test_synth_coverage.py::test_cell_universe_follows_house_rules` |
+| C3 | Every cell is reached in a generated run | `test_synth_coverage.py::test_every_key_reached` (existing) |
+| C4 | A state icon's record icon matches its boolean, and the Intent names both icons and the field | `test_synth_plausibility.py::test_state_icons_follow_their_field`, `::test_state_rule_is_stated_once` |
+| C4a | In every list mode, item i shows record i's own icon and media; checklists are template-only (refuter blocker) | `test_synth_plausibility.py::test_per_item_values_track_their_record` |
+| C5 | A checklist binds label and value per item, and passes the linter | `test_synth_plausibility.py::test_checklists_bind_per_item` |
+| C6 | Per-item media URLs are unique per record and per surface | `test_synth_plausibility.py::test_media_never_repeated_in_a_surface` (extended to per-item URLs) |
+| C7 | All rows still compile, round-trip, pass the catalog check and parse in web_core | `test_synth_pipeline.py::test_rows_valid`, `test_synth_coverage.py::test_generated_templates_parse_in_web_core` |
+
+### Test command
+
+```bash
+cd glimmer-tune && uv run pytest tests/test_synth_coverage.py tests/test_synth_plausibility.py tests/test_synth_pipeline.py
+cd glimmer-tune && uv run pytest
+```
+
+## Run 2 item 10: source conflicts resolved (2026-11-03)
+
+The conflicts are listed in `docs/tuning-report-20261102.md` section 4 ("Conflicts in the sources"). The Meta Model API terms stay out of scope (user).
+
+| Conflict | Resolution |
+|---|---|
+| ADR 0003 bans model-written dataset text; ADR 0009 has Spark write the vocabulary | ADR 0003 amended: spec-approved, model-written *words* are allowed, but Express targets and reasoning traces never are (ADR 0025 keeps the same line). Notes added to ADR 0009 and to ADR 0014, which repeated the unqualified rule. |
+| Longest 2a row: 5,418 or 5,814 tokens | Unresolved, and moot: the 2a export is gone and run 1's mix replaced it. No decision depends on it. |
+| Run 1 mix max: 6882 (export) or 6843 (`prepare`) | `prepare` is authoritative: it renders each row with Glimmer's tokenizer and gates `max_seq_len`. Export's own count (`approx_tokens`, characters / 3) is a stand-in. The 39-token gap is a difference of method, not of data. |
+| ADR 0004 says about 26/8/9 families; `splits.yaml` says 26/7/8 with 2 excluded | `splits.yaml` is right (43 families in all). A note was added to ADR 0004. |
+| Free SFT cut-off: 2026-11-30, or 2026-12-01 08:00 UTC | Fireworks' pages say "until November 30, 2026", with no time zone, and the 08:00 UTC form has no source. Plan on 2026-11-30 as the last day to start a job. AGENTS.md's "before 2026-12-01 Pacific" is the latest possible reading, not the plan. |
+| Memory notes vs ADR 0008 | The assistant's memory file was corrected: v0.9 basic catalog with no macros (ADR 0008), and ADR 0003 as amended. |
+| `selection_ci` missing from run 1 score files | Expected: those files predate the feature. The `runs/sft1/rescore-*` files carry it, and the originals stay untouched. |
 
 ## 2c-2 and 2c-3 outline
 

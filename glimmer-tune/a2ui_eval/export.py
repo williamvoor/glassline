@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .generate import wrap
+from .refs import RefIndex
+from .structure import check_structure, required_on_boolean_input
 
 # Chat-template tokens around three messages (headers, end-of-turn markers). An
 # estimate; the cookbook's `prepare` gives the exact count in the smoke run.
@@ -95,6 +97,18 @@ def mix_cases(gallery: list[dict[str, Any]], synthetic: list[dict[str, Any]], sh
     }
 
 
+def _unreachable(messages: list[dict[str, Any]], index: RefIndex) -> list[str]:
+    """Ids of components that no surface attaches under its root (`check_structure` orphans)."""
+    surfaces: dict[str, dict[str, dict[str, Any]]] = {}
+    for m in messages:
+        if "updateComponents" in m:
+            u = m["updateComponents"]
+            surfaces.setdefault(u["surfaceId"], {}).update({c["id"]: c for c in u["components"]})
+    reports = [check_structure(comps, index) for comps in surfaces.values()]
+    lost = sorted({o for r in reports for o in r.orphans})
+    return lost + (["(no root)"] if any(r.missing_root for r in reports) else [])
+
+
 def export_sft(
     train_cases: Iterable[dict[str, Any]],
     eval_cases: Iterable[dict[str, Any]],
@@ -115,7 +129,9 @@ def export_sft(
     A synthetic train case is checked against `skeleton_splits[case["skeleton"]]`, a gallery
     case against `splits[case["family"]]`. `share` mixes the two sources (see `mix_cases`).
     `catalog_check` (a `CatalogCheck`) refuses any target with an operator or a name outside
-    the catalog: training must never show the model invented Express.
+    the catalog: training must never show the model invented Express. It also refuses any
+    `required` check on a boolean input, which never blocks, and any component that nothing
+    attaches to the tree.
     """
     train_cases = list(train_cases)
     skeleton_splits = skeleton_splits or {}
@@ -132,6 +148,20 @@ def export_sft(
         outside = [f"{c['id']} ({catalog_check.findings(c['reference_express'])[0].detail})" for c in train_cases if catalog_check.findings(c["reference_express"])]
         if outside:
             raise ExportError(f"{len(outside)} train targets reach outside the catalog: {outside[:10]}")
+        dead_checks = [
+            f"{c['id']} ({', '.join(ids)})"
+            for c in train_cases
+            if (ids := required_on_boolean_input(
+                (x for m in c["reference"] for x in m.get("updateComponents", {}).get("components", [])),
+                catalog_check.boolean_inputs,
+            ))
+        ]
+        if dead_checks:
+            raise ExportError(f"{len(dead_checks)} train targets use required on a boolean input, which never blocks: {dead_checks[:10]}")
+        index = RefIndex(catalog_check.sdk.catalog_json)
+        lost = [f"{c['id']} ({', '.join(ids)})" for c in train_cases if (ids := _unreachable(c["reference"], index))]
+        if lost:
+            raise ExportError(f"{len(lost)} train targets define unreachable components, which nothing displays: {lost[:10]}")
 
     eval_cases = list(eval_cases)
     eval_prints = {c["fingerprint"] for c in eval_cases} | set(extra_fingerprints)

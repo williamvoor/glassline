@@ -138,3 +138,47 @@ def test_rejects_targets_outside_the_catalog(sdk, train, dev):
     bad = [{**train[0], "reference_express": train[0]["reference_express"] + '\nx = Icon($a ? "b" : "c")'}] + train[1:]
     with pytest.raises(ExportError, match=r"outside the catalog.*train/09_login-form/0000"):
         export_sft(bad, dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=check)
+
+
+_REQUIRED_AGREE = {"call": "required", "args": {"value": {"path": "/agree"}}}
+
+
+@pytest.mark.parametrize("owner, condition", [
+    ("agree", _REQUIRED_AGREE),
+    ("submit", {"call": "and", "args": {"values": [_REQUIRED_AGREE, {"call": "required", "args": {"value": {"path": "/name"}}}]}}),
+    ("submit", {"call": "not", "args": {"value": {"call": "or", "args": {"values": [_REQUIRED_AGREE, True]}}}}),
+], ids=["own_check", "form_and", "nested"])
+def test_rejects_required_on_checkbox(sdk, train, dev, owner, condition):
+    """Item 7 amendment, R3: required passes on false, so it never blocks a CheckBox."""
+    import copy
+
+    from a2ui_eval.catalog_check import CatalogCheck
+
+    bad = copy.deepcopy(train[0])
+    comps = next(m for m in bad["reference"] if "updateComponents" in m)["updateComponents"]["components"]
+    check = [{"condition": condition, "message": "Fill it in"}]
+    comps.append({"id": "agree", "component": "CheckBox", "label": "I agree", "value": {"path": "/agree"},
+                  **({"checks": check} if owner == "agree" else {})})
+    if owner == "submit":
+        comps.append({"id": "submit", "component": "Button", "child": "agree", "action": {"event": {"name": "go"}}, "checks": check})
+    with pytest.raises(ExportError, match=rf"required on a boolean input.*train/09_login-form/0000 \({owner}\)"):
+        export_sft([bad] + train[1:], dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=CatalogCheck(sdk))
+
+
+def test_rejects_unreachable_components(sdk, train, dev):
+    """Item 7 amendment, R6: training must never show a component that nothing displays."""
+    import copy
+
+    from a2ui_eval.catalog_check import CatalogCheck
+
+    bad = copy.deepcopy(train[0])
+    comps = next(m for m in bad["reference"] if "updateComponents" in m)["updateComponents"]["components"]
+    comps.append({"id": "lost_text", "component": "Text", "text": "Nobody sees me"})
+    with pytest.raises(ExportError, match=r"unreachable.*train/09_login-form/0000 \(lost_text\)"):
+        export_sft([bad] + train[1:], dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=CatalogCheck(sdk))
+
+    rootless = copy.deepcopy(train[0])
+    comps = next(m for m in rootless["reference"] if "updateComponents" in m)["updateComponents"]["components"]
+    next(c for c in comps if c["id"] == "root")["id"] = "rootx"
+    with pytest.raises(ExportError, match=r"unreachable.*train/09_login-form/0000 \(\(no root\)\)"):
+        export_sft([rootless] + train[1:], dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=CatalogCheck(sdk))

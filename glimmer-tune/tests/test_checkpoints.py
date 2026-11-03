@@ -1,5 +1,7 @@
 import json
 
+import subprocess
+
 import pytest
 
 from a2ui_eval.checkpoints import CheckpointError, export_dev, score_predictions
@@ -430,3 +432,67 @@ def test_score_reports_outside_catalog_per_row_and_source(dev_rows):
     assert rows[g[1]]["outside_catalog"] is False and rows[s[0]]["outside_catalog"] is False
     assert out["sources"]["gallery"]["outside_catalog"] == pytest.approx(0.5)
     assert out["sources"]["synthetic"]["outside_catalog"] == 0.0
+
+
+def test_score_reports_unreachable_per_row_and_source(dev_rows):
+    """Item 7 amendment, R5: components that nothing attaches to the tree are flagged and rated."""
+    cases = _cases()
+    g = [r["id"] for r in dev_rows if r["source"] == "gallery"][:2]
+    s = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:1]
+    orphaned = wrap(cases[g[0]]["reference_express"] + '\nlost_button = Button(lost_text, "primary", Event("go"))\nlost_text = Text("Go")')
+    preds = [
+        {"id": g[0], "checkpoint": "s025", "text": orphaned, "finish": "stop"},
+        {"id": g[1], "checkpoint": "s025", "text": wrap(cases[g[1]]["reference_express"]), "finish": "stop"},
+        {"id": s[0], "checkpoint": "s025", "text": None, "finish": "error"},
+    ]
+    out = score_predictions(preds, dev_rows, DATA)
+    rows = {r["id"]: r for r in out["rows"]}
+    assert rows[g[0]]["unreachable"] == ["lost_button", "lost_text"]
+    assert rows[g[1]]["unreachable"] == [] and rows[s[0]]["unreachable"] == []
+    assert out["sources"]["gallery"]["unreachable"] == pytest.approx(0.5)
+    assert out["sources"]["synthetic"]["unreachable"] == 0.0
+
+
+def test_score_output_carries_references_version(dev_rows, monkeypatch):
+    """Item 7 amendment, R8: dev references change, so result files name the data version too."""
+    import re
+
+    from a2ui_eval import checkpoints
+
+    cases = _cases()
+    r0 = next(r for r in dev_rows if r["subset"])
+    preds = [{"id": r0["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r0["id"]]["reference_express"])}]
+    out = score_predictions(preds, dev_rows, DATA)
+    assert re.fullmatch(r"[0-9a-f]{40}", out["references"]["commit"])
+    assert isinstance(out["references"]["dirty"], bool)
+
+    def boom(*a, **k):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(checkpoints.subprocess, "run", boom)
+    assert checkpoints.references_version() == {"commit": None, "dirty": None}
+
+
+def test_references_version_tracks_every_eval_source(monkeypatch):
+    """The synthetic dev set is half of every dev score, so its changes count too."""
+    from a2ui_eval import checkpoints
+
+    seen = []
+
+    def fake(argv, **k):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(checkpoints.subprocess, "run", fake)
+    checkpoints.references_version()
+    status = next(a for a in seen if "status" in a)
+    assert {"data/dev", "data/synth/dev", "data/test"} <= set(status)
+
+
+def test_a_rootless_surface_is_unreachable(dev_rows):
+    """With no root, nothing is attached to the tree; R5 must not report it as clean."""
+    cases = _cases()
+    g = next(r["id"] for r in dev_rows if r["source"] == "gallery")
+    rootless = wrap(cases[g]["reference_express"].replace("\nroot = ", "\nrootx = ", 1))
+    out = score_predictions([{"id": g, "checkpoint": "s025", "text": rootless, "finish": "stop"}], dev_rows, DATA)
+    assert out["rows"][0]["unreachable"] == ["(no root)"]

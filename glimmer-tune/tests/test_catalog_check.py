@@ -76,7 +76,7 @@ def test_unknown_names(check):
     assert _kinds(check, 'root = Text(upper("x"))') == ["unknown_function"]
     assert _kinds(check, 'root = Text("x", colour="red")') == ["unknown_property"]
     assert _kinds(check, "f = TextField(\"a\", $/a, ?positive)") == ["unknown_function"]
-    assert _kinds(check, 'root = Text("${map(/xs)}")') == ["unknown_function"]
+    assert _kinds(check, 'root = Text("${map(/xs)}")') == ["positional_arg", "unknown_function"]  # both fail at render time
     assert _kinds(check, 'root = Text(formatNumber($/a, places=2))') == ["unknown_property"]
 
 
@@ -101,3 +101,48 @@ def test_broken_paths_are_not_operators(check, src):
 
 def test_spaced_division_is_still_an_operator(check):
     assert [f.detail for f in check.findings("t = Text($/a / 2)")] == ["/"]
+
+
+# Item 7 amendment, R4. web_core's expression parser needs `name:` before every
+# argument of a call inside `${...}`, and has no `$` path syntax there. The Express
+# compiler passes string contents through unchecked, so only render time would fail.
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        'root = Text(formatString("${formatDate(value: ${/t}, format: \'h:mm a\')}"))',
+        'root = Text(formatString("${formatDate(value:/t, format:\'MMM d, yyyy\')}"))',  # comma inside quotes
+        'root = Text(formatString("${email()} ${email( )}"))',  # empty argument list
+        'root = Text(formatString("${formatNumber(value: ${length(value: ${/x})})}"))',  # nested calls
+        'root = Text(formatString("${pluralize(value: ${/n}, one: \'(1) item\', other: \'items\')}"))',  # parens inside quotes
+        'root = Text(formatString("${/a} ${a.b} ${\'lit\'} ${5}"))',  # no call at all
+        'root = Text(formatString("${formatDate(value : t , format : \'x\' , )}"))',  # spaces, trailing comma
+        'root = Text(formatString("Costs \\${5, 6} here"))',  # an escaped ${ is literal text
+        'root = Text(formatString("${pluralize(value: ${/n}, one: \'it\\\'s\', other: \'items\')}"))',  # web_core\'s \\\'
+    ],
+)
+def test_named_args_in_format_string_are_legal(check, src):
+    assert check.findings(src) == []
+
+
+@pytest.mark.parametrize(
+    "src, expected",
+    [
+        ('root = Text(formatString("At ${formatDate(value: ${/t}, \'h:mm a\')}"))', ["positional_arg"]),
+        ('root = Text(formatString("${formatDate(/t, format: \'x\')}"))', ["positional_arg"]),
+        ('root = Text(formatString("${formatNumber(value: ${length(${/x})})}"))', ["positional_arg"]),
+        ('root = Text(formatString("${formatDate(value: $/t, format: \'x\')}"))', ["dollar_path"]),
+        ('root = Text(formatString("${$t}"))', ["dollar_path"]),
+        ('root = Text(formatString("${formatDate($t, \'h:mm a\')}"))', ["dollar_path", "positional_arg"]),  # s250
+        # s250 financial 0002: the call closes early, leaving its arguments outside it
+        ('root = Text(formatString("${pluralize(value: ${change}), \'%\', \'%\'}"))', ["positional_arg"]),
+        ("root = Text(formatString('${formatDate($t, \"h\")}'))", ["dollar_path", "positional_arg"]),  # single-quoted
+        # What the lexer doesn't model, the SDK's port of web_core's parser catches:
+        ('root = Text(formatString("${/change}% ${from: \'from last week\'}"))', ["interp_syntax"]),  # s250 stats-card 0007
+        ('root = Text(formatString("${a)}"))', ["interp_syntax"]),
+        ('root = Text(formatString("${formatDate(value: ${/t}, format: \'x\'}"))', ["interp_syntax"]),  # unclosed call
+    ],
+)
+def test_positional_args_in_format_string(check, src, expected):
+    assert _kinds(check, src) == expected

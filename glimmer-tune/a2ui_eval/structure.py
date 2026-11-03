@@ -189,3 +189,35 @@ def bound_paths(components: dict[str, dict[str, Any]], index: RefIndex) -> set[t
             for ctx in contexts.get(cid, [[]]):
                 out.add(tuple(resolve(ctx, path)))
     return out
+
+
+def _required_paths(value: Any) -> set[str]:
+    """Paths that `required` calls test anywhere inside a check condition."""
+    if isinstance(value, list):
+        return {p for x in value for p in _required_paths(x)}
+    if not isinstance(value, dict):
+        return set()
+    out: set[str] = set()
+    if value.get("call") == "required":
+        arg = value.get("args", {}).get("value")
+        if isinstance(arg, dict) and isinstance(arg.get("path"), str):
+            out.add(arg["path"])
+    for v in value.values():
+        out |= _required_paths(v)
+    return out
+
+
+def required_on_boolean_input(components: Iterable[dict[str, Any]], boolean_inputs: Iterable[str]) -> list[str]:
+    """Ids of components whose checks call `required` on a boolean input's absolute path.
+
+    `boolean_inputs` names the catalog's boolean input components (`CatalogModel.boolean_inputs`).
+    web_core's `required` passes on `false`, so such a check never blocks anything.
+    """
+    components = list(components)
+    kinds = set(boolean_inputs)
+    boxes = {
+        c["value"]["path"]
+        for c in components
+        if c.get("component") in kinds and isinstance(c.get("value"), dict) and isinstance(c["value"].get("path"), str)
+    }
+    return [c["id"] for c in components if _required_paths(c.get("checks", [])) & boxes]

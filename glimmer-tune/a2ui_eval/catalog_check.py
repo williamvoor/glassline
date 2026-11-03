@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from a2ui.core.expressions.expression_parser import A2uiExpressionError, ExpressionParser
+
 from .sdk import ExpressSDK
 from .synth.catalog_model import CatalogModel
 
@@ -26,6 +28,8 @@ BUILTINS = {
 }
 RESERVED_KWARGS = {"id", "functionCallId", "sendDataModel", "update", "extensions", "catalogId"}
 OPERATORS = ("==", "!=", "<=", ">=", "&&", "||", "?", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|")
+
+_PARSER = ExpressionParser()  # the SDK's port of web_core's parser
 
 _TOKENS = re.compile(
     r"""
@@ -46,7 +50,9 @@ _INTERP_TOKENS = re.compile(
     (?P<skip>\s+)
   | (?P<str>'(?:\\.|[^\\'])*'|"(?:\\.|[^\\"])*")
   | (?P<interp>\$\{)
+  | (?P<dollar>\$)
   | (?P<ident>[^\W\d]\w*)(?=\s*\()
+  | (?P<argname>[^\W\d]\w*)(?=\s*:)
   | (?P<op>==|!=|<=|>=|&&|\|\||[?<>!*%+])
   | (?P<other>.)
     """,
@@ -57,7 +63,7 @@ _VALUE_END = {"path", "num", "ident", "str", "rawstr", "sqstr", ")", "]", "}"}
 
 @dataclass(frozen=True)
 class Finding:
-    kind: str  # operator | unknown_function | unknown_component | unknown_property
+    kind: str  # operator | unknown_function | unknown_component | unknown_property | positional_arg | dollar_path | interp_syntax
     detail: str
     offset: int
 
@@ -72,6 +78,7 @@ class CatalogCheck:
         model = CatalogModel(sdk)
         self.components = {n: {s.name for s in c.slots} for n, c in model.components.items()}
         self.functions = {n: {a.name for a in f.args} for n, f in model.functions.items()}
+        self.boolean_inputs = model.boolean_inputs
 
     def response(self, text: str | None) -> list[Finding]:
         """Findings in every `<a2ui>` block of a model response; prose outside blocks is not Express."""
@@ -110,7 +117,7 @@ class CatalogCheck:
                 kind = text
             if kind == "num" and text[0] in "+-" and toks and toks[-1][0] in _VALUE_END:
                 out.append(Finding("operator", text[0], pos))  # `$a -1`: a signed number after a value
-            if kind == "str":
+            if kind in ("str", "sqstr"):
                 out += self._interpolations(text, pos)
             if kind != "skip":
                 toks.append((kind, text, pos))
@@ -147,23 +154,75 @@ class CatalogCheck:
         return out
 
     def _interpolations(self, string: str, base: int) -> list[Finding]:
-        """Operators and unknown calls inside `${...}` in a (non-raw) string literal."""
+        """Operators, unknown calls, positional arguments and `$` paths inside `${...}` in a
+        (non-raw) string literal.
+
+        web_core's expression parser needs `name:` before every call argument and has no `$`
+        path syntax (`${/a}`, `/a` or `a` are its paths); the Express compiler doesn't look inside
+        strings, so these fail only at render time.
+        """
         out: list[Finding] = []
         start = 0
         while (i := string.find("${", start)) != -1:
-            depth, j = 1, i + 2
-            while j < len(string) and depth:
+            if i and string[i - 1] == "\\":  # an escaped `\${` is literal text
+                start = i + 2
+                continue
+            j = i + 2
+            # One entry per open "${", call "(" or plain "(". For a call, whether the next token
+            # starts an argument (after "(" or ",").
+            stack: list[list] = [["interp", False]]
+            after_call = False
+            while j < len(string) and stack:
                 m = _INTERP_TOKENS.match(string, j)
                 if m is None:
                     break
-                if m.lastgroup == "interp":
-                    depth += 1
-                elif m.group() == "}":
-                    depth -= 1
-                elif m.lastgroup == "op":
-                    out.append(Finding("operator", m.group(), base + j))
-                elif m.lastgroup == "ident" and (bad := self._unknown_call(m.group())):
-                    out.append(Finding(bad, m.group(), base + j))
+                kind, text = m.lastgroup, m.group()
+                if kind == "skip":
+                    j = m.end()
+                    continue
+                top = stack[-1]
+                if top[0] == "call" and top[1]:
+                    top[1] = False
+                    if kind != "argname" and text not in (")", ","):
+                        out.append(Finding("positional_arg", string[j : j + 20], base + j))
+                if kind == "interp":
+                    stack.append(["interp", False])
+                elif text == "}":
+                    stack.pop()
+                elif text == "(":
+                    stack.append(["call", True] if after_call else ["paren", False])
+                elif text == ")":
+                    if stack[-1][0] != "interp":
+                        stack.pop()
+                elif text == "," and top[0] == "call":
+                    top[1] = True
+                elif text == "," and top[0] == "interp":  # an argument left outside its call
+                    out.append(Finding("positional_arg", string[j : j + 20], base + j))
+                elif kind == "dollar":
+                    out.append(Finding("dollar_path", string[j : j + 20], base + j))
+                elif kind == "op":
+                    out.append(Finding("operator", text, base + j))
+                elif kind == "ident" and (bad := self._unknown_call(text)):
+                    out.append(Finding(bad, text, base + j))
+                after_call = kind == "ident"
                 j = m.end()
             start = j
+        if not out and "${" in string:
+            out += self._parse_error(string, base)
         return out
+
+    @staticmethod
+    def _parse_error(string: str, base: int) -> list[Finding]:
+        """`interp_syntax` when the SDK's port of web_core's expression parser rejects the string.
+
+        The lexer above names the usual faults; this catches the rest (`${from: 'x'}`, `${a)}`,
+        an unclosed call). `string` is the Express literal, quotes and escaped quotes included.
+        """
+        quote = string[0]
+        body = string[3:-3] if string[:3] == quote * 3 else string[1:-1]
+        body = body.replace("\\" + quote, quote)  # Express decodes only the enclosing quote
+        try:
+            _PARSER.parse(body)
+        except A2uiExpressionError as e:
+            return [Finding("interp_syntax", str(e)[:60], base)]
+        return []

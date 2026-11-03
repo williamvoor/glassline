@@ -97,15 +97,28 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def scorer_version() -> dict[str, Any]:
-    """The git commit the scorer ran from, and whether the checkout had uncommitted changes.
-    Saved with every result so a later scorer fix can rescore saved predictions traceably."""
+NO_ROOT = "(no root)"
+
+
+def _git_version(*paths: str) -> dict[str, Any]:
     try:
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
-        status = subprocess.run(["git", "status", "--porcelain", "--", "a2ui_eval"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+        status = subprocess.run(["git", "status", "--porcelain", "--", *paths], cwd=ROOT, capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
         return {"commit": None, "dirty": None}
     return {"commit": head, "dirty": bool(status.strip())}
+
+
+def scorer_version() -> dict[str, Any]:
+    """The git commit the scorer ran from, and whether the checkout had uncommitted changes.
+    Saved with every result so a later scorer fix can rescore saved predictions traceably."""
+    return _git_version("a2ui_eval")
+
+
+def references_version() -> dict[str, Any]:
+    """The same for the eval references (`data/dev`, `data/synth/dev`, `data/test`): a fixed dev Reference changes
+    scores, so old and new numbers must not be mixed (SPEC, item 7 amendment, decision 9)."""
+    return _git_version("data/dev", "data/synth/dev", "data/test")
 
 
 def selection_ci(
@@ -209,6 +222,9 @@ def score_predictions(
         text = None if p["finish"] == "error" else p.get("text")
         r = score_response(sdk, index, cases[p["id"]], text, p["finish"])
         outside = kinds(check.response(text))
+        unreachable = sorted({c for s in r["structure"].values() for c in s.get("orphans", [])})
+        if any(s.get("missing_root") for s in r["structure"].values()):
+            unreachable.append(NO_ROOT)  # nothing is attached when there is no root
         rows.append(
             {
                 "id": p["id"],
@@ -221,6 +237,7 @@ def score_predictions(
                 "slot_f1_blind": r["slot_blind"]["f1"],
                 "outside_catalog": bool(outside),
                 "outside_catalog_kinds": outside,
+                "unreachable": unreachable,
                 **({"family": cases[p["id"]]["family"]} if split == "test" else {}),
             }
         )
@@ -228,7 +245,11 @@ def score_predictions(
     for source in SOURCES:
         own = [r for r in rows if r["source"] == source]
         if own:
-            sources[source] = {"rows": len(own), **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1", "slot_f1_blind", "outside_catalog")}}
+            sources[source] = {
+                "rows": len(own),
+                **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1", "slot_f1_blind", "outside_catalog")},
+                "unreachable": _mean([float(bool(r["unreachable"])) for r in own]),
+            }
     if split == "test":
         ci, ci_blind, how = family_ci(rows), family_ci(rows, key="slot_f1_blind"), {"clustered_by": "family"}
     else:
@@ -244,6 +265,7 @@ def score_predictions(
         "selection_blind_ci": ci_blind,
         "bootstrap": {**BOOTSTRAP, **how},
         "scorer": scorer_version(),
+        "references": references_version(),
     }
 
 
