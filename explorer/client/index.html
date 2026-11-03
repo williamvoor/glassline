@@ -8,76 +8,216 @@
     <!-- The basic catalog's Icon renders Material Symbols ligatures; without the font they show as words. -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <style>
+      /* Theme (SPEC §16, ADR 0026): one set of tokens for the page, A2UI and the charts. Light
+         values from the "Follow the Contract" prototype; dark values are ours. */
       :root {
-        --fg: #1f2328; --muted: #656d76; --line: #d8dee4; --soft: #f6f8fa; --accent: #0b57d0;
-        --error: #b3261e; --error-bg: #fdecea; --warn-bg: #fff8e1;
-      }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: white; color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
-      button { font: inherit; cursor: pointer; }
-      button:disabled { cursor: default; opacity: 0.55; }
+        color-scheme: light dark;
+        --ink: #17202e; --on-ink: #ffffff; --fg: #17202e; --muted: #4a5363; --faint: #7a8291;
+        --line: #e2e5ea; --line-strong: #c2c8d2; --canvas: #f2f3f5; --panel: #ffffff; --soft: #eceef1;
+        --primary: #17202e; --on-primary: #ffffff;
+        --accent: #1f5fbf; --on-accent: #ffffff; --accent-soft: #eaf0f8; --accent-line: #b8c9e3;
+        --error: #b00020; --error-bg: #fdecee; --warn-bg: #fff6e5;
+        --chart-1: #2e4a7d; --chart-2: #d97757; --chart-3: #5b8bd0; --chart-4: #6e9b76; --chart-5: #9a6fb0; --chart-6: #c9a35b;
+        --sans: 'Public Sans Variable', system-ui, sans-serif;
+        --mono: 'JetBrains Mono Variable', ui-monospace, monospace;
 
-      explorer-app { display: flex; flex-direction: column; min-height: 100vh; }
-      explorer-app header {
-        position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
-        gap: 12px; padding: 10px max(16px, calc((100% - 960px) / 2)); background: white; border-bottom: 1px solid var(--line);
+        /* A2UI basic catalog (its defaults are zero-specificity, so these win). */
+        --a2ui-color-background: var(--canvas); --a2ui-color-on-background: var(--fg);
+        --a2ui-color-surface: var(--panel); --a2ui-color-on-surface: var(--fg);
+        --a2ui-color-primary: var(--primary); --a2ui-color-on-primary: var(--on-primary);
+        --a2ui-color-secondary: var(--panel); --a2ui-color-on-secondary: var(--fg);
+        --a2ui-color-border: var(--line); --a2ui-color-input: var(--panel); --a2ui-color-on-input: var(--fg);
+        --a2ui-border-radius: 8px;
+        --a2ui-font-family-title: var(--sans); --a2ui-font-family-monospace: var(--mono);
+        --a2ui-card-background: var(--panel); --a2ui-card-border: 1px solid var(--line);
+        --a2ui-card-border-radius: 8px; --a2ui-card-padding: 16px 18px; --a2ui-card-box-shadow: none; --a2ui-card-margin: 0;
+        --a2ui-button-border: 1px solid var(--line-strong); --a2ui-button-border-radius: 999px;
+        --a2ui-button-padding: 6px 14px; --a2ui-button-box-shadow: none; --a2ui-button-font-weight: 500;
+        --a2ui-text-color-text: var(--fg); --a2ui-text-caption-color: var(--muted); --a2ui-text-a-color: var(--accent);
+        --a2ui-divider-border: 1px solid var(--line);
+        --a2ui-row-gap: 16px; --a2ui-column-gap: 16px;
       }
-      explorer-app header .title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-      explorer-app header h1 { margin: 0; font-size: 1.1rem; }
-      explorer-app header .dataset { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      explorer-app header button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: white; }
-      explorer-app .banner {
-        margin: 12px auto 0; width: min(960px, calc(100% - 32px)); padding: 10px 12px; border-radius: 6px;
-        background: var(--warn-bg); border: 1px solid #f0d58c;
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #0a0e15; --on-ink: #e8ebf0; --fg: #e6e9ee; --muted: #a6aebb; --faint: #7d8696;
+          --line: #2a3341; --line-strong: #3d4858; --canvas: #10151d; --panel: #171e29; --soft: #1f2834;
+          --primary: #e6e9ee; --on-primary: #10151d;
+          --accent: #82abee; --on-accent: #0a0e15; --accent-soft: #1b2a41; --accent-line: #35507a;
+          --error: #ff8a9a; --error-bg: #3a1a21; --warn-bg: #3a3019;
+          --chart-1: #8aa8e0; --chart-2: #e8916f; --chart-3: #5d8fd6; --chart-4: #8fbf97; --chart-5: #bb98d0; --chart-6: #d9b872;
+        }
       }
-      explorer-app .banner button { margin-left: 8px; }
-      explorer-app main { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 8px 16px 24px; }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body { margin: 0; background: var(--canvas); color: var(--fg); font: 15px/1.5 var(--sans); }
+      button { font: inherit; color: inherit; cursor: pointer; }
+      button:disabled { cursor: default; opacity: 0.55; }
+      code, pre, kbd { font-family: var(--mono); }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .label {
+        font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+      }
+
+      /* Layout: top bar, Sidebar, Canvas ---------------------------------------------------- */
+      explorer-app { display: flex; flex-direction: column; height: 100vh; }
+      explorer-app .topbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none;
+        padding: 12px 24px; background: var(--ink); color: var(--on-ink); border-bottom: 1px solid var(--line);
+      }
+      explorer-app .topbar .title { display: flex; align-items: center; gap: 16px; min-width: 0; }
+      explorer-app .topbar h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+      explorer-app .topbar .dataset {
+        padding-left: 16px; border-left: 1px solid color-mix(in srgb, var(--on-ink) 25%, transparent);
+        color: color-mix(in srgb, var(--on-ink) 85%, transparent); font-size: 14px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      explorer-app .topbar button {
+        flex: none; padding: 7px 14px; border-radius: 8px; background: transparent; color: var(--on-ink);
+        border: 1px solid color-mix(in srgb, var(--on-ink) 30%, transparent); font-weight: 500;
+      }
+      explorer-app .topbar :focus-visible { outline-color: var(--on-ink); } /* accent is too dark on ink */
+      explorer-app .topbar button:hover:not(:disabled) { background: color-mix(in srgb, var(--on-ink) 10%, transparent); }
+
+      explorer-app .shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
+      explorer-app .sidebar {
+        display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line);
+      }
+      explorer-app .sidebar-head { display: flex; justify-content: space-between; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+      explorer-app .turn-list { flex: 1; overflow-y: auto; margin: 0; padding: 12px; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+      explorer-app .turn-list-spacer { flex: 1; } /* keeps the composer at the bottom before the first Turn */
+      explorer-app .turn-entry {
+        display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 12px; text-align: left;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+      }
+      explorer-app .turn-entry:hover { border-color: var(--line-strong); }
+      explorer-app .turn-entry.selected { background: var(--accent-soft); border-color: var(--accent-line); }
+      explorer-app .entry-question { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; }
+      explorer-app .entry-state { display: flex; align-items: center; gap: 6px; min-height: 1em; font: 12px/1.3 var(--mono); color: var(--muted); }
+      explorer-app .entry-state:empty { display: none; }
+
+      explorer-app .composer {
+        display: flex; flex-direction: column; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); background: var(--panel);
+      }
+      explorer-app .composer textarea {
+        resize: vertical; min-height: 72px; max-height: 40vh; padding: 10px 12px; font: inherit; font-size: 14px;
+        color: var(--fg); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px;
+      }
+      explorer-app .composer textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+      explorer-app .composer button {
+        align-self: flex-end; padding: 8px 20px; border: 0; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-weight: 600;
+      }
+
+      explorer-app .canvas { min-height: 0; overflow-y: auto; padding: 28px 32px 48px; }
+      explorer-app .canvas > * { max-width: 1120px; margin-left: auto; margin-right: auto; }
+      explorer-app .banner { margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
+      explorer-app .banner button { margin-left: 8px; padding: 2px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); }
 
       explorer-app .empty { padding: 48px 0 24px; color: var(--muted); }
-      explorer-app .examples { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 16px; }
+      explorer-app .empty h2 { margin: 0 0 6px; color: var(--fg); font-size: 28px; letter-spacing: -0.02em; }
+      explorer-app .empty .label { margin-top: 28px; }
+      explorer-app .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
       explorer-app .examples button {
-        padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--fg); text-align: left;
+        padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); color: var(--fg); text-align: left;
       }
-      explorer-app .examples button:hover { border-color: var(--accent); }
+      explorer-app .examples button:hover { border-color: var(--fg); }
 
-      explorer-app .turn { padding: 16px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 64px; }
-      explorer-app .question {
-        display: inline-block; max-width: 85%; margin-bottom: 8px; padding: 8px 12px; border-radius: 10px;
-        background: var(--soft); font-weight: 600; white-space: pre-wrap;
-      }
-      explorer-app .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+      /* The selected Turn ----------------------------------------------------------------------- */
+      explorer-app .turn { scroll-margin-top: 16px; }
+      explorer-app .question, explorer-app .entry-question, explorer-app .prose { overflow-wrap: anywhere; }
+      explorer-app .question { margin: 0 0 12px; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; white-space: pre-wrap; }
+      explorer-app .status { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); font: 13px/1.4 var(--mono); }
       explorer-app .spinner {
-        width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+        flex: none; width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%;
         animation: spin 0.8s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { explorer-app .spinner { animation-duration: 2.4s; } }
       explorer-app .elapsed { font-variant-numeric: tabular-nums; }
       explorer-app .error {
-        display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px;
-        border-radius: 6px; background: var(--error-bg); color: var(--error);
+        display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; padding: 10px 14px;
+        border-radius: 8px; background: var(--error-bg); color: var(--error);
       }
-      explorer-app .error button { padding: 4px 10px; border: 1px solid var(--error); border-radius: 6px; background: white; color: var(--error); }
-      explorer-app .meta { margin-top: 8px; color: var(--muted); font-size: 0.85em; }
+      explorer-app .error span { flex: 1; min-width: 12em; }
+      explorer-app .error button { padding: 4px 12px; border: 1px solid var(--error); border-radius: 999px; background: var(--panel); color: var(--error); }
+      explorer-app .prose { max-width: 72ch; margin-bottom: 16px; }
+      explorer-app .prose p { margin: 0 0 8px; }
+      explorer-app .meta { margin-top: 16px; color: var(--muted); font: 12px/1.5 var(--mono); }
       explorer-app .meta summary { cursor: pointer; }
-      explorer-app .steps { margin: 4px 0 0; padding-left: 20px; }
+      explorer-app .steps { margin: 6px 0 0; padding-left: 20px; }
 
-      explorer-app .composer {
-        position: sticky; bottom: 0; z-index: 2; display: flex; gap: 8px; align-items: flex-end;
-        padding: 12px max(16px, calc((100% - 960px) / 2)); background: white; border-top: 1px solid var(--line);
-        box-shadow: 0 -4px 12px rgb(0 0 0 / 0.04);
+      /* Levels, Breadcrumb and Actions (SPEC §15) */
+      explorer-app .breadcrumb {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 0 16px; padding-bottom: 8px;
+        border-bottom: 1px solid var(--line); font: 13px/1.4 var(--mono);
       }
-      explorer-app .composer textarea {
-        flex: 1; resize: vertical; min-height: 44px; max-height: 40vh; padding: 10px 12px; font: inherit;
-        border: 1px solid var(--line); border-radius: 8px;
+      explorer-app .breadcrumb .level { padding: 3px 8px; border: 0; border-radius: 6px; background: none; color: var(--accent); }
+      explorer-app .breadcrumb .level:hover:not(:disabled):not(.current) { background: var(--accent-soft); }
+      explorer-app .breadcrumb .level.current { color: var(--fg); font-weight: 600; cursor: default; }
+      explorer-app .breadcrumb .sep { color: var(--faint); }
+      explorer-app .confirm {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 16px; padding: 10px 14px;
+        border: 1px solid var(--accent-line); border-radius: 8px; background: var(--accent-soft);
       }
-      explorer-app .composer textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-      explorer-app .composer button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--accent); color: white; }
+      explorer-app .confirm span { flex: 1; min-width: 12em; }
+      explorer-app .confirm button { padding: 5px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); }
+      explorer-app .confirm button.ok { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+      explorer-app .level-view.inert { opacity: 0.5; pointer-events: none; transition: opacity 0.15s; }
 
-      table.data-grid { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-      table.data-grid th, table.data-grid td { padding: 4px 8px; border-bottom: 1px solid #eee; }
-      table.data-grid caption { caption-side: bottom; color: #666; font-size: 0.85em; text-align: left; }
-      details.sql-details { margin: 4px 0 12px; color: #444; }
-      details.sql-details pre { background: var(--soft); padding: 8px; overflow-x: auto; }
+      /* Surfaces: Cards, titles, Metrics, buttons ------------------------------------------------ */
+      explorer-app .level-view a2ui-surface { display: block; }
+      explorer-app .a2ui-card { height: 100%; }
+      explorer-app .a2ui-text h4 { margin: 0; font-size: 16px; font-weight: 600; }
+      explorer-app .a2ui-text.a2ui-text-caption { font: normal 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      explorer-app .a2ui-text.a2ui-text-caption em { font-style: normal; } /* A2UI wraps captions in <em> */
+      explorer-app .a2ui-text h2 { margin: 2px 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+      explorer-app a2ui-basic-button button:hover:not(:disabled) { border-color: var(--fg); }
+
+      /* Visual hints and DataGrid (SPEC §16) */
+      .visual-hint { margin: 0 0 6px; font: 12px/1.4 var(--mono); color: var(--muted); }
+      table.data-grid { border-collapse: collapse; width: 100%; font-size: 14px; }
+      table.data-grid th {
+        padding: 8px 10px; border-bottom: 1px solid var(--line-strong); color: var(--muted);
+        font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+      }
+      table.data-grid td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+      table.data-grid td[style*='right'] { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+      table.data-grid caption { caption-side: bottom; padding-top: 6px; color: var(--muted); font: 12px/1.4 var(--mono); text-align: left; }
+      table.data-grid tr.clickable { cursor: pointer; }
+      table.data-grid tr.clickable:hover, table.data-grid tr.clickable:focus { background: var(--accent-soft); outline: none; }
+      table.data-grid tr.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+      table.data-grid .ask-tag {
+        visibility: hidden; margin-left: 8px; padding: 1px 6px; border: 1px solid var(--accent-line); border-radius: 4px;
+        color: var(--accent); font: 500 10px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; vertical-align: 1px;
+      }
+      table.data-grid tr.askable:hover .ask-tag, table.data-grid tr.askable:focus .ask-tag { visibility: visible; }
+      details.sql-details { margin: 8px 0 0; color: var(--muted); font: 12px/1.4 var(--mono); }
+      details.sql-details summary { cursor: pointer; }
+      details.sql-details pre {
+        margin: 8px 0 0; padding: 10px 12px; overflow-x: auto; border-radius: 6px; background: var(--soft); color: var(--fg); font-size: 12px;
+      }
+
+      /* Narrow screens: one column, Turns as a strip, composer pinned at the bottom */
+      @media (max-width: 759px) {
+        explorer-app { height: auto; min-height: 100vh; }
+        explorer-app .topbar { padding: 10px 16px; }
+        explorer-app .topbar .dataset { display: none; }
+        explorer-app .shell { display: flex; flex-direction: column; }
+        explorer-app .sidebar { display: contents; }
+        explorer-app .sidebar-head { display: none; }
+        explorer-app .turn-list {
+          order: 1; flex: none; flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 10px 16px;
+          background: var(--panel); border-bottom: 1px solid var(--line);
+        }
+        explorer-app .turn-list-spacer { display: none; }
+        explorer-app .turn-entry { width: 200px; flex: none; padding: 8px 10px; }
+        explorer-app .entry-question { -webkit-line-clamp: 2; }
+        explorer-app .canvas { order: 2; flex: 1; overflow: visible; padding: 20px 16px 24px; }
+        explorer-app .question { font-size: 22px; }
+        explorer-app .composer { order: 3; position: sticky; bottom: 0; z-index: 2; padding: 10px 16px; flex-direction: row; align-items: flex-end; }
+        explorer-app .composer .label { display: none; }
+        explorer-app .composer textarea { flex: 1; min-height: 44px; }
+      }
     </style>
   </head>
   <body>

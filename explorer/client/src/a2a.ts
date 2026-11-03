@@ -1,4 +1,4 @@
-// A2A client wrapper: one streamed task per question (explorer SPEC §2, ADR 0007).
+// A2A client wrapper: one streamed task per question or Action (explorer SPEC §2, §15, ADR 0007).
 import {A2AClient} from '@a2a-js/sdk/client';
 import type {Message, Part} from '@a2a-js/sdk';
 
@@ -8,7 +8,16 @@ export const A2UI_MIME_TYPES = new Set(['application/a2ui+json', 'application/js
 
 export type AskEvent =
   | {kind: 'status'; text: string}
-  | {kind: 'final'; contextId: string; prose: string; a2ui: Record<string, unknown>[]};
+  | {kind: 'final'; contextId: string; prose: string; a2ui: Record<string, unknown>[]; metadata?: Record<string, unknown>};
+
+/** An A2UI v0.9 action as dispatched by a surface (references only, SPEC §15). */
+export interface UiAction {
+  name: string;
+  surfaceId: string;
+  sourceComponentId: string;
+  timestamp: string;
+  context: Record<string, unknown>;
+}
 
 /** What the client shows about the agent's dataset (from the agent card). */
 export interface AgentInfo {
@@ -18,8 +27,13 @@ export interface AgentInfo {
 
 export interface AgentConnection {
   info: AgentInfo;
-  ask(text: string, contextId?: string): AsyncGenerator<AskEvent, void, undefined>;
+  /** A typed question. `viewing`: surface IDs of Levels shown that aren't their Turn's latest. */
+  askQuestion(text: string, contextId?: string, viewing?: string[]): AsyncGenerator<AskEvent, void, undefined>;
+  /** An Action: a Drill-down or a confirmed Ask. */
+  act(action: UiAction, contextId: string, viewing?: string[]): AsyncGenerator<AskEvent, void, undefined>;
 }
+
+export const VIEWING_KEY = 'explorerViewing';
 
 export function withExtensionHeader(fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): typeof fetch {
   return (input, init) => {
@@ -62,28 +76,37 @@ export async function connect(
     examples: (card.skills ?? []).flatMap(skill => skill.examples ?? []),
   };
 
+  async function* send(parts: Part[], contextId: string | undefined, viewing: string[] | undefined) {
+    const message: Message = {
+      kind: 'message',
+      role: 'user',
+      messageId: crypto.randomUUID(),
+      parts,
+      metadata: {a2uiClientCapabilities: capabilities, ...(viewing?.length ? {[VIEWING_KEY]: viewing} : {})},
+      ...(contextId ? {contextId} : {}),
+    };
+    for await (const event of client.sendMessageStream({message})) {
+      if (event.kind !== 'status-update') continue;
+      const parts = event.status.message?.parts;
+      if (event.final) {
+        const metadata = event.status.message?.metadata as Record<string, unknown> | undefined;
+        yield {kind: 'final', contextId: event.contextId, prose: textOf(parts), a2ui: a2uiOf(parts), metadata} as AskEvent;
+        return;
+      }
+      const statusText = textOf(parts);
+      if (statusText) yield {kind: 'status', text: statusText} as AskEvent;
+    }
+    throw new Error('The agent closed the stream without a final answer.');
+  }
+
   return {
     info,
-    async *ask(text, contextId) {
-      const message: Message = {
-        kind: 'message',
-        role: 'user',
-        messageId: crypto.randomUUID(),
-        parts: [{kind: 'text', text}],
-        metadata: {a2uiClientCapabilities: capabilities},
-        ...(contextId ? {contextId} : {}),
-      };
-      for await (const event of client.sendMessageStream({message})) {
-        if (event.kind !== 'status-update') continue;
-        const parts = event.status.message?.parts;
-        if (event.final) {
-          yield {kind: 'final', contextId: event.contextId, prose: textOf(parts), a2ui: a2uiOf(parts)};
-          return;
-        }
-        const statusText = textOf(parts);
-        if (statusText) yield {kind: 'status', text: statusText};
-      }
-      throw new Error('The agent closed the stream without a final answer.');
-    },
+    askQuestion: (text, contextId, viewing) => send([{kind: 'text', text}], contextId, viewing),
+    act: (action, contextId, viewing) =>
+      send(
+        [{kind: 'data', data: {version: 'v0.9', action: {...action}}, metadata: {mimeType: 'application/json+a2ui'}}],
+        contextId,
+        viewing,
+      ),
   };
 }

@@ -39,7 +39,7 @@ describe('a2a wrapper', () => {
     const caps = createProcessor().getRendererCapabilities({versions: ['v0.9']});
     const agent = await connect(AGENT, caps, fakeFetch);
     const events = [];
-    for await (const e of agent.ask('hello')) events.push(e);
+    for await (const e of agent.askQuestion('hello')) events.push(e);
 
     expect(seen.length).toBe(2);
     for (const r of seen) expect(r.headers.get('X-A2A-Extensions')).toBe(A2UI_EXTENSION_URI);

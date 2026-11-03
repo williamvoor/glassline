@@ -2,6 +2,23 @@ import {describe, expect, it} from 'vitest';
 import '@a2ui/lit/v0_9';
 import type {A2uiMessage} from '@a2ui/web_core/v0_9';
 import {EXPLORER_CATALOG_ID, createProcessor} from '../src/catalog.js';
+import {ASK_HINT_ROW, DRILL_HINT_ROW} from '../src/actions.js';
+
+async function grid(action?: Record<string, unknown>) {
+  const processor = createProcessor();
+  processor.processMessages([
+    {version: 'v0.9', createSurface: {surfaceId: 's', catalogId: EXPLORER_CATALOG_ID}},
+    {version: 'v0.9', updateComponents: {surfaceId: 's', components: [{
+      id: 'root', component: 'DataGrid', columns: [{key: 'a', label: 'A'}], rows: [['x'], ['y']],
+      ...(action ? {action} : {}),
+    }]}},
+  ] as unknown as A2uiMessage[]);
+  const el = document.createElement('a2ui-surface') as HTMLElement & {surface: unknown};
+  el.surface = processor.model.surfacesMap.get('s');
+  document.body.replaceChildren(el);
+  for (let i = 0; i < 10; i++) await new Promise(r => setTimeout(r, 10));
+  return el;
+}
 
 describe('DataGrid', () => {
   it('renders cell and caption HTML as text', async () => {
@@ -46,5 +63,26 @@ describe('DataGrid', () => {
     expect(left!.style.textAlign).toBe('left');
     expect(right!.style.textAlign).toBe('right');
     expect(el.querySelector('caption')).toBeNull();
+  });
+
+  // SPEC §16 (L9): a hint line says what a click does; Ask-only rows carry an Ask tag.
+  it('shows the Drill-down hint and no Ask tag on drillable rows', async () => {
+    const el = await grid({source: 'v1', rows: [0], drillable: true});
+    expect(el.querySelector('.visual-hint')!.textContent).toBe(DRILL_HINT_ROW);
+    expect(el.querySelectorAll('.ask-tag')).toHaveLength(0);
+  });
+
+  it('shows the Ask hint and an Ask tag on each Ask-only row', async () => {
+    const el = await grid({source: 'v1', rows: [1], drillable: false});
+    expect(el.querySelector('.visual-hint')!.textContent).toBe(ASK_HINT_ROW);
+    const tags = [...el.querySelectorAll('.ask-tag')];
+    expect(tags).toHaveLength(1);
+    expect(tags[0]!.closest('tr')!.textContent).toContain('y'); // only on the clickable row
+    expect(tags[0]!.getAttribute('aria-hidden')).toBe('true'); // the hint says it in words
+  });
+
+  it('shows no hint without an action', async () => {
+    const el = await grid();
+    expect(el.querySelector('.visual-hint')).toBeNull();
   });
 });

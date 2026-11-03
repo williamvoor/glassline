@@ -31,6 +31,7 @@ import {
 import {spec} from '@a2ui/web_core/v1_0';
 
 import {A2uiVegaChartElement} from './vegaChart.js';
+import {ActionPropSchema} from '../../actions.js';
 
 /** Catalog ID of the A2UI VegaChart catalog (protocol v0.9). */
 export const VEGACHART_CATALOG_ID =
@@ -74,6 +75,7 @@ export const VegaChartApi = {
         height: DynamicNumberSchema.describe(
           'REF:#/$defs/DynamicNumber|Optional height of the chart in pixels. Defaults to 290.',
         ).optional(),
+        action: ActionPropSchema.optional(),
       })
       .describe('Displays a Vega or Vega-Lite chart.')
       .strict(),

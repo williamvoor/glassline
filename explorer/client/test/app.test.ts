@@ -13,11 +13,15 @@ function fakeAgent(script: (text: string) => AskEvent[] | Error, examples = ['To
   const calls: Call[] = [];
   const connection: AgentConnection = {
     info: {description: 'Demo contracts', examples},
-    async *ask(text, contextId) {
+    async *askQuestion(text, contextId) {
       calls.push({text, contextId});
       const result = script(text);
       if (result instanceof Error) throw result;
       yield* result;
+    },
+    // eslint-disable-next-line require-yield
+    async *act() {
+      throw new Error('no actions in these tests');
     },
   };
   return {calls, connector: async () => connection};
@@ -54,6 +58,7 @@ describe('explorer-app', () => {
   it('shows the dataset description and example questions before the first question', async () => {
     const app = await mount(fakeAgent(() => answer('x')).connector);
     expect(q(app, 'header')!.textContent).toContain('Demo contracts');
+    expect(q(app, '.canvas .examples')).not.toBeNull();
     expect(texts(app, '.examples button')).toEqual(['Top suppliers?', 'Spend by year?']);
   });
 
@@ -67,6 +72,8 @@ describe('explorer-app', () => {
     expect(q(app, '.turn .question')!.textContent).toContain('Top suppliers?');
     expect(q(app, '.turn .prose strong')!.textContent).toBe('Supplier A');
     expect(q(app, '.turn .elapsed')!.textContent).toMatch(/^Answered in \d+\.\d s$/);
+    // No explorerModel from the agent: the status line names no model.
+    expect(q(app, '.turn .meta summary')!.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Answered in \d+\.\d s · 1 step$/);
   });
 
   it('sends on Enter but not on Shift+Enter, and keeps the conversation', async () => {
@@ -87,6 +94,7 @@ describe('explorer-app', () => {
 
     expect(agent.calls).toEqual([{text: 'first', contextId: undefined}, {text: 'second', contextId: 'ctx-1'}]);
     expect(box.value).toBe('');
+    expect(box.closest('.sidebar')).not.toBeNull(); // the composer sits in the Sidebar (SPEC §16)
   });
 
   it('starts a new conversation: clears the turns and forgets the context', async () => {
@@ -109,6 +117,8 @@ describe('explorer-app', () => {
     await app.ask('slow one');
     await settle(app);
     expect(q(app, '.turn .error')!.textContent).toContain('Turn timed out');
+    expect(q(app, '.sidebar .turn-entry .entry-state')!.textContent).toContain('Failed');
+    expect(q(app, '.turn .meta summary')!.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Failed after \d+\.\d s$/);
 
     fail = false;
     (q(app, '.turn button.retry') as HTMLButtonElement).click();

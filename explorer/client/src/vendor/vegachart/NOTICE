@@ -10,3 +10,10 @@ Changes by the explorer project:
   '@a2ui/web_core/v1_0', which does not export it in @a2ui/*@0.14.0.
 - The v1.0 type import (VegaChartV1Api) is removed; the element is typed for v0.9 only.
 - Relative imports are adjusted for the flat directory.
+- Clickable marks (explorer SPEC §15): an optional `action` prop ({source, rows, drillable}); a click
+  on a mark whose datum has a clickable `_row` dispatches `drill` or `ask` through the component
+  context, and such charts get a pointer cursor (a line chart's points, not its line) and a hint
+  line saying what a click does. A click on a line mark itself is ignored.
+- Theme (explorer SPEC §16): the default config is built from the page's CSS custom properties
+  (`themedChartConfig`, passed to `transformSpec` as `baseConfig`), and the chart renders again
+  when `prefers-color-scheme` changes.

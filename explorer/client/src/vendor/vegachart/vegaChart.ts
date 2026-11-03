@@ -15,12 +15,20 @@
  */
 
 // tslint:disable:no-new-decorators
-import {css, html, LitElement, type PropertyValues} from 'lit';
+import {css, html, LitElement, nothing, type PropertyValues} from 'lit';
 import {property} from 'lit/decorators.js';
 
 import {A2uiLitElement} from '@a2ui/lit/v0_9';
 
 import type {VegaChartApi} from './index.js';
+import {
+  ASK_HINT_CHART,
+  ActionPropSchema,
+  DRILL_HINT_CHART,
+  clickable,
+  dispatchRow,
+  type ActionProp,
+} from '../../actions.js';
 
 /** Default chart height in pixels when `height` is not specified. */
 export const DEFAULT_HEIGHT = 290;
@@ -73,10 +81,47 @@ const DEFAULT_CHART_CONFIG = {
   },
 };
 
+/**
+ * Explorer (SPEC §16): the default config built from the page's CSS tokens, so charts follow the
+ * theme and the light or dark scheme. `token` returns a custom property's value ('' if unset);
+ * any key without a token keeps the upstream default.
+ */
+export function themedChartConfig(token: (name: string) => string): Record<string, unknown> {
+  const t = (name: string, fallback: string) => token(name) || fallback;
+  const d = DEFAULT_CHART_CONFIG;
+  const category = ['--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5', '--chart-6']
+    .map(token)
+    .filter(Boolean);
+  return {
+    ...d,
+    font: t('--sans', d.font),
+    axis: {
+      ...d.axis,
+      domainColor: t('--line', d.axis.domainColor),
+      gridColor: t('--line', d.axis.gridColor),
+      tickColor: t('--line', d.axis.domainColor),
+      labelColor: t('--muted', d.axis.labelColor),
+      titleColor: t('--fg', d.axis.titleColor),
+    },
+    legend: {...d.legend, labelColor: t('--muted', d.legend.labelColor), titleColor: t('--fg', d.legend.titleColor)},
+    title: {...d.title, color: t('--fg', d.title.color)},
+    range: {category: category.length ? category : CHART_COLORS},
+    mark: {color: category[0] ?? CHART_COLORS[0]}, // a single series isn't coloured by `range`
+  };
+}
+
+function pageChartConfig(): Record<string, unknown> {
+  const style = getComputedStyle(document.documentElement);
+  return themedChartConfig(name => style.getPropertyValue(name).trim());
+}
+
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
 /** Result returned by a Vega embed function. */
 export interface VegaEmbedResult {
   view?: {
     finalize?: () => void;
+    addEventListener?: (type: string, handler: (event: unknown, item: {datum?: Record<string, unknown>} | null | undefined) => void) => void;
   };
   finalize?: () => void;
 }
@@ -367,6 +412,7 @@ export function transformSpec(
   containerHeight: number = DEFAULT_HEIGHT,
   containerWidth = 0,
   precomputedFacetSize?: FacetSize | null,
+  baseConfig: Record<string, unknown> = DEFAULT_CHART_CONFIG,
 ): Record<string, unknown> {
   const transformedSpec = structuredClone(vegaSpec);
 
@@ -379,11 +425,12 @@ export function transformSpec(
   const existingAxis = isPlainObject(existingConfig['axis']) ? existingConfig['axis'] : {};
   const existingView = isPlainObject(existingConfig['view']) ? existingConfig['view'] : {};
 
+  const base = baseConfig as typeof DEFAULT_CHART_CONFIG;
   transformedSpec['config'] = {
-    ...DEFAULT_CHART_CONFIG,
+    ...base,
     ...existingConfig,
-    axis: {...DEFAULT_CHART_CONFIG.axis, ...existingAxis},
-    view: {...DEFAULT_CHART_CONFIG.view, ...existingView},
+    axis: {...base.axis, ...existingAxis},
+    view: {...base.view, ...existingView},
   };
 
   transformedSpec['autosize'] = facetSize ? {type: 'pad'} : {type: 'fit', contains: 'padding'};
@@ -407,6 +454,32 @@ export function transformSpec(
   }
 
   return transformedSpec;
+}
+
+/** Explorer: a pointer on every clickable mark (SPEC §15, §16; the hint line names the kind). A
+ * line chart's clickable marks are its points, so they get it, not the line. */
+function withCursor(vegaSpec: Record<string, unknown>, action: ActionProp | undefined): Record<string, unknown> {
+  if (!action) return vegaSpec;
+  const mark = vegaSpec['mark'];
+  const base = isPlainObject(mark) ? mark : typeof mark === 'string' ? {type: mark} : null;
+  if (!base) return vegaSpec;
+  if (base['type'] === 'line') {
+    return base['point'] ? {...vegaSpec, mark: {...base, point: {...(isPlainObject(base['point']) ? base['point'] : {}), cursor: 'pointer'}}} : vegaSpec;
+  }
+  return {...vegaSpec, mark: {...base, cursor: 'pointer'}};
+}
+
+/** Explorer: the clicked mark's category values, for the Ask confirmation. */
+function markLabel(vegaSpec: Record<string, unknown>, datum: Record<string, unknown>): string {
+  const encoding = isPlainObject(vegaSpec['encoding']) ? vegaSpec['encoding'] : {};
+  const parts: string[] = [];
+  for (const channel of ['x', 'y', 'color']) {
+    const enc = encoding[channel];
+    if (!isPlainObject(enc) || enc['type'] === 'quantitative' || typeof enc['field'] !== 'string') continue;
+    const value = datum[enc['field'].replace(/\\(.)/g, '$1')];
+    if (value !== undefined && value !== null) parts.push(String(value));
+  }
+  return parts.join(' · ');
 }
 
 /**
@@ -473,6 +546,12 @@ export class A2uiVegaChartElement extends A2uiLitElement<
     return isPlainObject(raw) ? raw : null;
   }
 
+  private get resolvedAction(): ActionProp | undefined {
+    const raw = (this.controller?.props as {action?: unknown} | undefined)?.action;
+    const parsed = ActionPropSchema.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
+  }
+
   private get resolvedHeight(): number {
     const controllerHeight = this.controller?.props?.height;
     const raw = controllerHeight !== undefined ? controllerHeight : this.height;
@@ -508,8 +587,16 @@ export class A2uiVegaChartElement extends A2uiLitElement<
     this.observeContainer();
   }
 
+  // Explorer (SPEC §16): draw again with the other scheme's tokens when the OS scheme changes.
+  private schemeQuery?: MediaQueryList;
+  private readonly onSchemeChange = () => {
+    if (this.hasValidDimensions) void this.renderChart();
+  };
+
   override connectedCallback() {
     super.connectedCallback();
+    this.schemeQuery = typeof window.matchMedia === 'function' ? window.matchMedia(DARK_QUERY) : undefined;
+    this.schemeQuery?.addEventListener?.('change', this.onSchemeChange);
     if (this.hasUpdated) {
       this.observeContainer();
     }
@@ -517,6 +604,8 @@ export class A2uiVegaChartElement extends A2uiLitElement<
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    this.schemeQuery?.removeEventListener?.('change', this.onSchemeChange);
+    this.schemeQuery = undefined;
     this.resizeObserver?.disconnect();
     this.hasValidDimensions = false;
     this.useFallbackWidth = false;
@@ -532,7 +621,9 @@ export class A2uiVegaChartElement extends A2uiLitElement<
 
   override render() {
     const effectiveHeight = this.resolvedHeight;
+    const action = this.resolvedAction;
     return html`
+      ${action ? html`<p class="visual-hint">${action.drillable ? DRILL_HINT_CHART : ASK_HINT_CHART}</p>` : nothing}
       <div
         id="chart-container"
         class="vega-chart-container"
@@ -641,7 +732,10 @@ export class A2uiVegaChartElement extends A2uiLitElement<
       const containerHeight = facetSize
         ? Math.max(this.resolvedHeight, facetSize.totalEstimatedHeight)
         : this.resolvedHeight;
-      const transformedSpec = transformSpec(vegaSpec, containerHeight, effectiveWidth, facetSize);
+      const action = this.resolvedAction;
+      const transformedSpec = transformSpec(
+        withCursor(vegaSpec, action), containerHeight, effectiveWidth, facetSize, pageChartConfig(),
+      );
 
       this.applyHostWidth(this.useFallbackWidth ? effectiveWidth : null);
       container.style.width = this.useFallbackWidth ? `${effectiveWidth}px` : '100%';
@@ -670,6 +764,17 @@ export class A2uiVegaChartElement extends A2uiLitElement<
         return;
       }
       this.embedResult = result;
+      if (action) {
+        // Explorer (SPEC §15): a click on a mark with a clickable `_row` dispatches its action.
+        result?.view?.addEventListener?.('click', (_event, item) => {
+          // A line item's datum is one of its points; only a point names the row clicked.
+          if ((item as {mark?: {marktype?: string}} | null)?.mark?.marktype === 'line') return;
+          const row = item?.datum?.['_row'];
+          if (clickable(action, row)) {
+            void dispatchRow(this.context, action, row, markLabel(vegaSpec, item!.datum!));
+          }
+        });
+      }
 
       // Sandboxed embedders render into an iframe; size and label it.
       const iframe = wrapper.querySelector('iframe');

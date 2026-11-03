@@ -17,7 +17,8 @@
           "children": [
             "top",
             "chart",
-            "table"
+            "table",
+            "more"
           ]
         },
         {
@@ -69,15 +70,18 @@
               "values": [
                 {
                   "supplier": "Supplier A",
-                  "value": 3441.812603
+                  "value": 3441.812603,
+                  "_row": 0
                 },
                 {
                   "supplier": "Supplier B",
-                  "value": 812.4
+                  "value": 812.4,
+                  "_row": 1
                 },
                 {
                   "supplier": "Supplier C",
-                  "value": 96.2500005
+                  "value": 96.2500005,
+                  "_row": 2
                 }
               ]
             },
@@ -89,7 +93,11 @@
                 "field": "supplier",
                 "type": "nominal",
                 "title": "Supplier",
-                "sort": "-y"
+                "sort": [
+                  "Supplier A",
+                  "Supplier B",
+                  "Supplier C"
+                ]
               },
               "y": {
                 "field": "value",
@@ -111,6 +119,15 @@
                 }
               ]
             }
+          },
+          "action": {
+            "source": "v1",
+            "rows": [
+              0,
+              1,
+              2
+            ],
+            "drillable": true
           }
         },
         {
@@ -121,7 +138,7 @@
         },
         {
           "component": "Column",
-          "id": "chart",
+          "id": "chart__column_1",
           "children": [
             "chart__text_1",
             "chart__vegachart_1",
@@ -129,6 +146,11 @@
           ],
           "justify": "start",
           "align": "stretch"
+        },
+        {
+          "component": "Card",
+          "id": "chart",
+          "child": "chart__column_1"
         },
         {
           "component": "Text",
@@ -171,7 +193,16 @@
               "5",
               "$96,250,000"
             ]
-          ]
+          ],
+          "action": {
+            "source": "v2",
+            "rows": [
+              0,
+              1,
+              2
+            ],
+            "drillable": false
+          }
         },
         {
           "component": "SqlDetails",
@@ -181,7 +212,7 @@
         },
         {
           "component": "Column",
-          "id": "table",
+          "id": "table__column_1",
           "children": [
             "table__text_1",
             "table__datagrid_1",
@@ -189,6 +220,31 @@
           ],
           "justify": "start",
           "align": "stretch"
+        },
+        {
+          "component": "Card",
+          "id": "table",
+          "child": "table__column_1"
+        },
+        {
+          "component": "Text",
+          "id": "more__text_1",
+          "text": "Show by year",
+          "variant": "body"
+        },
+        {
+          "component": "Button",
+          "id": "more",
+          "child": "more__text_1",
+          "variant": "default",
+          "action": {
+            "event": {
+              "name": "ask",
+              "context": {
+                "follow_up": "f1"
+              }
+            }
+          }
         }
       ]
     }

@@ -69,7 +69,7 @@ describe('interop with the stub agent', () => {
     const processor = createProcessor();
     const agent = await connect(agentUrl, processor.getRendererCapabilities({versions: ['v0.9']}));
     const events: AskEvent[] = [];
-    for await (const e of agent.ask('Which suppliers got the most?')) events.push(e);
+    for await (const e of agent.askQuestion('Which suppliers got the most?')) events.push(e);
 
     expect(events.filter(e => e.kind === 'status').map(e => (e as {text: string}).text)).toContain(STATUS_TEXT);
     const final = events.at(-1)!;
@@ -79,7 +79,7 @@ describe('interop with the stub agent', () => {
     expect(final.prose).not.toContain('{r1');
     expect(final.a2ui.length).toBeGreaterThan(0);
     const firstId = surfaceIdOf(final.a2ui)!;
-    expect(firstId).toMatch(/^turn-1-[0-9a-f]{6}$/);
+    expect(firstId).toMatch(/^turn-1-1-[0-9a-f]{6}$/);
     for (const m of final.a2ui) {
       const body = Object.values(m).find(v => typeof v === 'object' && v && 'surfaceId' in v) as {surfaceId: string};
       expect(body.surfaceId).toBe(firstId);
@@ -89,13 +89,45 @@ describe('interop with the stub agent', () => {
 
     // Same context → the next turn gets its own surface.
     const again: AskEvent[] = [];
-    for await (const e of agent.ask('And again?', final.contextId)) again.push(e);
+    for await (const e of agent.askQuestion('And again?', final.contextId)) again.push(e);
     const second = again.at(-1)!;
     expect(second.kind === 'final' && second.contextId).toBe(final.contextId);
     if (second.kind !== 'final') return;
     const secondId = surfaceIdOf(second.a2ui)!;
-    expect(secondId).toMatch(/^turn-2-[0-9a-f]{6}$/);
+    expect(secondId).toMatch(/^turn-2-1-[0-9a-f]{6}$/);
     processor.processMessages(second.a2ui as unknown as A2uiMessage[]);
     expect(processor.model.surfacesMap.get(secondId)).toBeDefined();
+  });
+
+  it('runs a Drill-down and a Follow-up Ask as A2UI actions (SPEC §15)', async () => {
+    const processor = createProcessor();
+    const agent = await connect(agentUrl, processor.getRendererCapabilities({versions: ['v0.9']}));
+    let first: AskEvent | undefined;
+    for await (const e of agent.askQuestion('Which suppliers got the most?')) first = e;
+    if (first?.kind !== 'final') throw new Error('no answer');
+    const surfaceId = surfaceIdOf(first.a2ui)!;
+    const components = first.a2ui.flatMap(m => ((m['updateComponents'] as {components?: Record<string, unknown>[]})?.components ?? []));
+    const chart = components.find(c => c['component'] === 'VegaChart')!;
+    const action = chart['action'] as {source: string; rows: number[]; drillable: boolean};
+    expect(action.drillable).toBe(true);
+
+    const drill = {name: 'drill', surfaceId, sourceComponentId: String(chart['id']), timestamp: new Date().toISOString(),
+                   context: {source: action.source, row: action.rows[0]}};
+    let out: AskEvent | undefined;
+    for await (const e of agent.act(drill, first.contextId)) out = e;
+    if (out?.kind !== 'final') throw new Error('no drill-down');
+    const level = out.metadata?.['explorerLevel'] as {turn: number; level: number; label: string; surfaceId: string};
+    expect([level.turn, level.level, level.label]).toEqual([1, 2, 'Supplier A']);
+    expect(out.prose).toBe('');
+    processor.processMessages(out.a2ui as unknown as A2uiMessage[]);
+    expect(processor.model.surfacesMap.get(level.surfaceId)).toBeDefined();
+
+    const followUp = components.find(c => c['component'] === 'Button')!;
+    const ask = {name: 'ask', surfaceId, sourceComponentId: String(followUp['id']), timestamp: new Date().toISOString(),
+                 context: (followUp['action'] as {event: {context: Record<string, unknown>}}).event.context};
+    let asked: AskEvent | undefined;
+    for await (const e of agent.act(ask, first.contextId, [surfaceId])) asked = e;
+    if (asked?.kind !== 'final') throw new Error('no ask');
+    expect((asked.metadata?.['explorerLevel'] as {level: number}).level).toBe(3);
   });
 });
