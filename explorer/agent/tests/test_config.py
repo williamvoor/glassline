@@ -104,6 +104,14 @@ def test_missing_dataset_dir_is_a_config_error(tmp_path):
         load_settings(env_for(tmp_path, DATASET_DIR="datasets/nope"), tmp_path)
 
 
+# Regression: an unset DATASET_DIR fell back to the AusTender dataset (code must be dataset-agnostic).
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_dataset_dir_is_required(tmp_path, value):
+    env = dict(BASE_ENV) if value is None else {**BASE_ENV, "DATASET_DIR": value}
+    with pytest.raises(ConfigError, match="DATASET_DIR is required"):
+        load_settings(env, tmp_path)
+
+
 def test_settings_repr_hides_the_dsn(tmp_path):
     write_dataset(tmp_path)
     assert "s3cret" not in repr(load_settings(env_for(tmp_path), tmp_path))
@@ -111,7 +119,7 @@ def test_settings_repr_hides_the_dsn(tmp_path):
 
 # D3
 def test_committed_dataset_loads():
-    s = load_settings(BASE_ENV, EXPLORER_ROOT)
+    s = load_settings({**BASE_ENV, "DATASET_DIR": "datasets/austender"}, EXPLORER_ROOT)
     assert s.dataset.name == "austender"
     assert s.dataset.allowed_schemas == ("mart",)
     assert (s.dataset.currency.code, s.dataset.currency.symbol) == ("AUD", "$")

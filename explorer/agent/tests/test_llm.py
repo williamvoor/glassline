@@ -328,7 +328,8 @@ def test_loop_config_from_settings(tmp_path):
     from explorer_agent.config import load_settings
 
     root = Path(__file__).resolve().parents[2]
-    s = load_settings({"DATABASE_URL": "postgresql://u:p@h/db", "MODEL": "m/x", "REASONING_EFFORT": "",
+    s = load_settings({"DATABASE_URL": "postgresql://u:p@h/db", "DATASET_DIR": "datasets/austender",
+                       "MODEL": "m/x", "REASONING_EFFORT": "",
                        "MAX_TOOL_ITERATIONS": "5", "MAX_UI_RETRIES": "1", "ROWS_TO_MODEL": "7"}, root)
     c = LoopConfig.from_settings(s)
     assert (c.model, c.reasoning_effort, c.prompt_cache_key) == ("m/x", None, "explorer-austender")

@@ -248,7 +248,7 @@ committed `explorer/.env.example` with placeholders.
 | `REASONING_EFFORT` | `minimal` | Passed as `reasoning_effort` only when set; empty = not sent (other providers may reject it) |
 | `META_API_KEY` | (none) | Read by LiteLLM; other providers use their own variables |
 | `DATABASE_URL` | (required) | The dataset's read-only login |
-| `DATASET_DIR` | `datasets/austender` | Dataset directory, relative to `explorer/` |
+| `DATASET_DIR` | (required) | Dataset directory, relative to `explorer/` (no default, so the code names no dataset) |
 | `PROMPT_CACHE_KEY` | `explorer-<dataset>` | Fixed per dataset |
 | `SQL_TIMEOUT_MS` | `15000` | `statement_timeout` per query |
 | `SQL_ROW_CAP` | `5000` | Rows fetched and stored per query |

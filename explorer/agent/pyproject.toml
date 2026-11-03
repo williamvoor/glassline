@@ -36,7 +36,7 @@ asyncio_mode = "auto"
 addopts = "-m 'not live_db'"
 markers = [
     "db: needs the disposable Postgres 18 test database (Docker)",
-    "live_db: reads the loaded dataset database from explorer/.env; run by hand with -m live_db",
+    "live_db: reads the loaded dataset database from the repo root's .env (genUI/.env); run by hand with -m live_db",
 ]
 
 [dependency-groups]

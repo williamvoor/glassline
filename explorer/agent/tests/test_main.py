@@ -12,7 +12,7 @@ import pytest
 
 def run_main(env_extra, *, timeout=60):
     env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY")}
-    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", **env_extra})
+    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "DATASET_DIR": "datasets/austender", **env_extra})
     return subprocess.run([sys.executable, "-m", "explorer_agent"], env=env, capture_output=True, text=True,
                           timeout=timeout)
 
@@ -54,7 +54,8 @@ def test_starts(pg):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL",)}
-    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "DATABASE_URL": pg.ro_dsn, "AGENT_PORT": str(port)})
+    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "DATABASE_URL": pg.ro_dsn, "AGENT_PORT": str(port),
+                "DATASET_DIR": "datasets/austender"})
     proc = subprocess.Popen([sys.executable, "-m", "explorer_agent"], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
     try:

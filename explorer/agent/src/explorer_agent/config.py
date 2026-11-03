@@ -226,7 +226,10 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         check_dsn(database_url)
     except ValueError as e:
         raise ConfigError(f"DATABASE_URL: {e}") from None
-    dataset_dir = explorer_root / (env.get("DATASET_DIR", "").strip() or "datasets/austender")
+    dataset_dir_name = env.get("DATASET_DIR", "").strip()
+    if not dataset_dir_name:
+        raise ConfigError("DATASET_DIR is required (the dataset directory, relative to explorer/)")
+    dataset_dir = explorer_root / dataset_dir_name
     dataset = load_dataset(dataset_dir)
     return Settings(
         model=env.get("MODEL", "").strip() or "meta/muse-spark-1.3",
