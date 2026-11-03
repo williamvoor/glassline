@@ -18,6 +18,9 @@ AusTender OCDS contract notices in Postgres 18, built for the explorer's LLM age
 | `src/austender/mart.py` | `core → mart` (`rebuild`) |
 | `src/austender/abn.py` | ABN checksum, `name_norm` |
 | `src/austender/db.py` | Connections, roles, migration runner |
+| `src/austender/cli.py` | `uv run austender <command>` entry point |
+| `src/austender/config.py` | Settings from `.env` (enforces the 1000 ms request floor) |
+| `backfill.sh` | Full backfill then `rebuild`, logged to `logs/` |
 | `src/austender/testing.py` | `build_test_db(dsn)`, which the explorer's tests use |
 | `migrations/NNNN_*.sql` | Plain SQL, applied in order |
 | `tests/seed/` | Hand-written releases; `expected.py` has the hand-computed totals |
@@ -35,8 +38,8 @@ uv run austender migrate | fetch-month YYYY-MM | backfill --from YYYY-MM --to YY
 ## Hard rules
 
 - **Python only** (3.13, `uv`), `httpx` and `psycopg` 3. No ORM, no Alembic, no TypeScript.
-- **Do not run `backfill`** unless the user asks. It takes about 3 hours and hits a public API. A
-  single `fetch-month` is fine when it is needed.
+- **Do not run `backfill` or `./backfill.sh`** unless the user asks. It takes about 3 hours and hits a
+  public API. A single `fetch-month` is fine when it is needed.
 - **Tests never touch the network.** Use `httpx.MockTransport` for the API and inject the sleep.
 - **Never edit an applied migration.** The runner stores each file's sha256 and refuses to run if a file
   changes. Add a new `NNNN_*.sql` instead.
@@ -74,7 +77,8 @@ The `COMMENT ON` text of the `mart` tables and columns is the explorer agent's *
 (it goes into the LLM prompt). Any new table or column needs a comment written for an LLM that knows
 nothing about AusTender: meaning, units (AUD as published), what is included or excluded, how nulls
 should be read, and which table to prefer for what. The total must stay under 12,000 characters (it is
-tested). It is about 6.8k now.
+tested by `test_mart_comments_stay_under_the_limit`). Before adding a lot of text, measure the current
+total with that test's query: the test only reports the number when it fails.
 
 Speed comes right after correct numbers. Add indexes for the access paths (FY, agency, supplier, UNSPSC
 prefix, publish date). Check new query shapes with `EXPLAIN ANALYZE`. The target is typical aggregates
@@ -94,5 +98,5 @@ the code under test.
 
 ## Commits
 
-Conventional Commits per the repo's `.gitmessage`, scope `austender`
+Conventional Commits per the repo root's `../.gitmessage`, scope `austender`
 (e.g. `fix(austender): …`).
