@@ -1174,11 +1174,11 @@ are Ask-only also show a small "Ask" tag at the end of the row on hover and focu
 - **Look and feel lives in the client** (ADR 0026): the agent sends structure (a Card per
   Visual) but no colours, fonts or Vega `config`. The viewer's light or dark scheme is only known
   in the browser, and one set of tokens drives both A2UI and Vega.
-- **One Turn on the Canvas.** Levels already replace each other in place; showing one Turn makes
+- **One Turn on the Canvas** (superseded by §18's tabs). Levels already replace each other in place; showing one Turn makes
   the Canvas a page, as in the prototype. Older Turns are one click away in the Sidebar.
 - **Follow-ups stay in the Surface**, restyled as pills; the Sidebar doesn't lift them out.
 - **Dark mode follows the OS**; no switch.
-- **Not taken from the prototype:** "COMPUTED"/"SOURCED" badges, tabs, Share/Fork buttons, the
+- **Not taken from the prototype** (tabs, the controls bar and treemaps are superseded by §18): "COMPUTED"/"SOURCED" badges, tabs, Share/Fork buttons, the
   controls bar, treemaps (a later catalog component, §15 Decisions), and the "What the app
   received" panel.
 - **Nested Cards (deferred).** `Card` stays a passthrough component, so a model that wraps a
@@ -1410,3 +1410,706 @@ before the full run.
   - A count cited from an earlier Turn's Result can appear without its SQL on the Surface.
   - Table twins of a drilled chart are still Ask-only (refuter note).
 
+## 18. Amendment: Boards, Controls and investigation tabs (2026-11-03)
+
+Status: **approved** (2026-11-03), revision 3 plus the verified notes below. The refuter gave
+revision 1 a FAIL and revision 2 a PASS-WITH-NOTES (2026-11-03). Both rounds' findings are worked
+in here, as listed under "Review rounds". ADRs 0028 and 0029 are accepted; ADR 0030 stays
+proposed and gates slice 5 only.
+
+Amends:
+- §1 (scope) and §2 (request flow);
+- §9 (bound parameters, and database text in server-built components);
+- §15 (the Breadcrumb, Levels, what a click opens, and that the client disables everything while
+  anything runs);
+- §16 (Sidebar and Canvas; its Decisions "One Turn on the Canvas" and "Not taken from the
+  prototype: tabs, the controls bar, treemaps" are superseded).
+
+The idea comes from the "Follow the Contract" prototype (`../docs/Follow the Contract · SaC
+prototype.html`). It opens on a rich **Explorer** page whose Controls re-query in place, a row
+click opens a page about that entity, and each step of the investigation gets its own tab.
+
+The user settled these choices (2026-11-03):
+- Entity pages are Boards written with the Dataset (bootstrap), with a runtime fill-in.
+- Controls trigger the re-query through the client's data-model subscription.
+- The landing page is called Explorer.
+- Tabs follow the prototype: one tab strip for the whole investigation.
+- `Treemap`, `Timeline` and `DataGrid` bar cells are added.
+
+Decisions: ADR 0028 (Boards), ADR 0029 (Controls), ADR 0030 (Muse Wonder in the request path,
+proposed). New terms in `../CONTEXT.md`: **Board**, **Explorer Board**, **Entity Board**,
+**Control**, **Tab**, **Log entry**. **Breadcrumb** is retired.
+
+ADR 0001 holds throughout. A Board file stores SQL and Macro calls, never numbers. Every figure is
+queried when the Board renders, and every Visual shows its SQL.
+
+### Slices
+
+Built in order, tests first, each a commit of its own:
+
+| Slice | What | Model calls |
+|---|---|---|
+| 1a | Board files, rendering, startup checks, cache; `Treemap` and `DataGrid` bar cells; the dataset-agnostic Explorer template for the bootstrap; a Dataset's Explorer Board, when it has one, shown on the Canvas before the first question (where §14's examples are today, which move below it). Until 1b, its Visuals aren't clickable, because Turn 0 has no Sidebar entry or Breadcrumb | none |
+| 1b | Tabs and the investigation log in the client, replacing the Breadcrumb | none |
+| 2 | Controls: re-query in place; Control state to the model | none |
+| 3 | Entity Boards opened by a row click; `Timeline` | none |
+| 4 | The bootstrap tool drafts and previews Boards from the templates in `bootstrap/templates/`, for any database (a phase 3 in `bootstrap/SPEC.md`, written when this slice starts). This is where austender gets its first Boards | Wonder, offline |
+| 5 | Runtime fill-in (an Ask that has Wonder draft an entity Board); the A/B run for the answer model | Wonder, needs ADR 0030 accepted |
+
+Slices 4 and 5 get their own detailed amendments. This section fixes their shape only.
+
+**Slice 1a scope (fixed 2026-11-03, before building).**
+- **In:**
+  - Board files with `title`, `question`, `scope`, `[[queries]]` and `layout`.
+  - Rendering steps 2–6 and Board mode.
+  - Board instances owning their Results, with IDs from the Conversation's counter.
+  - The cache with single-flight, the warm-up and the pinned Explorer entry.
+  - The startup checks that apply without Controls.
+  - `open_board` (from "Opening" in slice 1b's section), `explorerNoBoards`, and the `boards`
+    CLI check.
+  - `Treemap`, `DataTable(bars=)`, `_label` and the hover cursor for every Vega spec, and
+    `effort_check` reading full Vega.
+  - The dataset-agnostic Explorer template (`bootstrap/templates/explorer.toml`: slots, no SQL
+    and no names), and a stub Explorer Board for tests. austender gets no `boards/` until slice 4.
+- **The client in 1a:**
+  - It sends `open_board` when a conversation starts.
+  - It shows the Explorer Board's Surface on the Canvas above §14's examples until the first
+    question. That question then uses the same Conversation.
+  - On `explorerNoBoards` it shows §14's empty state, as today. The Board has no Turn list
+    entry.
+- **Not clickable in 1a.** Board mode builds every Visual with `clickable = False`, so no action
+  sources are registered. Slice 1b turns this off.
+- **Deferred:**
+  - Any `:name` placeholder, plus `[[controls]]`, `key`, `key_type` and `key_columns`, all of
+    which are startup errors ("not supported yet") until slices 2 and 3. So is the typed
+    rewrite.
+  - The `r<id>` fallback to Board instances, because nothing can name a Board Result before
+    the Board pair (slice 2) or clicks (1b).
+  - `MAX_BOARD_INSTANCES` (1b), because 1a has exactly one instance per Conversation.
+- **Criteria covered:**
+  - In full: B3, B4, B5, B14, B16, B18 and B19.
+  - In part: B1, B11, B17, B20 and B21. The parts that need Controls, keys, clicks or tabs come
+    in later slices.
+
+### Speed targets
+
+These are the measured bar in B-M, read like §17's bar, with p90 beside the median:
+
+| What | Target (median) |
+|---|---|
+| Explorer on load, warm cache | < 0.5 s |
+| Any Board, cold (no cache) | < 1.5 s |
+| A Control change, until the Visuals are replaced | < 1.0 s |
+| An entity Board from a click, prefetched / not | < 0.3 s / < 1.5 s |
+
+### Board files
+
+A Board lives in `datasets/<name>/boards/<board>.toml`. `explorer.toml` is the Explorer Board, and
+it is required once a Dataset has a `boards/` directory. A Dataset without one behaves as today,
+with no Explorer tab.
+
+| Key | Meaning |
+|---|---|
+| `title` | Plain text with no numbers ("Explorer"). An Entity Board's tab and heading append " · <row label>" |
+| `question` | Optional mono subtitle under the heading |
+| `scope` | Optional caption line saying what the Board covers. An Entity Board says it is not limited to the clicked answer's filters |
+| `key`, `key_type` | Entity Boards only: the placeholder name the clicked row's key binds to (`supplier_abn`), and its SQL type (`text`, `int`, `float`, `date` or `bool`; `int` means `bigint`, so 11-digit keys fit) |
+| `key_columns` | Entity Boards only: the Result column names whose rows open this Board, e.g. `["supplier_abn", "abn"]` |
+| `[[controls]]` | The Board's Controls, in display order (below) |
+| `[[queries]]` | `name` (`[a-z_][a-z0-9_]*`, unique) and `sql`: one `SELECT`/`WITH` with `:name` placeholders naming Controls or the `key`. At most `MAX_BOARD_QUERIES` (12) per Board |
+| `layout` | Express, as the model writes it, with Macro calls naming a query where a Result ID goes. `Column`, `Row`, `Card`, `Text`, `Divider` and `Tabs` pass through as in answers |
+
+**Typed placeholders.** Postgres can't infer a type for `$1 IS NULL` (verified: "could not
+determine data type of parameter $1"). So every Control and every `key` declares a SQL type, and
+the Board rewrite emits `$n::<type>`, or `$n::<type>[]` for a `multi` Control. `int` is cast as
+`bigint` (verified: `$1::int` overflows at 99999999999). The display copy
+keeps the cast (`'Limited'::text`). Otherwise §15's scan, guard and `AsyncRawCursor` apply
+unchanged. A placeholder must name a Control or the `key`, and an unused Control is a startup
+error. Control names must not equal a column of any of the Board's query outputs, so a Drill
+query on a Board can tell row placeholders from Control placeholders.
+
+**Rows.** Every Board query runs wrapped as `SELECT * FROM (<sql>) AS _explorer_board LIMIT
+BOARD_ROW_CAP + 1` (default 500), and truncation is reported in the Visual's caption: tables and
+treemaps as before, and charts ("query truncated at N rows") in answers and Boards alike. A Metric
+or `Cite` reads one row, so it carries no note.
+
+**Visuals in a layout** take the same arguments as in answers, `drill_sql` included.
+`MAX_DRILLS_PER_SURFACE` doesn't apply, because a person reviewed the Board. A Board's Drill
+query may use the Board's Control placeholders as well as the row's columns. Control
+placeholders bind their current values, and the §15 NULL-drop check applies to row columns only,
+because a Control's NULL means "All". Prefetched Drill-down rows are keyed by the Control values
+too, so a Control change discards them.
+
+**Rendering a Board.**
+1. The Controls' option queries run.
+2. The Board's queries run under an **agent-wide** semaphore of `BOARD_QUERY_CONCURRENCY`
+   (default 2), so the 4-connection pool keeps room for user questions and prefetch. Each runs
+   with `SQL_TIMEOUT_MS` and the row cap above.
+3. Each query's rows become a Result whose `purpose` is `<board title> · <query name>`. Board
+   Results and their action sources belong to the **Board instance**, not to the
+   Conversation's ResultStore or its `MAX_ACTION_SOURCES`. Their IDs are allocated from the
+   **Conversation's one never-reused counter** (the ResultStore's), so a Board Result `r<id>`
+   can't share an ID with a stored Result. `r<id>` lookups check the store, then the live Board
+   instances. Cached Results are shared by reference between Board instances, under fresh IDs
+   per instance.
+   - `ActionState.resolve` looks up a Board Visual's source in the live Board instances as well.
+   - An Ask on a Board row copies the Result into the ResultStore under a fresh ID (§15's
+     `restore_result`) before its row pair is built.
+4. The layout goes through `UiPipeline.build` in **Board mode** (below), where Macro arguments
+   and `Cite` placeholders name queries and are looked up by query name. A layout writes
+   `{by_agency[0].value}` where an answer writes `{r3[0].value}`. The Result IDs from step 3
+   live on the Results, not in the layout. Query names must not look like Result IDs
+   (`r<digits>`).
+5. The server puts the heading first, then the Controls Card, then the layout. The title and row
+   label are shown as written, not markdown-escaped, because the client renders `h1`–`h5` and
+   `caption` Text as plain text (amended 2026-11-03; the §15 Drill-down title has the same
+   problem, issue 9).
+6. A query that fails replaces its Visuals with an error Card ("This panel couldn't load:
+   <SQLSTATE>", with no values), and the rest of the Board still shows.
+
+**Board mode.** Every Macro that would raise on a zero-row Result shows a "No rows" Card instead,
+with its title and SQL: `Metric` on row 0, `Cite` on a missing row, and a chart with no marks.
+That way a Control that filters to nothing empties the panel rather than failing the Board.
+Answers keep today's behaviour, where a zero-row Metric is a Repair.
+
+Any other Macro error in Board mode (negative bar values, for example) replaces only that panel,
+with a "This panel couldn't be drawn from its rows." Card (amended 2026-11-03, refuter round 1 on
+the build). The log names the Macro, never the message, which can quote a value. If the Surface
+still fails to build, `open_board` answers "The Explorer couldn't be shown", rolls back its Level,
+and can be sent again.
+
+**Stable component IDs.** A panel is every Macro call in the layout, at any depth inside
+passthrough components. Its root ID is the layout's variable name for the call (or the SDK's
+positional ID, such as `root_children_0`, for an inline call), and its expanded components are
+`<root>__<type>_<n>`. No rewrite is needed: the SDK already makes these deterministic.
+Re-rendering the same layout gives the same IDs whatever the rows, because each Board instance
+has its own surface and the layout is fixed configuration. The server renames the layout's
+`root` to `board_layout` so it can put the heading and Controls Card above it, and rejects a
+layout that defines `board_heading`, `board_controls` or `board_layout` itself.
+
+*Verified 2026-11-03* (`UiPipeline.build` on the stub reply): IDs were identical across two
+builds, a fresh pipeline, 1 row against 3, an advanced Conversation counter, and inline Macro
+calls. This replaces revision 3's `b<n>-p<k>` prefix rewrite.
+
+*Verified 2026-11-03 for B13* (happy-dom, the real client catalog): `processUpdateComponentsOp`
+updates a component of unchanged type in place, and the renderer keeps one element per child
+position, recreating it only when its tag changes. After an `updateComponents` for a panel, the
+focused `TextField`'s `<input>` was the same element, still focused with its selection, and the
+`Slider` element was unchanged. A panel root that changed type (Column → "No rows" Card) and back
+re-rendered correctly with focus kept. Two limits: elements are matched by child position, not
+ID, so an in-place reply must never re-send a parent's child list in a new order or length; and a
+real browser check stays in B20's Playwright run.
+
+**Cache.**
+- Rendered Results, and the Controls' option lists, are kept agent-wide by `(board, key value,
+  Control values)` for `BOARD_CACHE_TTL_S` (default 300), at most `MAX_BOARD_CACHE` (default 20)
+  entries, oldest dropped. Each query's age is its own, so re-running a failed query doesn't make
+  the others look newer. The Explorer's default entry is pinned and never counts toward the cap.
+  It is served until a background refresh replaces it, even if a refresh fails (logged), so a
+  database hiccup doesn't take the Explorer down.
+- Concurrent renders of one key share a run that has its own task. A caller that goes away stops
+  waiting, but the run continues for the others and still fills the cache.
+- **Failed or timed-out queries are never cached.**
+- Two renders of the same key share one run (single-flight).
+- The Explorer at its defaults is rendered at startup in the background, and re-rendered in the
+  background when its entry expires, so the first view of every Conversation is warm.
+- Data changes only when the Dataset is loaded, so a cached render is at most a few minutes old.
+
+**Startup checks** (the agent refuses to start, naming the file and key, as for other Dataset
+configuration):
+- the TOML keys and types are valid;
+- every query passes the guard and the placeholder rules (typed, used, no name collisions);
+- every query runs as `LIMIT 0` with every Control at its default, and again with every Control
+  that allows NULL at NULL (`choice` with `all_label`, `multi`, a `date` with `optional = true`),
+  giving its output columns and types;
+- the layout parses, and each Macro call's column arguments name output columns of the right
+  kind (numeric for `value`, `y` and `bars`; date for `start`/`end`). This is a **columns-only**
+  check (`macros.check_columns`), which runs no Macro over rows, so zero-row outputs are fine;
+- the option queries return `value` and `label` columns;
+- `key_columns` don't overlap between Boards;
+- the layout holds no `FollowUp` (Boards register none, so its button would be dead);
+- `FORMAT` is `express`, since Board layouts are Express. This is checked when settings load.
+
+No rows are fetched by the checks. The background warm-up render is the first real run, and its
+times are logged per query. A `boards` CLI check (`uv run python -m explorer_agent boards`)
+renders each Board at its defaults, timing the queries and the layout build together. It fails
+when a Board misses the cold target above, has a failed query, or has a panel that couldn't be
+drawn.
+
+### New Visual Macros (slices 1a and 3)
+
+Each is built from a stored Result like every Visual (ADR 0001), with its SQL shown in its Card
+(§16). `Treemap` and `Timeline` are Macros over the vendored `VegaChart`: the Macro writes the
+spec, and the agent's specs still carry no `config` (ADR 0026). The bar cell is a new optional
+prop on `DataGrid`. They're open to Boards and to the model's answers alike, and the model learns
+them from their docstrings in the inference catalog (Layer 1). That changes the cached prefix
+once, so the snapshots are regenerated on purpose. They count in the §15 Visual index.
+
+**Labels and cursor for every Vega spec.** Every clickable datum, in all Vega Macros, now carries
+`_label`, the row label as §15 defines it. The vendored VegaChart reads the confirmation label
+from `datum._label` instead of from `encoding`. `BarChart` and `LineChart` gain `_label` too,
+which keeps one path.
+
+**The pointer cursor** (amended 2026-11-03, while building 1a). Vega sets the container's
+cursor on every pointer move from the hovered item's own `cursor` (vega-view `cursor` and
+`setCursor`), so a hover handler that sets a style would be overwritten at once. So the cursor
+comes from the spec. For a Vega-Lite `mark`, the client sets `mark.cursor` as before (§16). A
+Vega-Lite `layer` (Timeline, slice 3) has the Macro set `cursor` on the bar layer's mark. Full
+Vega (Treemap) has the Macro write a per-item `cursor` encoding, `pointer` only for items with
+a `_row`, so "Other" keeps the default. Only Visuals with an `action` get a pointer.
+`effort_check.surface_summary` reads data values from both Vega-Lite (`data.values`) and Vega
+(`data[]` entries with `values`).
+
+**`Treemap(result_id, title, label, value, format="", clickable=True, drill_sql="", drill_as="table", drill_x="", drill_y="", drill_title="")`** (slice 1a)
+- One tile per row, with its area proportional to `value`. `label` is a text column and `value`
+  a numeric one. The tile shows the label and the formatted value when it's big enough, and both
+  appear in the tooltip.
+- **Folding.** It shows the largest `MAX_TREEMAP_TILES` (macro constant, 12) rows by value. The
+  rest fold into one "Other" tile, which isn't clickable. When the Result was truncated by the
+  row cap, the tile reads "Other (incomplete)" and the caption says so.
+- Rows with a NULL, zero or negative value have no area. They're left out, and the caption
+  counts them.
+- **The spec is full Vega**, because Vega-Lite has no treemap. It's a flat `stratify` under one
+  root, then `treemap` (`squarify`). Only leaf nodes are drawn, so the root (which has no `_row`)
+  has no mark. The click hook works on the tiles (refuter, 2026-11-03: headless Vega keeps
+  `_row`).
+- **Displayed order**, which prefetch uses: by value descending, ties by label ascending.
+
+**`Timeline(result_id, title, label, start, end, color="", value="", format="", sort="result", horizon_months=0, clickable=True, drill_sql="", drill_as="table", drill_x="", drill_y="", drill_title="")`** (slice 3)
+- One bar per row from `start` to `end`, both date columns (stored as ISO strings), on a date
+  axis.
+  - `label` names the row's lane. Repeated labels share a lane.
+  - `color` is an optional category column, at most `MAX_COLOR_CATEGORIES`, folded to "Other" as
+    for charts.
+  - `value` is an optional numeric column, shown at the bar's end with `format`.
+- `sort` is `result` (the Result's order), `start` or `end`. That is also the displayed order.
+- **The today line.** A rule marks today's date, which the Macro adds when it runs. It's a
+  per-request value inside the Surface, never in the prompt.
+- **The horizon band.** `horizon_months` > 0 shades a band from today to today + N months.
+- **Caps.** At most `MAX_TIMELINE_ROWS` (macro constant, 30) bars are shown. The caption reports
+  the cut. A row with a NULL `start` or `end` is left out and counted in the caption. A row whose
+  `end` comes before its `start` is a macro error.
+- The spec is a Vega-Lite `layer` (bars, rule, band), and only the bar layer's data carries
+  `_row` and `_label`.
+
+**`DataGrid` bar cells** (slice 1a)
+- `DataTable` gains `bars=""`: comma-separated numeric columns of the shown columns.
+- For each of them, the column entry in the component gains `bars: [number|null]` with one entry
+  per row: the cell's share of the column's largest value among the shown rows, from 0 to 1, or
+  `null` for a NULL cell.
+- The client draws a thin `--chart-1` bar under the cell's formatted text, as wide as that share.
+  The text stays the formatted value, so screen readers read the number, not the bar.
+- Negative values in a bar column are a macro error. A column whose shown rows are all zero or
+  NULL gets no bars.
+- Catalog: `DataGrid.columns[].bars?`, added to the agent's catalog JSON and the client's zod
+  schema together (ADR 0002).
+
+### Controls (slice 2)
+
+| `kind` | Basic component | Binds (`type` from the declaration) | Declaration |
+|---|---|---|---|
+| `choice` | `ChoicePicker` (single) | the chosen option's `value`, or NULL for "All" | `type`, `options_sql`, `all_label` (e.g. "All"; leave out to require a choice), `default` (an option value, or `"all"`) |
+| `multi` | `ChoicePicker` (multiple, `filterable` when over 10 options) | a `<type>[]` of the chosen values, or NULL when none are chosen | `type`, `options_sql`, `default` (`[]` or values) |
+| `toggle` | `CheckBox` | `bool` | `default` |
+| `number` | `Slider` | `int` | `min`, `max`, `default`; or `range_sql` returning `min` and `max` (rounded to integers) |
+| `date` | `DateTimeInput` (date only) | `date` | `default`, `min`/`max` or `range_sql`; `optional = true` lets it be cleared (NULL) |
+
+- **No `step`.** The v0.9 basic `Slider` has only `label`, `min`, `max` and `value`, and the
+  browser's step is 1. So `number` is integer-only. A coarser or decimal scale is written as a
+  `choice`.
+- **Options.** `options_sql` returns `value` and `label`. An option row with a NULL `value` is
+  dropped, because "All" is the NULL. There are at most `MAX_CONTROL_OPTIONS` (default 100) per
+  Control, checked at each render. The rest are dropped, and the Control's caption says so ("First
+100 options shown"). The server keeps the
+  list per Board instance.
+- **Database text in components.** Option labels are database text placed by the server in
+  `ChoicePicker` options and rendered as plain text by Lit. This is the one exception to "database
+  strings reach the UI only through Macros" (root `AGENTS.md` notes it). Labels are never
+  rendered as markdown.
+- **Queries handle "All"** with typed NULLs, e.g. `(:method IS NULL OR procurement_method =
+  :method)` with `type = "text"`, which runs as `($1::text IS NULL OR procurement_method =
+  $1::text)`. A `multi` Control binds `text[]`, `int[]` and so on (ADR 0029). Drill queries
+  still bind scalars only.
+
+**Data model.**
+- The Controls Card is sent once, in the Board's `createSurface`. Its data model holds the
+  current values at `/controls/<name>`: a `choice` holds `[<option index as a string>]`, or
+  `["all"]` for All; a `multi` holds a list of index strings; a `toggle` a bool; a `number` an
+  int; a `date` an ISO date or `""`.
+- **The server never writes `/controls` again** for that Board instance, so every later change
+  under `/controls` comes from the user.
+
+**The client.**
+- The client subscribes once to `/controls` (`DataModel.subscribe`, which fires for changes
+  below it) and diffs against the values it last sent.
+- On a difference it sends action `controls` with context `{board: "b<n>", seq: <n>, values:
+  {<every Control>: …}}`, converting from the data model:
+  - a `choice` sends an option index (an integer) or `null` for `["all"]`;
+  - a `multi` sends a list of integers;
+  - a `toggle` sends a bool;
+  - a `number` sends an int;
+  - a `date` sends an ISO date or `null` for `""`. `seq` is monotonic per Board instance, and `values` always holds the
+  **full** state, never just the change.
+- A `number` change is debounced by `CONTROL_DEBOUNCE_MS` (client constant, 300). Every other
+  kind sends at once.
+- **Controls stay enabled during a re-query** (an exception to §15's "disable everything while
+  anything runs"). They are disabled during a model run of the Conversation. While a re-query
+  runs, the Board's Visuals are dimmed and their clicks disabled, because their sources are about
+  to be replaced. The server answers a click on a released source with §15's "too old" error.
+- **Logs** name the Board instance, `seq` and query names only, never Control values or labels.
+
+**Validation.** The server rejects an unknown Board instance or Control, a missing Control, an
+index out of range, a wrong type, a number outside `min`–`max` or not an integer, a date that
+isn't ISO or `""` (allowed only when `optional`), and `["all"]` without `all_label`. Nothing runs
+for a rejected action. The context keys are only `board`, `seq` and `values`.
+
+**Re-query in place.**
+- Each Board instance has its own lock, separate from the Conversation's lock. A `controls`
+  action is rejected with "busy" while a model run holds the Conversation, as a Drill-down is
+  (§15).
+- **The reverse order.** A model run that starts while a re-query is in flight first waits for
+  the viewed Board instance's lock, after taking the Conversation's lock. So the Board pair
+  describes a completed render.
+- Results named in a pair are **pinned** until that model run ends. A later re-query replaces
+  the panels on screen but releases the pinned Results only once the run is over, so a `Cite` in
+  the run still resolves.
+- **Newest wins without cancellation.** On arrival, the server records the highest `seq` seen for
+  the instance. When an action gets the instance lock and a higher `seq` has already arrived, it
+  runs nothing and replies with metadata `explorerSuperseded: true`. An action whose `seq` is not
+  above the last **applied** one gets the same reply. Running queries aren't cancelled. The
+  debounce and the lock keep at most one wasted re-query.
+- **What re-runs.** The changed set is computed against the Control values of the **last
+  completed render**, not the last accepted action. So panels whose re-query was superseded are
+  re-run too. Only queries using a changed Control run, and cached results count.
+- **The reply** is a final message holding one `updateComponents` for the same surface ID. The
+  server validates the **full** rebuilt Surface as for any reply (`ui.validate`), then sends only
+  the replaced panels' components under their stable IDs, never the Controls Card, and no
+  `updateDataModel`. `updateComponents` upserts components by ID (`@a2ui/web_core`
+  `processUpdateComponentsOp`), so the Controls keep focus and a slider doesn't jump.
+  Components left unreferenced by a smaller panel (for example a "No rows" Card replacing a
+  chart) stay in the client's model but don't render, and their number is bounded by the panel
+  count.
+- The reply's metadata includes `explorerInPlace: {board, seq}`, so the client knows which values
+  are now displayed. No new tab and no new Level are added.
+- The replaced panels' Results and action sources are released from the Board instance (pinned
+  ones after their model run).
+- **"busy" or a rejection:** the client writes the last displayed values back into
+  `/controls`. It updates its "last sent" copy first, so this write sends nothing.
+
+**The model learns the state, sparingly.**
+- When a model run starts, the server queues at most **one** Board pair: for the Board tab being
+  viewed (`explorerViewing`), and only if it is an Entity Board or its Controls aren't all at
+  their defaults. A Board at its defaults tells the model nothing a question needs, and this
+  keeps the Explorer out of nearly every first question.
+- It doesn't count toward `MAX_PENDING_PAIRS`.
+- **Call:** `{"sql": <display copies of the Board's queries, joined>, "purpose": "Board shown in
+  Tab <tab id>"}`, with no titles or labels.
+- **Result:** `{"board": <title, with the row label>, "controls": {<label>: <shown option
+  labels or value>}, "results": [{id, purpose, columns, rows_preview}]}`, with
+  `BOARD_ROWS_TO_MODEL` (default 5) rows per Result and the whole result cut to
+  `BOARD_PAIR_MAX_CHARS` (default 6000) by shortening the previews first.
+- The model can Cite a Board's Results by ID while the Board instance lives. B-M measures the
+  prompt tokens this adds.
+
+### Entity Boards (slice 3)
+
+- **What opens one.** A clickable Visual, in an answer or on a Board, whose Result has a column
+  named in some Board's `key_columns` opens that Board on a row click.
+  - The row's value binds to `key`.
+  - The Board opens in a new tab titled "<title> · <row label>".
+  - When a Result has key columns for several Boards, the first such column in the Result's
+    column order decides.
+  - It takes precedence over the Visual's Drill query, which is then neither checked nor
+    prefetched.
+- **Per row.** A row whose key value is NULL can't open the Board. It falls back to the Drill
+  query if there is one, or to an Ask. The component's `action` gains `boards: [int]`, the rows
+  that open a Board, beside `rows` and `drillable`.
+- **Prefetch.** Only the first clickable row's Board is prefetched (`BOARD_PREFETCH_ROWS`, default
+  1).
+  - It goes through §15's agent-wide prefetch semaphore, one Board render at a time, and it
+    counts as one held entry in `MAX_PREFETCHED`.
+  - It runs its queries one at a time on a single permit of the Board semaphore, with
+    `DRILL_PREFETCH_TIMEOUT_MS`, and takes that permit only when no user render is waiting for
+    one.
+  - Its result fills the Board cache.
+- **Prompt.** The Dataset context gains one generated line per Entity Board ("Rows with a
+  `supplier_abn` column open the Supplier Board"). It is stable, so the cached prefix stays
+  byte-identical. The Clicks section says such Visuals need no `drill_sql`, which saves the
+  output tokens of a Drill query that would be ignored. That raises the P6 cap from 3,000 to
+  3,200 characters. In the harness's Drill query rate, a Visual that opens an Entity Board counts
+  as drillable.
+- **Depth.** An Entity Board's Visuals can open other Entity Boards, but not their own Board.
+  Entity Board → Entity Board chains are unlimited without the model. This deliberately widens
+  §15's "only one level without the model", because every step is a reviewed Board, not a
+  model-written query.
+
+### Tabs and the investigation log (slice 1b)
+
+Replaces §15's Breadcrumb and §16's "one Turn on the Canvas". Turns and Levels keep their
+meaning inside the server: surface IDs `turn-<t>-<l>-<tag>` and compaction boundaries. The
+Explorer is Turn 0, Level 1.
+- A typed question starts Turn `t+1`, Level 1.
+- An Entity Board, a Drill-down or an Ask from a tab adds a Level to that tab's Turn (§15's
+  `new_level`).
+- Each of these is also a new tab.
+
+**Tabs.**
+- One strip at the top of the Canvas for the whole Conversation. (A Tab is the client's, not
+  A2UI's `Tabs` component, which stays a passthrough inside Surfaces.)
+- Each tab has a server-issued ID `t<n>`, which never changes and is never reused.
+- Explorer is the first tab and can't be closed. A question, an Entity Board, a Drill-down or an
+  Ask opens a new tab after the current one and selects it.
+- A tab shows one Level: its heading, prose and Surface, then its status line (§16). A running
+  question's tab shows the spinner and timer, and a failed question's tab shows the error and
+  Retry, as §16's Turn entry did. A Control change updates its tab in place.
+- A new tab shows a small "NEW" tag until it is first selected away from.
+
+**Closing.**
+- Every tab except Explorer has a close button. At most `MAX_TABS` (client constant, 8) are
+  open, and opening one more closes the oldest unselected tab other than Explorer.
+- A closed tab stays in the log and reopens from memory with no agent call.
+- At most `MAX_BOARD_INSTANCES` (default 10) Board instances live per Conversation, oldest
+  dropped (never the Explorer). A dropped Board's tab still reopens from memory, but its Controls
+  and clicks answer "This view is too old to explore; ask the question again." (§15's wording).
+
+**Investigation log** (the Sidebar, replacing the Turn list).
+- Header "INVESTIGATION" with the entry count.
+- One **Log entry** per question, Board opened, Drill-down or Ask. Consecutive Control changes
+  on one tab become one entry, updated in place. The server sends that entry's full text each
+  time ("Method set to Limited · Period 2022–2026"), so the client only replaces it.
+- Each entry shows a mono tag ("NEW TAB" or "IN PLACE", plus "NO MODEL" or the model's name) and
+  a line. The line is built by the server, sent as `explorerLogEntry: {kind, tag, text}`, and
+  rendered by the client as plain text, because it can hold database text (a row label, an
+  option label).
+- A running entry shows the spinner, and a failed one "Failed".
+- Clicking an entry selects its tab, reopening it if it's closed.
+- The composer stays pinned at the bottom.
+
+**Narrow screens** (< 760 px): the tab strip scrolls horizontally, and the log becomes a
+collapsible panel above the Canvas.
+
+**Viewing.** `explorerViewing` holds the selected tab's ID. The server puts a `Viewing: Tab
+<t<n>>` line before the next model run's user text (no titles, as in §15).
+
+**Opening.**
+- On load, the client sends action `open_board` with `{board: "explorer"}` in a new
+  Conversation. It is the one action without an issued `surfaceId`, so the §15 surface check
+  exempts it.
+- It is rejected for a keyed Board, for a name that isn't loaded, and for a second `open_board`
+  in the same Conversation.
+- A Dataset without Boards answers with `explorerActionFailed` and `explorerNoBoards: true`, and
+  the client then shows §14's explanation and examples, as today.
+
+### Wire format additions
+
+| Action | Context | Effect |
+|---|---|---|
+| `open_board` | `{board}` | Renders the Explorer Board as Turn 0, Level 1 |
+| `controls` | `{board, seq, values}` | Re-queries a Board instance in place |
+| `drill` | `{source, row}` (unchanged) | Opens the Entity Board when the row is in `boards`, otherwise runs the Drill-down |
+
+- **A final message that adds a tab** carries `explorerLevel` (§15), `explorerTab: {id, kind:
+  "board"|"question"|"drill"|"ask", title}` and `explorerLogEntry`. The client builds tabs and
+  log entries from these fields alone, and renders the title and text as plain text.
+- **An in-place reply** carries `explorerInPlace` and `explorerLogEntry`.
+- **A superseded reply** carries `explorerSuperseded: true` and nothing else. The client ignores
+  it.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BOARD_QUERY_CONCURRENCY` | `2` | Board queries running at once, agent-wide |
+| `BOARD_ROW_CAP` | `500` | Rows per Board query, truncation reported |
+| `BOARD_CACHE_TTL_S` | `300` | How long rendered Board Results are reused |
+| `MAX_BOARD_CACHE` | `20` | Cached Board renders held agent-wide |
+| `MAX_BOARD_INSTANCES` | `10` | Live Board instances per Conversation |
+| `BOARD_PREFETCH_ROWS` | `1` | Entity Boards prefetched per clickable Visual; `0` turns it off |
+| `BOARD_ROWS_TO_MODEL` | `5` | Rows per Board Result in the Board pair |
+| `BOARD_PAIR_MAX_CHARS` | `6000` | Size cap of the Board pair's result |
+| `MAX_CONTROL_OPTIONS` | `100` | Options per `choice`/`multi` Control |
+
+Macro constants (not settings): `MAX_TREEMAP_TILES` 12, `MAX_TIMELINE_ROWS` 30,
+`MAX_BOARD_QUERIES` 12. Client constants: `MAX_TABS` 8, `CONTROL_DEBOUNCE_MS` 300.
+
+Memory bound per Conversation: at most 10 Board instances × 12 queries × 500 rows, beside the
+ResultStore's 50. Instances hold cached Results by reference, so the agent-wide bound is the
+cache's 20 renders (plus the pinned Explorer), plus renders not yet cached, at most 10 per
+Conversation.
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/src/explorer_agent/boards.py` (new) | loading and checking Board files; typed rewrite; rendering in Board mode; Board instances with their Results and sources; cache with single-flight and warm-up; Controls (declarations, components, validation, seq); Entity Board lookup |
+| `agent/src/explorer_agent/drill.py` | the scan shared with Boards; typed casts; `<type>[]` binding; the NULL-drop check scoped to row columns |
+| `agent/src/explorer_agent/macros.py` | `Treemap` (1a), `Timeline` (3), `DataTable(bars=)` (1a); `_label` on every clickable datum; Board mode; `check_columns`; the Visual index covers the new Macros |
+| `agent/src/explorer_agent/results.py` | `r<id>` lookup falls back to live Board instances |
+| `agent/src/explorer_agent/actions.py` | `open_board` (surface-check exemption), `controls`; `boards` rows in `action`; Board pair; `drill` routing |
+| `agent/src/explorer_agent/executor.py` | routing; per-instance lock; superseded replies; `updateComponents` in-place replies; tab IDs; `explorerTab`, `explorerLogEntry`, `explorerInPlace`, `explorerSuperseded`, `explorerNoBoards` |
+| `agent/src/explorer_agent/config.py`, `.env.example` | the settings above; `boards/` loaded with the Dataset |
+| `agent/src/explorer_agent/prompt.py`, `prompts/instructions.md` | Entity Board lines in the Dataset context and the Clicks note (3) |
+| `agent/src/explorer_agent/__main__.py` | `boards` check subcommand; warm-up at startup |
+| `agent/src/explorer_agent/testing/stub_server.py` | a stub Explorer Board with Controls |
+| `agent/scripts/effort_check.py` | full-Vega `data[]` in `surface_summary` |
+| `agent/scripts/scenarios.py`, `specs/scenarios/SPEC.md` | Board scenarios (open, change a Control, open an Entity Board) with timings against the targets |
+| `catalog/explorer_custom_components.json`, `catalog.py`, client zod schemas | `DataGrid.columns[].bars?`; `action.boards?` on `VegaChart` and `DataGrid` |
+| `client/src/vendor/vegachart/vegaChart.ts`, `NOTICE` | `_label` for the confirmation; the pointer cursor via hover on any mark with `_row`; `boards` rows dispatch `drill` |
+| `client/src/components/data-grid.ts` | bar cells; `boards` rows |
+| `client/src/app.ts`, `client/src/tabs.ts` (new), `client/index.html` | tab strip, investigation log, `open_board` on load, in-place and superseded replies |
+| `client/src/controls.ts` (new) | `/controls` subscription and diff, seq, debounce, revert on busy |
+| `client/test/app.test.ts`, `levels.test.ts` | §15 A15 and §16 L2–L4, L6 rewritten on purpose for tabs (the Breadcrumb is gone; the cases carry over to tabs) |
+| `bootstrap/templates/explorer.toml` (new, 1a) | the Explorer template: totals Metrics, a share `Treemap`, a trend `LineChart`, a top-N table with share bars; slots only, no SQL or names. Slices 2 and 3 add Control and Entity Board templates |
+| `datasets/austender/boards/` (4) | austender's Boards, drafted by the bootstrap tool (Wonder) and reviewed by a person; none are written by hand |
+| `agent/tests/snapshots/*.sha256` | regenerated on purpose (new Macros; Entity Board lines) |
+| `../CONTEXT.md` | the terms above; Breadcrumb retired; Action covers in-place changes |
+| `../AGENTS.md`, `AGENTS.md` | Boards in the workspace tables; the option-label exception; the model rule once ADR 0030 is accepted |
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| B1 | Board files load. Each startup error stops the agent, naming the file and key: bad key or type, unknown, unused, untyped or colliding placeholder, guard failure, `LIMIT 0` failure at defaults or at NULL, a layout column missing or of the wrong kind, an options query without `value`/`label`, overlapping `key_columns`, more than `MAX_BOARD_QUERIES` | `test_boards.py` (db) |
+| B2 | The "All" idiom runs for every kind against real column types: `text`, `int` (including a `multi` Control on an `int` column), `date`, `bool`, each at a value and at NULL; the display copy keeps the casts and reruns to the same rows | `test_boards.py` (db) |
+| B3 | Rendering: the agent-wide semaphore holds across two Conversations; the row cap wraps and reports truncation; query names become Result IDs; heading, then Controls Card, then layout; the heading is markdown-escaped; a failing query gives an error Card with its SQLSTATE and no values while the rest renders; zero-row Results give "No rows" Cards in Board mode and stay Repairs in answers; every Visual shows its SQL; panel root IDs are stable across renders | `test_boards.py` (db), `test_macros.py` |
+| B4 | Cache: the same key and values run no query; failures aren't cached; two concurrent cold renders run once; the TTL and the cap apply; the Explorer is warm after startup and after expiry | `test_boards.py` |
+| B5 | `open_board` renders the Explorer as Turn 0 with no model call (the stub model asserts it wasn't called) and without an issued `surfaceId`; rejected for an unknown or keyed Board and a second time; no Boards → `explorerNoBoards` | `test_executor.py`, `test_actions.py` |
+| B6 | Controls: each kind builds its basic component and data model with the declared defaults; `choice` "All" binds a typed NULL; `multi` binds `<type>[]`, and none chosen binds NULL; `number` is integer-only; a cleared optional date binds NULL; NULL-valued options are dropped; every case in Validation is rejected with nothing run | `test_boards.py`, `test_actions.py` |
+| B7 | Re-query: the full Surface is validated and the reply is one `updateComponents` for the replaced panels only, with no Controls Card and no `updateDataModel`; only queries with changed Controls run, measured against the last completed render (a superseded change's panels re-run); a lower or stale `seq` gets `explorerSuperseded`; out-of-order arrival applies the newest; "busy" during a model run; **a model run arriving mid re-query waits for it, and the Results its pair names stay resolvable until the run ends**; released Results and sources; a click on a released source → "too old" | `test_executor.py` |
+| B8 | Board pair: queued only for the viewed tab, when it is an Entity Board or not at defaults; at most one; outside `MAX_PENDING_PAIRS`; no titles or labels in the call; size cap; user text carries no labels | `test_actions.py`, `test_llm.py` |
+| B9 | Entity Boards: a row click with a key value opens the Board with the bound key, ahead of the Drill query; a NULL key row falls back to the Drill query or an Ask; the first key column in Result order decides; no self-link; prefetch of one Board through the shared semaphore, counted once in `MAX_PREFETCHED` | `test_executor.py`, `test_macros.py` |
+| B10 | A Board Drill query binds row placeholders and Control values; the NULL-drop check ignores Control placeholders; a Control change discards its prefetched rows | `test_drill.py` (db) |
+| B11 | The Entity Board lines are stable, the prefix stays byte-identical (snapshots regenerated on purpose), and `instructions.md` stays under the 3,200 cap | `test_prompt.py` |
+| B12 | Client tabs: Explorer first and not closable; question, Board, Drill-down and Ask open tabs; tab IDs from the server; in-place updates keep the tab; `MAX_TABS` closes the oldest unselected; closed tabs reopen from the log with no agent call; running and failed states; log entries from `explorerLogEntry` as plain text; consecutive Control changes merge; titles rendered as text | `client/test/tabs.test.ts`, `app.test.ts`, `levels.test.ts` (rewritten cases listed in Files) |
+| B13 | Client Controls: a user change sends `controls` with the full values, indices and `seq`; a `number` drag sends one action after it settles; a server-driven write (the busy revert) sends nothing; an in-place reply keeps the Controls' focus; a superseded reply is ignored; Controls stay enabled during a re-query and are disabled during a model run | `client/test/controls.test.ts` |
+| B14 | `Treemap`: a valid Vega spec with one tile per row up to the cap, the rest in a non-clickable "Other" ("Other (incomplete)" when truncated); non-positive and NULL values left out and counted; no root mark; `_row` and `_label` on every clickable tile; displayed order with ties; drill and Entity Board links as for `BarChart`; strict validation passes | `test_macros.py`, `test_ui.py` |
+| B15 | `Timeline`: one bar per row; the `sort` modes; the color fold; the today rule and the horizon band; the row cut reported; NULL dates left out and counted; `end` before `start` is a macro error; `_row` and `_label` on bars only | `test_macros.py` |
+| B16 | Bar cells: shares of the shown rows' maximum, `null` for NULL; negatives are a macro error; all-zero columns get none; drawn under the text, which stays | `test_macros.py`, `client/test/data-grid.test.ts` |
+| B17 | VegaChart: the pointer on clickable marks for `mark`, `layer` and full-Vega specs; the confirmation label from `_label`; treemap tile and timeline bar clicks dispatch the right action | `client/test/vegachart.test.ts` |
+| B18 | `effort_check.surface_summary` reads a full-Vega spec's data without error, and the Visual index counts `Treemap` and `Timeline` | `test_effort_check.py`, `test_macros.py` |
+| B21 | Server-side IDs and caps: Board Result IDs never equal a stored Result's ID (with a Board rendered before and after stored Results); `MAX_BOARD_INSTANCES` drops the oldest but never the Explorer, after which its Controls and clicks answer "too old"; `MAX_CONTROL_OPTIONS` drops the rest with the caption; tab IDs `t<n>` are issued in order and never reused; `explorerTab`, `explorerLogEntry` (full merged text) and the `Viewing: Tab t<n>` line; a Board row Ask copies its Result into the store; a Board source resolves; an Entity Board prefetch takes one permit and yields to a user render; the Explorer's cache entry is pinned; `int` binds as `bigint` (99999999999); logs carry no Control values | `test_boards.py`, `test_actions.py`, `test_executor.py` |
+| B19 | The `boards` check renders each Board and fails on a Board over the cold target | `test_main.py` (db) |
+| B20 | Existing suites and build pass; screenshots of the stub app (Explorer with Controls, an Entity Board tab, the log), light and dark, wide and 390 px | `uv run pytest`, `npm test`, `npm run build`, Playwright |
+| B22 | The Explorer template (`bootstrap/templates/explorer.toml`) is valid TOML with its top-level keys before `[[queries]]`, holds no SQL, and with its slots filled loads and passes the startup check | `test_boards.py` |
+| B-M | Manual, real database: every speed target (median and p90); a typed question after a Control change uses the Board's state, with the prompt tokens the Board pair adds recorded | manual, results recorded here |
+
+### Decisions
+
+- **Boards are Dataset configuration, reviewed by a person** (ADR 0028). The model writes
+  answers, and Boards cover the views that are the same every time.
+- **No hand-written Dataset Boards** (the user, 2026-11-03). Every Dataset's Boards come from the
+  bootstrap tool (slice 4), so the same bootstrap serves any database. Slices 1a–3 ship a
+  dataset-agnostic template per Board kind, and their tests use stub Boards. So B-M, the speed
+  targets against the real database, is measured once slice 4 has drafted austender's Boards.
+- **Controls bind typed placeholders and re-query on the server** (ADR 0029). The client sends
+  option indices, so no database text comes from the browser.
+- **In place means `updateComponents` with stable IDs**, and the server never writes the
+  Controls' data model after creating it. Deleting and recreating the surface would reset
+  focus, make a slider jump and orphan the client's subscription. Writing `/controls` from the
+  server would echo back as a user change.
+- **Newest wins by sequence number, not by cancellation.** The executor has no cross-request
+  cancellation (`cancel` isn't supported), and the debounce keeps the waste to one re-query.
+- **The server builds the Controls Card**, not the layout, so every Board's Controls look and
+  behave the same, and the model's passthrough list stays unchanged.
+- **Board Results live in their Board instance**, apart from the ResultStore, so Control changes
+  can't evict a Result the model was told about, nor another tab's action sources.
+- **Entity Boards win over Drill queries** for key columns. An entity is better shown whole than
+  as one more table. The trade-off is that the answer's filters are not carried over, which the
+  Board's `scope` line states. A NULL key falls back per row.
+- **New Visuals are Macros over `VegaChart` where Vega can draw them**, so they need no new
+  client component. The bar cell is a `DataGrid` prop, because a proportion bar belongs next to
+  the number it shows.
+- **Investigation tabs, as in the prototype.** A Drill-down also opens a tab, so every step can
+  be returned to. `MAX_TABS` and the log keep the strip short.
+- **The Board pair is sent only when it adds something**: the viewed tab, and only for an Entity
+  Board or changed Controls. That keeps the Explorer's rows out of most first questions.
+- **Not in this amendment:**
+  - Controls in the model's own answers, because answers would get longer and that needs
+    measuring first.
+  - Waterfall, heatmap, stacked and small-multiple bars, and a choropleth map. Each is added as
+    a Macro over `VegaChart` when a Board needs it. A map also needs boundary files per Dataset,
+    and the austender mart has no region column below `country`.
+  - The prototype's provenance badges, Share/Fork and Branch views.
+  - Disclosures-style views that need data the Dataset doesn't have.
+
+### Review rounds
+
+**Round 2 (refuter PASS-WITH-NOTES, 2026-11-03).** Every finding was taken:
+- Board Result IDs come from the Conversation's counter, and a test checks they are unique.
+- A model run waits for an in-flight re-query, and pinned Results stay until the run ends.
+- Missing tests are added as B21.
+- Board sources resolve, and a Board row Ask copies its Result.
+- Prefetch takes one permit and yields to user renders.
+- `int` means `bigint`.
+- Minors: panels at any depth; validate the full Surface, send a subset; values converted on
+  the wire; the Explorer entry pinned; option lists cached; `Cite` by query name; the
+  options-cap caption; the memory bound; no clicks in slice 1a; no values in logs; full
+  merged log text; Visuals dimmed during a re-query; the Sidebar glossary entry fixed.
+
+**Round 1 (refuter FAIL, 2026-11-03).**
+
+Every finding was taken unless noted:
+- **Blocker: the "All" idiom fails in Postgres** without types → typed placeholders and casts; B2.
+- **Blocker: a second `createSurface` for the same ID is rejected**, and the echo loop →
+  `updateComponents` with stable IDs, the server never writes `/controls`, and the client diffs;
+  B7, B13.
+- **No `step` on `Slider`** → `number` is integer-only.
+- **Empty Results break Metric** → Board mode and the columns-only startup check.
+- **Races** → `seq`, full values, diffing against the last completed render, a per-instance
+  lock, superseded replies, Controls enabled during a re-query.
+- **Source and Result exhaustion** → Board instances own their Results and sources;
+  `MAX_BOARD_INSTANCES`.
+- **The Board pair** → one pair, only when useful, no labels in the call, a size cap, measured.
+- **Vega-Lite assumptions** → `_label`, the hover cursor, `effort_check`, the Visual index; B17,
+  B18.
+- **Entity Board edge cases** → per-row fallback, first key column, placeholder namespaces,
+  depth stated.
+- **Cache and speed** → no failure caching, single-flight, agent-wide concurrency, a row cap,
+  warm-up, targets.
+- **Client state on the wire** → tab IDs, `explorerLogEntry`, the `open_board` exemption,
+  `explorerNoBoards`, the rewritten tests listed.
+- **ADR 0030** → cost corrected, the Drill claim softened, slice 5 as a confirmed Ask with its
+  own model setting.
+- **Minors.** The P6 cap is stated; constants are separated from settings; `Timeline`'s full
+  signature is written; "Other (incomplete)" added; the option-label exception stated; §16
+  Decisions marked superseded; glossary collisions fixed ("Log entry", not "Step"; Tab vs A2UI
+  `Tabs`; "Explorer Board"; Action covers in-place changes).
+- **Not taken:** splitting the Explorer's first render into a skeleton plus streamed panels.
+  Warm-up makes the first view cached, so it isn't needed yet.
+
+### Build notes, slice 1a (2026-11-03)
+
+- **No hand-written austender Board** (the user). The Explorer template is in
+  `bootstrap/templates/`, and tests use the stub Board or Boards written inside test files.
+- **Refuter round 1: FAIL.** Every finding was taken except the two deferrals below.
+  - The blocker: B19's over-target path had no test. It now has one.
+  - A cancelled single-flight leader cancelled every joined waiter. The run now has its own task.
+  - A data-dependent Macro error failed the whole Board for good. It now replaces one panel, and
+    `open_board` recovers.
+  - Charts didn't report truncation.
+  - The heading and the treemap caption were escaped, though they're shown as plain text.
+  - Smaller findings, all fixed:
+    - false bare-number warnings for Board placeholders;
+    - `direct_json` is refused at startup;
+    - per-query cache age;
+    - `FollowUp` is rejected in layouts;
+    - Treemap drill and template tests (B22);
+    - NOTICE;
+    - solid treemap tiles, so their labels keep contrast.
+- **Deferred to 1b:**
+  - Checking a Board Visual's `drill_sql` at startup. Clicks are off in 1a, so a bad
+    `drill_sql` can't fail yet.
+  - Showing a question typed before the Board arrives at once. It waits for the Board's reply,
+    without feedback.
+- **Found, outside 1a:** issue 9. §15 Drill-down and chart titles escape markdown in `h4`
+  Text, which renders as plain text, so backslashes show.
+- **Screenshots** (stub app, light and dark, 1440 and 390 px): no console errors and no
+  horizontal overflow. On a wide screen, the cards in a layout `Row` keep their own width
+  rather than filling the row, as in answers.
+
+### Test command
+
+```bash
+cd explorer/agent && uv run pytest
+cd explorer/client && npm test && npm run build
+```

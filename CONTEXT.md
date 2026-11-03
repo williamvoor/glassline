@@ -48,17 +48,25 @@ The generated UI of one Level.
 _Avoid_: Panel, widget, card
 
 **Sidebar**:
-The client's left column: the list of Turns and the composer.
+The client's left column: the investigation log of Log entries and the composer.
 _Avoid_: Nav, history
 
 **Canvas**:
-The client's main area, showing the selected Turn's shown Level.
+The client's main area: the tab strip and the selected Tab.
 _Avoid_: Main view, page
+
+**Tab**:
+One Level on the Canvas, opened by a typed question, an Entity Board, a Drill-down or an Ask, and kept in a strip for the whole Conversation. The Explorer Board is always the first Tab. Not A2UI's `Tabs` component, which can appear inside a Surface.
+_Avoid_: Page, panel, window
+
+**Log entry**:
+One thing done in the investigation, listed in the Sidebar: a question, opening a Board, a Drill-down, an Ask, or the Control changes made on one Tab in a row. Selecting a Log entry shows its Tab.
+_Avoid_: Step (a step is a status-line step of a model run), cycle, event
 
 ### Interaction
 
 **Action**:
-Something the user does on a Surface (clicking a mark, a row or a button) that produces a new Level in the same Turn.
+Something the user does on a Surface (clicking a mark, a row or a button, or changing a Control). A click produces a new Level and Tab; a Control change updates its Tab in place.
 _Avoid_: Event, interaction, user action
 
 **Drill query**:
@@ -77,11 +85,26 @@ _Avoid_: Question (a question is typed), request, query
 A button the agent offers on a Surface for a next step it can't already show; pressing it is an Ask.
 _Avoid_: Suggestion, chip, next step
 
-**Breadcrumb**:
-The list of a Turn's Levels shown above its Surface, which lets the user go back to an earlier Level.
-_Avoid_: History, trail, path
+**Control**:
+An input on a Board (a choice, a multi-select, a toggle, a number slider or a date) bound to placeholders in the Board's queries. Changing it re-runs those queries in place, without the agent.
+_Avoid_: Filter (a filter is part of a query), input, widget
+
+**Breadcrumb** (retired by SPEC §18):
+Was the list of a Turn's Levels above its Surface; replaced by Tabs.
 
 ### Generated UI
+
+**Board**:
+A page written with the Dataset and reviewed by a person: named, parameterised queries, Controls and a layout of Macro calls. It is rendered by running its queries, without the agent.
+_Avoid_: Dashboard, template, view
+
+**Explorer Board**:
+The Dataset's landing Board, which has no key and is shown as the first Tab, titled "Explorer".
+_Avoid_: Explorer (alone, it names the app), home, landing page, overview
+
+**Entity Board**:
+A Board keyed on one column, opened from a click on a row that carries that column, about that one entity across the whole Dataset.
+_Avoid_: Detail page, profile
 
 **Macro**:
 A component the agent writes that refers to a Result instead of carrying data; it is expanded into displayable components from that Result's rows. The agent never types data values itself.
