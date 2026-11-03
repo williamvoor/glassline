@@ -15,3 +15,11 @@ Muse Glimmer is a reasoning model. Its chat template renders a reasoning segment
 
 - The eval must compare the tuned model with base Glimmer at low and at high, to show what reasoning was worth.
 - Training and inference must share one system prompt (`a2ui_eval.prompt.build_system_prompt`). If the inference prompt drifts, the tuned model sees a prompt it was never trained on.
+
+## Amendment (2026-11-03): model-written words
+
+The rule above, "dataset text must not be written by a model", was meant for what the model learns to produce: **reasoning traces and SFT targets (Express)**. Those stay model-free. ADR 0009 made an exception that this ADR never recorded, and this amendment records it.
+
+- **Allowed:** model-written *words* that a spec section approves, with structure, paths and data still built by code. Today that means the synthetic vocabulary (titles, labels, sentences, records, icons), written once by `meta/muse-spark-1.3`, then validated, reviewed and committed (ADR 0009). It also covers the optional 2c-3 intent rewording, with the model logged per row.
+- **Not allowed:** a model-written Express target or reasoning trace in any SFT row. ADR 0025 keeps the same line for Muse Spark Open.
+- Dev and test intents stay hand-reviewed.

@@ -15,3 +15,7 @@ The data comes from the 43 A2UI v1.0 gallery examples. Each example is a family,
 
 - Moving a family between splits after the test set is frozen invalidates the test results.
 - Only about 26 designs are seen in training, so the variety within a family has to come from slots: labels, counts and repeated rows.
+
+## Note (2026-11-03)
+
+The split as built (`glimmer-tune/data/splits.yaml`) is 26 train, 7 dev and 8 test families, plus 2 multi-turn families excluded: 43 in all. The "about 26/8/9" above was the plan before the multi-turn seeds were set aside.

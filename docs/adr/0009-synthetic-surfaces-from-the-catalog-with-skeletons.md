@@ -23,3 +23,7 @@ Splits follow ADR 0004 with skeletons in place of families: each skeleton is tra
 - Intents are written by code from the tree first. An optional rewording by `meta/muse-spark-1.3` comes later, with the model logged per row. A rewording that drops a required identifier is rejected.
 - Vocabulary is shared by train and dev. No vocabulary string may equal a literal text in a dev or test seed or draft. That rule, not separate vocabularies, stops words leaking from eval into train.
 - Dev mixes gallery and synthetic rows, so the two are reported separately. A synthetic dev score says nothing about real-world UIs; test does.
+
+## Note (2026-11-03)
+
+Spark writing the vocabulary is an exception to ADR 0003's "no model-written dataset text". ADR 0003's amendment of 2026-11-03 records it and its limits: words only, never Express targets.

@@ -16,3 +16,7 @@ In the planned two-model split, Spark (`meta/muse-spark-1.3`) runs the SQL tool 
 - Glimmer's training rows must have this input shape: a Brief plus Result schemas. The current glimmer-tune rows (an intent in the user's words with data values inline, ADR 0008 and glimmer-tune SPEC 2d) do not, so this has to be settled in the data before the SFT run that the explorer will use.
 - Training rows can't have Spark-written Briefs (dataset text isn't model-written, ADR 0003), so their Briefs come from templates. In the explorer, Spark writes them freely. Glimmer will see Briefs in the explorer that look somewhat different from its training Briefs. The schema part is identical in both, which limits the gap. The Brief's wording should be specified tightly enough that templates can imitate it.
 - Glimmer's output will reference Results through the explorer's Macros (ADR 0001), because the input refers to Results by ID and generic Express alone can't show their rows without retyping them. This is agreed in principle (2026-11-02), but acting on it waits until the first Glimmer tuning run, on generic Express as ADR 0008 planned, has been evaluated. The split's spec and any change to ADR 0008 come after that.
+
+## Note (2026-11-03)
+
+ADR 0003 has since been amended: spec-approved, model-written *words* are allowed (ADR 0009's vocabulary). Model-worded Briefs would therefore need a spec section, not a new ADR. Until one exists, Briefs come from templates as decided above.
