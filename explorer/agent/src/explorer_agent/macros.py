@@ -24,7 +24,7 @@ from a2ui.transformers.macros import MacroExpander, macro
 
 from explorer_agent.actions import FollowUpSpec, IdAllocator, SourceSpec
 from explorer_agent.catalog import DataGrid, SqlDetails, VegaChart
-from explorer_agent.drill import BINDABLE, DRILL_AS, DrillSpec, DrillSqlError, null_dropping_params, rewrite
+from explorer_agent.drill import BINDABLE, DRILL_AS, DrillSpec, DrillSqlError, Rewritten, null_dropping_params, rewrite
 from explorer_agent.results import INTEGER_TYPES, NUMERIC_TYPES, ResultStore, StoredResult
 from explorer_agent.sql import GuardError, guard
 
@@ -83,7 +83,6 @@ class MacroContext:
     # a Card instead of failing, and placeholders name queries (`{by_agency[0].value}`).
     board: bool = False
     failed: Mapping[str, str] = field(default_factory=dict)  # Board mode: query name -> SQLSTATE
-    clicks: bool = True  # False builds every Visual unclickable (Boards before slice 1b)
 
 
 _context: ContextVar[MacroContext | None] = ContextVar("explorer_macro_context", default=None)
@@ -403,6 +402,32 @@ def _bar_order(values: list[dict[str, Any]], x: str, y: str, color: str, domain:
     return xs, ordered
 
 
+def static_drill(columns: list[str], result_name: str, *, drill_sql: str, drill_as: str, drill_x: str, drill_y: str,
+                 allowed_schemas: tuple[str, ...]) -> Rewritten:
+    """The checks of a Drill query that need no rows (SPEC §15 step 1): shared by answers and by
+    the Board startup check (SPEC §18). Raises ValueError with the message."""
+    if drill_as not in DRILL_AS:
+        raise ValueError(f"drill_as must be one of: {', '.join(DRILL_AS)}")
+    if drill_as != "table" and not (drill_x.strip() and drill_y.strip()):
+        raise ValueError(f'drill_as "{drill_as}" needs drill_x and drill_y (output columns of drill_sql)')
+    try:
+        rewritten = rewrite(drill_sql)
+    except DrillSqlError as e:
+        raise ValueError(str(e)) from None
+    if not rewritten.names:
+        raise ValueError("drill_sql needs at least one :column placeholder for the clicked row's values")
+    for name in rewritten.names:
+        if name not in columns:
+            raise ValueError(
+                f"drill_sql placeholder :{name} is not a column of {result_name}; its columns are: {', '.join(columns)}"
+            )
+    try:
+        guard(rewritten.sql, allowed_schemas)
+    except GuardError as e:
+        raise ValueError(f"drill_sql: {e}") from None
+    return rewritten
+
+
 def _drill(
     result: StoredResult,
     *,
@@ -427,27 +452,17 @@ def _drill(
     def fail(message: str) -> DrillError:
         return DrillError(message, visual)
 
-    if len(ctx.drills) >= ctx.max_drills:
+    # A Board was reviewed by a person, so it has no cap (SPEC §18).
+    if not ctx.board and len(ctx.drills) >= ctx.max_drills:
         raise fail(f"at most {ctx.max_drills} Visuals per Surface may have a drill_sql")
-    if drill_as not in DRILL_AS:
-        raise fail(f"drill_as must be one of: {', '.join(DRILL_AS)}")
-    if drill_as != "table" and not (drill_x.strip() and drill_y.strip()):
-        raise fail(f'drill_as "{drill_as}" needs drill_x and drill_y (output columns of drill_sql)')
     try:
-        rewritten = rewrite(drill_sql)
-    except DrillSqlError as e:
+        rewritten = static_drill(result.columns, result.id, drill_sql=drill_sql, drill_as=drill_as, drill_x=drill_x,
+                                 drill_y=drill_y, allowed_schemas=ctx.allowed_schemas)
+    except ValueError as e:
         raise fail(str(e)) from None
-    if not rewritten.names:
-        raise fail("drill_sql needs at least one :column placeholder for the clicked row's values")
     for name in rewritten.names:
-        if name not in result.columns:
-            raise fail(f"drill_sql placeholder :{name} is not a column of {result.id}; its columns are: {', '.join(result.columns)}")
         if any(not isinstance(result.rows[i].get(name), BINDABLE) for i in clickable_rows):
             raise fail(f"drill_sql placeholder :{name}: column {name!r} holds lists or JSON, which can't be bound")
-    try:
-        guard(rewritten.sql, ctx.allowed_schemas)
-    except GuardError as e:
-        raise fail(f"drill_sql: {e}") from None
     for n in sorted(null_dropping_params(rewritten.sql)):
         name = rewritten.names[n - 1]
         if any(result.rows[i].get(name) is None for i in clickable_rows):
@@ -479,17 +494,26 @@ def _register_visual(
     """Reserve an action source for a clickable Visual, check its Drill query, and return the
     component's `action`. A Visual with no clickable rows isn't clickable."""
     ctx = _ctx()
-    if not clickable or not ctx.clicks:
+    if not clickable:
         return None
     if not rows:
         if drill.sql.strip():
             log.warning("drill query of visual %d ignored: the visual has no clickable rows", visual)
         return None
     source = ctx.ids.source()
-    spec = _drill(
-        result, visual=visual, source=source, clickable_rows=rows, title=title, drill_sql=drill.sql,
-        drill_as=drill.drill_as, drill_x=drill.x, drill_y=drill.y, drill_title=drill.title,
-    )
+    try:
+        spec = _drill(
+            result, visual=visual, source=source, clickable_rows=rows, title=title, drill_sql=drill.sql,
+            drill_as=drill.drill_as, drill_x=drill.x, drill_y=drill.y, drill_title=drill.title,
+        )
+    except DrillError:
+        if not ctx.board:
+            raise
+        # The startup check passed the rest, so this depends on the rows (a NULL under `=`, a list):
+        # only the Drill query is dropped, and the Visual keeps its Ask (SPEC §18). No message: it
+        # can quote a value.
+        log.warning("board drill query dropped: visual=%d", visual)
+        spec = None
     ctx.sources.append(SourceSpec(id=source, visual=visual, result=result, title=title, rows=tuple(rows), labels=labels))
     return {"source": source, "rows": rows, "drillable": spec is not None}
 
@@ -1012,6 +1036,14 @@ def escape_markdown(text: str) -> str:
     return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
 
 
+_ESCAPED = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|<>~$])")
+
+
+def unescape_markdown(text: str) -> str:
+    """The inverse of `escape_markdown`, for text shown as plain text (a tab title, SPEC §18)."""
+    return _ESCAPED.sub(r"\1", text)
+
+
 def placeholders(template: str, board: bool = False) -> list[tuple[str, int, str, str]]:
     """The `Cite` placeholders in a template: (Result ID or query name, row, column, format)."""
     pattern = _BOARD_PLACEHOLDER if board else _PLACEHOLDER
@@ -1167,7 +1199,7 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
             template(comp.get("template"), cid)
         if name not in VISUAL_MACROS and name != "Metric":
             continue
-        for key in ("title", "label"):
+        for key in ("title", "label", "drill_title"):
             template(comp.get(key), cid)
         query = comp.get("result_id")
         if query not in outputs:

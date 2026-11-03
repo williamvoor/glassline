@@ -1491,6 +1491,79 @@ Slices 4 and 5 get their own detailed amendments. This section fixes their shape
   - In part: B1, B11, B17, B20 and B21. The parts that need Controls, keys, clicks or tabs come
     in later slices.
 
+**Slice 1b scope (fixed 2026-11-03, before building).**
+- **In, server:**
+  - **Board clicks on.** Board mode builds Visuals clickable as in answers. A Board's action
+    sources belong to its Board instance (not `ActionState.sources`, nor `MAX_ACTION_SOURCES`),
+    and `ActionState.resolve` finds them there. `MAX_DRILLS_PER_SURFACE` doesn't apply in Board
+    mode. A Drill-down or Ask from the Explorer adds a Level to Turn 0. An Ask on a Board row
+    copies the Result into the ResultStore (`restore_result`), so the model only ever sees store
+    IDs. The Explorer's first rows are prefetched like an answer's.
+  - **Board `drill_sql` at startup** (the deferral from 1a). The static checks of §15's step 1
+    that need no rows run against the query's output columns: `drill_as` with `drill_x` and
+    `drill_y`, the rewrite, at least one placeholder, every placeholder an output column, and the
+    guard. Then the Drill query runs as `LIMIT 0` with every placeholder bound to NULL, and
+    `check_output` checks `drill_x` and `drill_y` against its output. A failure, including
+    Postgres not being able to infer a parameter's type (42P18, fixed with a cast), stops the
+    agent, naming the file and the Visual.
+  - **Row-dependent drill errors at render** (a NULL in a clickable row under `=`, a list or
+    JSON value) drop only that Visual's Drill query, which is logged by its Visual index, never
+    with a value (amended in the build: the index says which Visual it was, where a Macro name
+    wouldn't). The Visual stays clickable for an Ask. The startup check also covers a
+    `drill_sql` on a Visual with `clickable=false`, which render ignores: a broken query in a
+    reviewed file is an error wherever it sits. Before this, Board mode's catch-all for Macro errors would have
+    blanked the panel.
+  - **Tabs.** Every final message that adds a Level carries `explorerTab: {id, kind, title}` and
+    `explorerLogEntry: {kind, tag, text}`. The kinds are `board`, `question`, `drill` and `ask`.
+    The tab ID `t<n>` comes from a per-Conversation counter that never reuses a number. Titles:
+    the Board's title, the question as typed, the Drill-down's "<title> · <row label>", and the
+    Ask's label. Log text: "Opened <title>", the question, "Drill-down: <title> · <row label>",
+    "Ask: <label>". The tag is "NEW TAB · NO MODEL" for a Board or Drill-down, and "NEW TAB ·
+    <model>" for a model run, or "NEW TAB" when the model is unnamed. A failed question or
+    Action adds no tab and no entry on the server.
+  - **Viewing.** `explorerViewing` is now the selected tab's ID (a string). The server keeps the
+    line in §15's form, `Viewing in Turn <t>: Level <l>`, so the prompt and its snapshots don't
+    change. It's sent when the viewed tab isn't the most recently added Level, and never for a
+    Board tab, since the model hasn't seen a Board until slice 2's Board pair. Unlike §16, an
+    older Turn's tab counts too, because tabs keep it on screen. An unknown ID sends nothing.
+- **In, client:** the tab strip, the investigation log, closing and reopening, `MAX_TABS`, the
+  "NEW" tag and the narrow layout, as in "Tabs and the investigation log".
+  - A question opens its tab at once, running, before any reply. A question typed while the
+    Explorer is still loading shows its tab straight away and sends once the Board has answered
+    (the other deferral from 1a).
+  - A Drill-down or Ask opens a running tab after the tab it came from. If it fails, that tab
+    shows the error with Retry, and "Ask the agent instead" for a Drill-down (§15). The log
+    entry says "Failed". The Ask confirmation stays on the tab that was clicked.
+  - Client tabs have a local key until the reply brings the server's `t<n>`. A failed tab never
+    gets an ID, so selecting it sends no `explorerViewing`.
+  - The log entry's text and tag come from `explorerLogEntry`. While the reply is pending, the
+    entry shows the question or the clicked label, with the spinner.
+  - Clicks and the composer are disabled while anything runs, as in §15. Tabs and log entries
+    can still be selected.
+  - A running tab can't be closed, nor closed by `MAX_TABS`. If every unselected tab is running,
+    the strip holds one more than `MAX_TABS` until one finishes. The Explorer tab exists only when the Board was shown. With
+    no Boards, or when the Board failed, the Canvas shows §14's empty state until the first
+    question, as today. The examples stay below the Board on the Explorer tab until the first
+    question is asked.
+- **Deferred:**
+  - `MAX_BOARD_INSTANCES` to slice 3. In 1b the Explorer is a Conversation's only Board
+    instance, and it is never dropped.
+  - The `r<id>` fallback to Board instances to slice 2. Board Results are copied into the store
+    before the model sees them, so the Board pair is the first thing that names a Board Result.
+  - In-place and superseded replies, and merged Control log entries, to slice 2.
+- **Criteria covered:**
+  - In full: B12, and B5's remaining part (the Explorer is clickable).
+  - In part: B1 (the Board `drill_sql` checks), B20 (the Explorer tab and the log in
+    screenshots), and B21 (tab IDs, `explorerTab`, `explorerLogEntry`, the Viewing line, a Board
+    row Ask copying its Result, and a Board source resolving).
+- **Tests:** `test_boards.py` (the drill startup checks, with a db test for the `LIMIT 0` run),
+  `test_macros.py` (no drill cap and dropped row-dependent drills in Board mode),
+  `test_actions.py` (Board sources resolve; the Viewing line per tab), `test_executor.py` (a
+  Drill-down and an Ask from the Explorer, prefetch, `explorerTab`, `explorerLogEntry`, tab IDs
+  in order across kinds and never on failure), `client/test/tabs.test.ts` (the pure tab rules:
+  open after the current tab, `MAX_TABS`, close, reopen, NEW), and `app.test.ts` and
+  `levels.test.ts` rewritten for tabs.
+
 ### Speed targets
 
 These are the measured bar in B-M, read like §17's bar, with p90 beside the median:
@@ -1888,8 +1961,9 @@ Explorer is Turn 0, Level 1.
 **Narrow screens** (< 760 px): the tab strip scrolls horizontally, and the log becomes a
 collapsible panel above the Canvas.
 
-**Viewing.** `explorerViewing` holds the selected tab's ID. The server puts a `Viewing: Tab
-<t<n>>` line before the next model run's user text (no titles, as in §15).
+**Viewing.** `explorerViewing` holds the selected tab's ID. The server maps it to its Level and
+puts §15's `Viewing in Turn <t>: Level <l>` line before the next model run's user text (no
+titles), as slice 1b's scope states.
 
 **Opening.**
 - On load, the client sends action `open_board` with `{board: "explorer"}` in a new
@@ -1987,7 +2061,7 @@ Conversation.
 | B16 | Bar cells: shares of the shown rows' maximum, `null` for NULL; negatives are a macro error; all-zero columns get none; drawn under the text, which stays | `test_macros.py`, `client/test/data-grid.test.ts` |
 | B17 | VegaChart: the pointer on clickable marks for `mark`, `layer` and full-Vega specs; the confirmation label from `_label`; treemap tile and timeline bar clicks dispatch the right action | `client/test/vegachart.test.ts` |
 | B18 | `effort_check.surface_summary` reads a full-Vega spec's data without error, and the Visual index counts `Treemap` and `Timeline` | `test_effort_check.py`, `test_macros.py` |
-| B21 | Server-side IDs and caps: Board Result IDs never equal a stored Result's ID (with a Board rendered before and after stored Results); `MAX_BOARD_INSTANCES` drops the oldest but never the Explorer, after which its Controls and clicks answer "too old"; `MAX_CONTROL_OPTIONS` drops the rest with the caption; tab IDs `t<n>` are issued in order and never reused; `explorerTab`, `explorerLogEntry` (full merged text) and the `Viewing: Tab t<n>` line; a Board row Ask copies its Result into the store; a Board source resolves; an Entity Board prefetch takes one permit and yields to a user render; the Explorer's cache entry is pinned; `int` binds as `bigint` (99999999999); logs carry no Control values | `test_boards.py`, `test_actions.py`, `test_executor.py` |
+| B21 | Server-side IDs and caps: Board Result IDs never equal a stored Result's ID (with a Board rendered before and after stored Results); `MAX_BOARD_INSTANCES` drops the oldest but never the Explorer, after which its Controls and clicks answer "too old"; `MAX_CONTROL_OPTIONS` drops the rest with the caption; tab IDs `t<n>` are issued in order and never reused; `explorerTab`, `explorerLogEntry` (full merged text) and the Viewing line for a tab; a Board row Ask copies its Result into the store; a Board source resolves; an Entity Board prefetch takes one permit and yields to a user render; the Explorer's cache entry is pinned; `int` binds as `bigint` (99999999999); logs carry no Control values | `test_boards.py`, `test_actions.py`, `test_executor.py` |
 | B19 | The `boards` check renders each Board and fails on a Board over the cold target | `test_main.py` (db) |
 | B20 | Existing suites and build pass; screenshots of the stub app (Explorer with Controls, an Entity Board tab, the log), light and dark, wide and 390 px | `uv run pytest`, `npm test`, `npm run build`, Playwright |
 | B22 | The Explorer template (`bootstrap/templates/explorer.toml`) is valid TOML with its top-level keys before `[[queries]]`, holds no SQL, and with its slots filled loads and passes the startup check | `test_boards.py` |
@@ -2106,6 +2180,32 @@ Every finding was taken unless noted:
 - **Screenshots** (stub app, light and dark, 1440 and 390 px): no console errors and no
   horizontal overflow. On a wide screen, the cards in a layout `Row` keep their own width
   rather than filling the row, as in answers.
+
+### Build notes, slice 1b (2026-11-03)
+
+- **Refuter: PASS-WITH-NOTES.** Taken:
+  - **Major:** a Drill-down's tab title and log text showed `_fill`'s markdown escapes as
+    backslashes (`Smith \(Pty\) Ltd\.`, `\$1\.5M`). They are now unescaped
+    (`macros.unescape_markdown`, the exact inverse of `escape_markdown`), with a regression test.
+    The Surface keeps its escaping, which is issue 9's.
+  - `drill_title` placeholders are checked at startup, as `title` is. A bad one blanked the panel.
+  - Tests added: a failed question opens no tab; a passing bar Drill query at startup; a list
+    value dropping a Board drill; a running tab keeping its spinner while another is selected.
+  - Spec wording: the Viewing line (§18 and B21 still said `Viewing: Tab`), the drop logged by
+    Visual index, running tabs and `MAX_TABS`, and a `drill_sql` on an unclickable Visual.
+- **Found in the build:** the stub answerer named the store's first Result, which an Explorer
+  Drill-down had taken. It now finds its fixture by purpose (regression test in
+  `test_executor.py`).
+- **Deferred:**
+  - Each Ask on an Explorer row copies the row's Result into the store again (`restore_result`
+    can't find a Board Result there). The copies are bounded by the store's 50, and each costs a
+    model run. Slice 2 rewrites this path for the Board pair, so the copy is reused there.
+  - On wide screens the log's header is a button whose `aria-expanded` does nothing.
+  - The Explorer is `t1` only because `open_board` is a Conversation's first reply. The client
+    doesn't rely on it.
+- **Screenshots** (stub app at 1440 and 390 px, light and dark: the Explorer tab, a Drill-down
+  from it, a question, and the log open on a narrow screen): no console errors and no horizontal
+  overflow.
 
 ### Test command
 

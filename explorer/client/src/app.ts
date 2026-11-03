@@ -1,7 +1,7 @@
-// <explorer-app>: the chat view. A typed question starts a Turn; clicking a Visual adds a Level to
-// its Turn, shown in place with a Breadcrumb back (explorer SPEC §15). Surface IDs are
-// `turn-<t>-<l>-<tag>`, the tag random per conversation. Layout (SPEC §16): a top bar, a Sidebar
-// with the Turns and the composer, and a Canvas showing the selected Turn.
+// <explorer-app>: the investigation view (explorer SPEC §16, §18). One tab strip at the top of the
+// Canvas holds every step: the Explorer Board, each typed question, each Drill-down and each Ask.
+// The Sidebar is the investigation log, one entry per tab, with the composer below. Surface IDs
+// are `turn-<t>-<l>-<tag>`; Turns and Levels stay the server's (§15).
 import {LitElement, html, nothing} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
 import {unsafeHTML} from 'lit/directives/unsafe-html.js';
@@ -12,51 +12,47 @@ import type {A2uiMessage, ComponentApi, MessageProcessor} from '@a2ui/web_core/v
 import {connect, type AgentConnection, type AgentInfo, type AskEvent, type UiAction} from './a2a.js';
 import {createProcessor} from './catalog.js';
 import {renderSafeMarkdown} from './markdown.js';
+import {closeTab, logOrder, openTab, selectTab, type TabState} from './tabs.js';
 
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
 export const MODEL_KEY = 'explorerModel';
 export const NO_BOARDS_KEY = 'explorerNoBoards';
+export const TAB_KEY = 'explorerTab';
+export const LOG_KEY = 'explorerLogEntry';
 export const OPEN_BOARD = 'open_board';
+const EXPLORER_KEY = 'explorer';
 
-interface Level {
-  surfaceId?: string;
-  label: string;
-  proseHtml?: string; // sanitized by @a2ui/markdown-it, images removed; empty for a Drill-down
-  elapsedMs: number;
-  steps: string[]; // the agent's status updates for this Level, in order
-  model?: string | null; // the serving model; null for a Drill-down; undefined if the agent didn't say
-}
+type TabKind = 'board' | 'question' | 'drill' | 'ask';
 
-interface Running {
-  label: string;
-  action: UiAction;
-  steps: string[];
+interface Tab extends TabState {
+  id?: string; // the server's t<n>, from the reply's explorerTab; a failed tab never gets one
+  kind: TabKind;
+  title: string; // plain text: it can hold database text (a row label)
+  log: {tag?: string; text: string}; // the log entry: explorerLogEntry once the reply arrives
   startedAt: number;
-}
-
-interface Turn {
-  question: string;
-  steps: string[]; // the agent's status updates for the typed question, in order (until Level 1 arrives)
-  startedAt: number;
-  viewing: string[]; // explorerViewing when the question was typed; Retry sends it again
-  elapsedMs?: number; // set when the question's answer ends, answered or failed
+  steps: string[]; // the agent's status updates, in order
+  elapsedMs?: number; // set when the reply ends, answered or failed
   error?: string;
-  levels: Level[]; // Level 1 (Overview) first
-  current: number; // index of the Level shown
-  confirm?: {label: string; action: UiAction}; // an Ask waiting for the user's OK
-  running?: Running; // an Action in flight
-  actionError?: {message: string; label: string; action: UiAction};
+  surfaceId?: string;
+  proseHtml?: string; // sanitized by @a2ui/markdown-it, images removed; empty for a Drill-down
+  model?: string | null; // the serving model; null for no model; undefined if the agent didn't say
+  question?: string; // a question tab: what was asked
+  action?: UiAction; // a Drill-down or Ask tab: what was sent, for Retry
+  viewing?: string; // explorerViewing when it was sent; Retry sends it again
+  confirm?: {label: string; action: UiAction}; // an Ask from this tab, waiting for the user's OK
 }
 
-/** The Explorer Board (SPEC §18): Turn 0, shown before the first question. Not clickable yet
- * (slice 1a). `none`: the Dataset has no Boards; `failed`: shown as `none`, the examples alone. */
-type BoardView = {state: 'loading'} | {state: 'none'} | {state: 'failed'} | {state: 'shown'; surfaceId: string};
+/** The Explorer Board's load (SPEC §18): its tab exists only once it is `shown`. `none`: the
+ * Dataset has no Boards; `failed`: shown as `none`, the examples alone. */
+type BoardLoad = 'loading' | 'none' | 'failed' | 'shown';
 
 interface ActionPayload extends UiAction {
   userMessage?: string;
   catalogId?: string;
 }
+
+type FinalEvent = Extract<AskEvent, {kind: 'final'}>;
 
 export function surfaceIdOf(messages: Record<string, unknown>[]): string | undefined {
   for (const m of messages) {
@@ -75,19 +71,32 @@ function modelOf(metadata: Record<string, unknown> | undefined): string | null |
   return typeof model === 'string' ? model : null;
 }
 
+/** The tab ID, title and log entry a reply brings (SPEC §18), each only when well formed. */
+function tabOf(metadata: Record<string, unknown> | undefined): Partial<Pick<Tab, 'id' | 'title' | 'log'>> {
+  const tab = metadata?.[TAB_KEY] as {id?: unknown; title?: unknown} | undefined;
+  const log = metadata?.[LOG_KEY] as {tag?: unknown; text?: unknown} | undefined;
+  return {
+    ...(typeof tab?.id === 'string' ? {id: tab.id} : {}),
+    ...(typeof tab?.title === 'string' ? {title: tab.title} : {}),
+    ...(typeof log?.text === 'string' ? {log: {text: log.text, ...(typeof log.tag === 'string' ? {tag: log.tag} : {})}} : {}),
+  };
+}
+
 @customElement('explorer-app')
 export class ExplorerApp extends LitElement {
   @provide({context: Context.markdown})
   markdownRenderer = (value: string, options?: unknown) => renderSafeMarkdown(value, options);
 
-  @state() private turns: Turn[] = [];
-  @state() private selected = 0; // the Turn on the Canvas
+  @state() private tabs: Tab[] = [];
+  @state() private selected?: string; // the key of the tab on the Canvas
   @state() private busy = false;
   @state() private info?: AgentInfo;
   @state() private connectError?: string;
   @state() private now = Date.now();
-  @state() private board: BoardView = {state: 'loading'};
+  @state() private board: BoardLoad = 'loading';
+  @state() private logOpen = false; // narrow screens: the log is a collapsible panel
   private boardOpening?: Promise<void>; // a question waits for it, so both use one conversation
+  private seq = 0;
 
   private processor: MessageProcessor<ComponentApi> = this.newProcessor();
   private connection?: Promise<AgentConnection>;
@@ -108,35 +117,6 @@ export class ExplorerApp extends LitElement {
     super.connectedCallback();
     void this.connectionOnce().catch(() => {}); // load the card early for the header and examples
     this.openBoard();
-  }
-
-  /** Sends `open_board` for the Explorer when a conversation starts (SPEC §18). Its reply starts
-   * the conversation, so the first question waits for it and uses the same contextId. */
-  private openBoard() {
-    const processor = this.processor;
-    this.board = {state: 'loading'};
-    const action: UiAction = {
-      name: OPEN_BOARD, surfaceId: '', sourceComponentId: '', timestamp: new Date().toISOString(), context: {board: 'explorer'},
-    };
-    this.boardOpening = (async () => {
-      try {
-        const agent = await this.connectionOnce();
-        for await (const event of agent.act(action, this.contextId)) {
-          if (processor !== this.processor) return; // a new conversation replaced this one
-          if (event.kind !== 'final') continue;
-          const surfaceId = surfaceIdOf(event.a2ui);
-          if (event.metadata?.[ACTION_FAILED_KEY] || !surfaceId) {
-            this.board = {state: event.metadata?.[NO_BOARDS_KEY] ? 'none' : 'failed'};
-            return;
-          }
-          this.contextId = event.contextId;
-          processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
-          this.board = {state: 'shown', surfaceId};
-        }
-      } catch {
-        if (processor === this.processor) this.board = {state: 'failed'};
-      }
-    })();
   }
 
   override disconnectedCallback() {
@@ -168,8 +148,40 @@ export class ExplorerApp extends LitElement {
     return this.connection;
   }
 
-  private patch(index: number, patch: Partial<Turn>) {
-    this.turns = this.turns.map((t, i) => (i === index ? {...t, ...patch} : t));
+  // tabs ----------------------------------------------------------------------------------------
+
+  private tab(key: string | undefined): Tab | undefined {
+    return key === undefined ? undefined : this.tabs.find(t => t.key === key);
+  }
+
+  private patch(key: string, patch: Partial<Tab>) {
+    this.tabs = this.tabs.map(t => (t.key === key ? {...t, ...patch} : t));
+  }
+
+  /** Opens a tab after the selected one and selects it (SPEC §18). */
+  private open(tab: Omit<Tab, 'key' | 'seq' | 'closed' | 'isNew'>): string {
+    const key = `tab-${++this.seq}`;
+    this.tabs = openTab(this.tabs, {...tab, key, seq: this.seq, closed: false, isNew: true}, this.selected);
+    this.select(key);
+    return key;
+  }
+
+  private select(key: string) {
+    this.tabs = selectTab(this.tabs, this.selected, key); // from memory, no agent call; reopens a closed tab
+    this.selected = key;
+    this.logOpen = false;
+    void this.updateComplete.then(() => this.querySelector('.canvas')?.scrollTo?.({top: 0}));
+  }
+
+  private close(key: string) {
+    const {tabs, selected} = closeTab(this.tabs, key, this.selected);
+    this.tabs = tabs;
+    this.selected = selected;
+  }
+
+  /** `explorerViewing`: the selected tab's server ID (SPEC §18). */
+  private viewing(): string | undefined {
+    return this.tab(this.selected)?.id;
   }
 
   private startTicker() {
@@ -182,60 +194,82 @@ export class ExplorerApp extends LitElement {
     this.ticker = undefined;
   }
 
-  /** `explorerViewing`: the selected Turn's shown Level when it isn't that Turn's latest. Other
-   * Turns aren't on screen (SPEC §16). */
-  private viewing(): string[] {
-    const t = this.turns[this.selected];
-    if (!t || t.levels.length < 2 || t.current === t.levels.length - 1) return [];
-    const surfaceId = t.levels[t.current]?.surfaceId;
-    return surfaceId ? [surfaceId] : [];
+  // the Explorer Board ----------------------------------------------------------------------------
+
+  /** Sends `open_board` for the Explorer when a conversation starts (SPEC §18). Its reply starts
+   * the conversation, so the first question waits for it and uses the same contextId. */
+  private openBoard() {
+    const processor = this.processor;
+    this.board = 'loading';
+    const action: UiAction = {
+      name: OPEN_BOARD, surfaceId: '', sourceComponentId: '', timestamp: new Date().toISOString(), context: {board: 'explorer'},
+    };
+    this.boardOpening = (async () => {
+      try {
+        const agent = await this.connectionOnce();
+        for await (const event of agent.act(action, this.contextId)) {
+          if (processor !== this.processor) return; // a new conversation replaced this one
+          if (event.kind !== 'final') continue;
+          const surfaceId = surfaceIdOf(event.a2ui);
+          if (event.metadata?.[ACTION_FAILED_KEY] || !surfaceId) {
+            this.board = event.metadata?.[NO_BOARDS_KEY] ? 'none' : 'failed';
+            return;
+          }
+          this.contextId = event.contextId;
+          processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
+          this.addExplorer(event, surfaceId);
+          this.board = 'shown';
+        }
+      } catch {
+        if (processor === this.processor) this.board = 'failed';
+      }
+    })();
   }
 
-  private select(index: number) {
-    this.selected = index; // from memory, no agent call
-    void this.updateComplete.then(() => this.querySelector('.canvas')?.scrollTo?.({top: 0}));
+  /** The Explorer is the first tab and can't be closed. A question asked while it loaded keeps
+   * the selection. */
+  private addExplorer(event: FinalEvent, surfaceId: string) {
+    const meta = tabOf(event.metadata);
+    const explorer: Tab = {
+      key: EXPLORER_KEY, seq: 0, closed: false, isNew: false, fixed: true, kind: 'board', title: meta.title ?? 'Explorer',
+      log: meta.log ?? {text: 'Explorer'}, id: meta.id, startedAt: Date.now(), elapsedMs: 0, steps: [], surfaceId,
+      model: modelOf(event.metadata),
+    };
+    this.tabs = [explorer, ...this.tabs];
+    this.selected ??= EXPLORER_KEY;
   }
 
-  // typed questions ----------------------------------------------------------------------------
+  // typed questions -------------------------------------------------------------------------------
 
   async ask(question: string) {
     if (this.busy) return;
-    await this.boardOpening; // the Board's reply carries the conversation's contextId
-    if (this.busy) return;
+    this.busy = true; // the tab shows at once, before the Board's reply (SPEC §18 slice 1b)
     const viewing = this.viewing(); // what was on screen when the question was typed
-    this.turns = [...this.turns, {question, viewing, steps: [], startedAt: Date.now(), levels: [], current: 0}];
-    this.select(this.turns.length - 1);
-    await this.runQuestion(this.turns.length - 1);
+    const key = this.open({kind: 'question', title: question, log: {text: question}, question, viewing, running: true,
+                           startedAt: Date.now(), steps: []});
+    this.startTicker();
+    await this.boardOpening; // the Board's reply carries the conversation's contextId
+    await this.runQuestion(key);
   }
 
-  private async retry(index: number) {
+  private async retry(key: string) {
     if (this.busy) return;
-    const {question} = this.turns[index]!;
-    this.patch(index, {question, steps: [], startedAt: Date.now(), elapsedMs: undefined, error: undefined});
-    await this.runQuestion(index);
+    this.patch(key, {running: true, steps: [], startedAt: Date.now(), elapsedMs: undefined, error: undefined});
+    await this.runQuestion(key);
   }
 
-  private async runQuestion(index: number) {
-    const turn = this.turns[index]!;
-    await this.stream(index, agent => agent.askQuestion(turn.question, this.contextId, turn.viewing), {
-      status: text => this.patch(index, {steps: [...this.turns[index]!.steps, text]}),
-      final: async event => {
-        const elapsedMs = Date.now() - turn.startedAt;
-        const level: Level = {
-          surfaceId: surfaceIdOf(event.a2ui), label: 'Overview', proseHtml: await renderSafeMarkdown(event.prose),
-          elapsedMs, steps: this.turns[index]!.steps, model: modelOf(event.metadata),
-        };
-        this.patch(index, {elapsedMs, levels: [level], current: 0});
-      },
-      fail: message => this.patch(index, {elapsedMs: Date.now() - turn.startedAt, error: message}),
+  private async runQuestion(key: string) {
+    const tab = this.tab(key);
+    if (!tab?.question) return;
+    await this.stream(key, agent => agent.askQuestion(tab.question!, this.contextId, tab.viewing), async event => {
+      this.patch(key, {
+        ...tabOf(event.metadata), surfaceId: surfaceIdOf(event.a2ui), proseHtml: await renderSafeMarkdown(event.prose),
+        model: modelOf(event.metadata),
+      });
     });
   }
 
-  // Actions -------------------------------------------------------------------------------------
-
-  private turnOf(surfaceId: string): number {
-    return this.turns.findIndex(t => t.levels.some(l => l.surfaceId === surfaceId));
-  }
+  // Actions ---------------------------------------------------------------------------------------
 
   /** The text of a Button's Text child (a Follow-up or the Drill-down's Ask button). */
   private buttonText(surfaceId: string, componentId: string): string | undefined {
@@ -247,109 +281,96 @@ export class ExplorerApp extends LitElement {
 
   private onAction(payload: ActionPayload) {
     if (this.busy) return; // clicks are disabled while anything runs
-    const index = this.turnOf(payload.surfaceId);
-    if (index < 0) return;
+    const from = this.tabs.find(t => t.surfaceId === payload.surfaceId);
+    if (!from) return;
     const {name, surfaceId, sourceComponentId, timestamp, context} = payload;
     const action: UiAction = {name, surfaceId, sourceComponentId, timestamp, context}; // IDs only
     const label = payload.userMessage || this.buttonText(surfaceId, sourceComponentId) || 'this';
     if (name === 'drill') {
-      void this.runAction(index, action, label);
+      void this.runAction(from.key, action, label);
     } else {
-      this.patch(index, {confirm: {label, action}, actionError: undefined});
-      void this.updateComplete.then(() => (this.querySelector('.canvas .turn .confirm .ok') as HTMLElement | null)?.focus());
+      this.patch(from.key, {confirm: {label, action}});
+      void this.updateComplete.then(() => (this.querySelector('.canvas .tab-view .confirm .ok') as HTMLElement | null)?.focus());
     }
   }
 
-  private confirmAsk(index: number) {
-    const confirm = this.turns[index]?.confirm;
+  private confirmAsk(key: string) {
+    const confirm = this.tab(key)?.confirm;
     if (!confirm || this.busy) return;
-    this.patch(index, {confirm: undefined});
-    void this.runAction(index, confirm.action, confirm.label);
+    this.patch(key, {confirm: undefined});
+    void this.runAction(key, confirm.action, confirm.label);
   }
 
-  private cancelAsk(index: number) {
-    this.patch(index, {confirm: undefined});
+  private cancelAsk(key: string) {
+    this.patch(key, {confirm: undefined});
   }
 
   /** Ask the agent instead, after a failed Drill-down (the same row, confirmed). */
-  private askInstead(index: number) {
-    const failed = this.turns[index]?.actionError;
-    if (!failed) return;
-    const action = {...failed.action, name: 'ask', timestamp: new Date().toISOString()};
-    this.patch(index, {actionError: undefined, confirm: {label: failed.label, action}});
+  private askInstead(key: string) {
+    const tab = this.tab(key);
+    if (!tab?.action) return;
+    this.patch(key, {confirm: {label: tab.title, action: {...tab.action, name: 'ask', timestamp: new Date().toISOString()}}});
   }
 
-  private async runAction(index: number, action: UiAction, label: string) {
+  /** A Drill-down or a confirmed Ask: a new tab after the one clicked, running until its reply. */
+  private async runAction(fromKey: string, action: UiAction, label: string) {
     if (this.busy || !this.contextId) return;
+    if (this.selected !== fromKey) this.select(fromKey);
+    const viewing = this.viewing();
+    const key = this.open({kind: action.name === 'drill' ? 'drill' : 'ask', title: label, log: {text: label}, action, viewing,
+                           running: true, startedAt: Date.now(), steps: []});
+    await this.sendAction(key);
+  }
+
+  private retryAction(key: string) {
+    const tab = this.tab(key);
+    if (!tab?.action || this.busy) return;
+    this.patch(key, {action: {...tab.action, timestamp: new Date().toISOString()}, running: true, steps: [],
+                     startedAt: Date.now(), elapsedMs: undefined, error: undefined});
+    void this.sendAction(key);
+  }
+
+  private async sendAction(key: string) {
+    const tab = this.tab(key);
     const contextId = this.contextId;
-    const from = this.turns[index]!.current; // the Level clicked from
-    this.patch(index, {running: {label, action, steps: [], startedAt: Date.now()}, actionError: undefined, confirm: undefined});
-    await this.stream(index, agent => agent.act(action, contextId, this.viewing()), {
-      status: text => {
-        const running = this.turns[index]!.running;
-        if (running) this.patch(index, {running: {...running, steps: [...running.steps, text]}});
-      },
-      final: async event => {
-        const level = event.metadata?.[LEVEL_KEY] as {label?: string} | undefined;
-        if (!level || event.metadata?.[ACTION_FAILED_KEY]) {
-          this.patch(index, {running: undefined, actionError: {message: event.prose, label, action}});
-          return;
-        }
-        const turn = this.turns[index]!;
-        const running = turn.running;
-        const levels: Level[] = [
-          ...turn.levels.slice(0, from + 1), // a new Action from an earlier Level drops the ones after it
-          {
-            surfaceId: surfaceIdOf(event.a2ui), label: level.label ?? label, proseHtml: await renderSafeMarkdown(event.prose),
-            elapsedMs: Date.now() - (running?.startedAt ?? Date.now()), steps: running?.steps ?? [], model: modelOf(event.metadata),
-          },
-        ];
-        this.patch(index, {running: undefined, levels, current: levels.length - 1});
-      },
-      fail: message => this.patch(index, {running: undefined, actionError: {message, label, action}}),
+    if (!tab?.action || !contextId) return;
+    await this.stream(key, agent => agent.act(tab.action!, contextId, tab.viewing), async event => {
+      if (!event.metadata?.[LEVEL_KEY] || event.metadata?.[ACTION_FAILED_KEY]) {
+        this.patch(key, {error: event.prose});
+        return;
+      }
+      this.patch(key, {
+        ...tabOf(event.metadata), surfaceId: surfaceIdOf(event.a2ui), proseHtml: await renderSafeMarkdown(event.prose),
+        model: modelOf(event.metadata),
+      });
     });
   }
 
-  private retryAction(index: number) {
-    const failed = this.turns[index]?.actionError;
-    if (!failed || this.busy) return;
-    const action = {...failed.action, timestamp: new Date().toISOString()};
-    void this.runAction(index, action, failed.label);
-  }
-
-  private showLevel(index: number, level: number) {
-    if (this.turns[index]?.running) return;
-    this.patch(index, {current: level, confirm: undefined, actionError: undefined}); // from memory, no agent call
-  }
-
-  private async stream(
-    index: number,
-    open: (agent: AgentConnection) => AsyncGenerator<AskEvent, void, undefined>,
-    on: {status(text: string): void; final(event: Extract<AskEvent, {kind: 'final'}>): Promise<void>; fail(message: string): void},
-  ) {
+  /** Runs one request for the tab `key`: its status updates, then its final message. */
+  private async stream(key: string, open: (agent: AgentConnection) => AsyncGenerator<AskEvent, void, undefined>,
+                       final: (event: FinalEvent) => Promise<void>) {
     const processor = this.processor; // a new conversation replaces it mid-run
     this.busy = true;
     this.startTicker();
-    if (index === this.selected) {
-      void this.updateComplete.then(() => this.querySelector('.canvas .turn')?.scrollIntoView?.({behavior: 'smooth', block: 'start'}));
-    }
+    const startedAt = this.tab(key)?.startedAt ?? Date.now();
     try {
       const agent = await this.connectionOnce();
       for await (const event of open(agent)) {
         if (processor !== this.processor) return; // the user started a new conversation
         if (event.kind === 'status') {
-          on.status(event.text);
+          this.patch(key, {steps: [...(this.tab(key)?.steps ?? []), event.text]});
           continue;
         }
         this.contextId = event.contextId;
         if (event.a2ui.length) processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
-        await on.final(event);
+        await final(event);
       }
     } catch (e) {
       if (processor !== this.processor) return;
-      on.fail(e instanceof Error ? e.message : String(e));
+      this.patch(key, {error: e instanceof Error ? e.message : String(e)});
     } finally {
       if (processor === this.processor) {
+        this.patch(key, {running: false, elapsedMs: Date.now() - startedAt});
         this.busy = false;
         this.stopTicker();
       }
@@ -357,8 +378,8 @@ export class ExplorerApp extends LitElement {
   }
 
   private newConversation() {
-    this.turns = [];
-    this.selected = 0;
+    this.tabs = [];
+    this.selected = undefined;
     this.contextId = undefined;
     this.processor = this.newProcessor();
     this.busy = false;
@@ -393,7 +414,7 @@ export class ExplorerApp extends LitElement {
         <h1>Explorer</h1>
         ${this.info?.description ? html`<span class="dataset">${this.info.description}</span>` : nothing}
       </div>
-      <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.turns.length}>
+      <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
         New conversation
       </button>
     </header>`;
@@ -407,15 +428,7 @@ export class ExplorerApp extends LitElement {
     </div>`;
   }
 
-  /** The Explorer Board on the Canvas before the first question, above the examples (SPEC §18). */
-  private renderBoard() {
-    if (this.turns.length || this.board.state !== 'shown') return nothing;
-    const surface = this.processor.model.surfacesMap.get(this.board.surfaceId);
-    return surface ? html`<section class="board"><a2ui-surface .surface=${surface}></a2ui-surface></section>` : nothing;
-  }
-
   private renderEmpty() {
-    if (this.turns.length) return nothing;
     const examples = this.info?.examples ?? [];
     return html`<div class="empty">
       <h2>Ask a question in plain English.</h2>
@@ -423,7 +436,7 @@ export class ExplorerApp extends LitElement {
       ${examples.length
         ? html`<p class="label">Try</p>
             <div class="examples">
-              ${examples.map(x => html`<button type="button" @click=${() => void this.ask(x)}>${x}</button>`)}
+              ${examples.map(x => html`<button type="button" ?disabled=${this.busy} @click=${() => void this.ask(x)}>${x}</button>`)}
             </div>`
         : nothing}
     </div>`;
@@ -436,38 +449,42 @@ export class ExplorerApp extends LitElement {
     </div>`;
   }
 
-  // Sidebar -------------------------------------------------------------------------------------
+  // Sidebar: the investigation log --------------------------------------------------------------
 
-  private renderEntryState(turn: Turn) {
-    if (turn.elapsedMs === undefined || turn.running) {
-      const startedAt = turn.running?.startedAt ?? turn.startedAt;
-      return html`<span class="spinner" aria-hidden="true"></span><span class="elapsed">${seconds(this.now - startedAt)}</span>`;
+  private renderEntryState(tab: Tab) {
+    if (tab.running) {
+      return html`<span class="spinner" aria-hidden="true"></span><span class="elapsed">${seconds(this.now - tab.startedAt)}</span>`;
     }
-    if (turn.error) return html`Failed`;
-    return turn.levels.length > 1 ? html`${turn.levels.length} levels` : nothing;
+    return tab.error ? html`Failed` : nothing;
   }
 
-  /** Rendered only when there are Turns: an `ol` holding template whitespace never matches `:empty`. */
-  private renderTurnList() {
-    return html`<ol class="turn-list">
-      ${this.turns.map((t, i) => html`<li>
-        <button
-          type="button"
-          class=${i === this.selected ? 'turn-entry selected' : 'turn-entry'}
-          aria-current=${i === this.selected ? 'page' : 'false'}
-          @click=${() => this.select(i)}
-        >
-          <span class="entry-question">${t.question}</span>
-          <span class="entry-state">${this.renderEntryState(t)}</span>
-        </button>
-      </li>`)}
-    </ol>`;
+  private renderLog() {
+    const entries = logOrder(this.tabs);
+    return html`<button type="button" class="log-head label" aria-expanded=${this.logOpen ? 'true' : 'false'}
+        @click=${() => (this.logOpen = !this.logOpen)}>
+        <span>Investigation</span><span class="count">${entries.length}</span>
+      </button>
+      ${entries.length
+        ? html`<ol class=${this.logOpen ? 'log open' : 'log'}>
+            ${entries.map(t => html`<li>
+              <button
+                type="button"
+                class=${t.key === this.selected ? 'log-entry selected' : 'log-entry'}
+                aria-current=${t.key === this.selected ? 'page' : 'false'}
+                @click=${() => this.select(t.key)}
+              >
+                <span class="log-tag">${t.log.tag ?? 'NEW TAB'}</span>
+                <span class="log-text">${t.log.text}</span>
+                <span class="entry-state">${this.renderEntryState(t)}</span>
+              </button>
+            </li>`)}
+          </ol>`
+        : html`<div class="log-spacer"></div>`}`;
   }
 
   private renderSidebar() {
-    return html`<aside class="sidebar" aria-label="Turns">
-      <div class="sidebar-head label"><span>Turns</span><span class="count">${this.turns.length}</span></div>
-      ${this.turns.length ? this.renderTurnList() : html`<div class="turn-list-spacer"></div>`}
+    return html`<aside class="sidebar" aria-label="Investigation">
+      ${this.renderLog()}
       <form class="composer" @submit=${this.onSubmit}>
         <label class="label" for="composer-box">Ask</label>
         <textarea
@@ -481,94 +498,95 @@ export class ExplorerApp extends LitElement {
     </aside>`;
   }
 
-  // Canvas --------------------------------------------------------------------------------------
+  // Canvas ----------------------------------------------------------------------------------------
 
-  private renderBreadcrumb(turn: Turn, index: number) {
-    if (turn.levels.length < 2) return nothing;
-    return html`<nav class="breadcrumb" aria-label="Levels">
-      ${turn.levels.map((l, i) => html`${i ? html`<span class="sep" aria-hidden="true">›</span>` : nothing}<button
-          type="button"
-          class=${i === turn.current ? 'level current' : 'level'}
-          aria-current=${i === turn.current ? 'page' : 'false'}
-          ?disabled=${!!turn.running}
-          @click=${() => this.showLevel(index, i)}
-        >${l.label}</button>`)}
+  private renderTabStrip() {
+    const open = this.tabs.filter(t => !t.closed);
+    if (!open.length) return nothing;
+    return html`<nav class="tab-strip" role="tablist" aria-label="Tabs">
+      ${open.map(t => {
+        const selected = t.key === this.selected;
+        return html`<div class=${selected ? 'tab selected' : 'tab'}>
+          <button type="button" class="tab-select" role="tab" aria-selected=${selected ? 'true' : 'false'} title=${t.title}
+            @click=${() => this.select(t.key)}>
+            ${t.running ? html`<span class="spinner" aria-hidden="true"></span>` : nothing}
+            <span class="tab-title">${t.title}</span>
+            ${t.isNew ? html`<span class="new-tag">NEW</span>` : nothing}
+          </button>
+          ${t.fixed
+            ? nothing
+            : html`<button type="button" class="tab-close" aria-label=${`Close ${t.title}`} ?disabled=${!!t.running}
+                @click=${() => this.close(t.key)}>×</button>`}
+        </div>`;
+      })}
     </nav>`;
   }
 
-  private renderActionBars(turn: Turn, index: number) {
-    return html`${turn.confirm
+  private renderActionBars(tab: Tab) {
+    return html`${tab.confirm
       ? html`<div
           class="confirm"
           role="dialog"
           aria-label="Ask the agent"
-          @keydown=${(e: KeyboardEvent) => e.key === 'Escape' && this.cancelAsk(index)}
+          @keydown=${(e: KeyboardEvent) => e.key === 'Escape' && this.cancelAsk(tab.key)}
         >
-          <span>Ask the agent: <strong>${turn.confirm.label}</strong>. This takes a few seconds.</span>
-          <button type="button" class="ok" ?disabled=${this.busy} @click=${() => this.confirmAsk(index)}>Ask</button>
-          <button type="button" class="cancel" @click=${() => this.cancelAsk(index)}>Cancel</button>
+          <span>Ask the agent: <strong>${tab.confirm.label}</strong>. This takes a few seconds.</span>
+          <button type="button" class="ok" ?disabled=${this.busy} @click=${() => this.confirmAsk(tab.key)}>Ask</button>
+          <button type="button" class="cancel" @click=${() => this.cancelAsk(tab.key)}>Cancel</button>
         </div>`
       : nothing}
-    ${turn.actionError
-      ? html`<div class="error action-error" role="alert">
-          <span>${turn.actionError.message}</span>
-          <button class="retry" type="button" ?disabled=${this.busy} @click=${() => this.retryAction(index)}>Retry</button>
-          ${turn.actionError.action.name === 'drill'
-            ? html`<button class="ask-instead" type="button" ?disabled=${this.busy} @click=${() => this.askInstead(index)}>Ask the agent instead</button>`
+    ${tab.error
+      ? html`<div class="error" role="alert">
+          <span>${tab.error}</span>
+          <button class="retry" type="button" ?disabled=${this.busy}
+            @click=${() => (tab.kind === 'question' ? void this.retry(tab.key) : this.retryAction(tab.key))}>Retry</button>
+          ${tab.kind === 'drill'
+            ? html`<button class="ask-instead" type="button" ?disabled=${this.busy} @click=${() => this.askInstead(tab.key)}>Ask the agent instead</button>`
             : nothing}
         </div>`
-      : nothing}
-    ${turn.running ? this.renderStatus(turn.running.steps, turn.running.startedAt) : nothing}`;
+      : nothing}`;
   }
 
-  /** The status line under a Level: time, steps and the serving model (SPEC §16). */
-  private renderMeta(elapsedMs: number, steps: string[], model: string | null | undefined, failed = false) {
+  /** The status line under a tab: time, steps and the serving model (SPEC §16). */
+  private renderMeta(tab: Tab) {
+    if (tab.running || tab.elapsedMs === undefined || tab.kind === 'board') return nothing;
     const parts = [
-      ...(steps.length ? [`${steps.length} step${steps.length === 1 ? '' : 's'}`] : []),
-      ...(model === null ? ['No model · database only'] : model ? [model] : []),
+      ...(tab.steps.length ? [`${tab.steps.length} step${tab.steps.length === 1 ? '' : 's'}`] : []),
+      ...(tab.model === null ? ['No model · database only'] : tab.model ? [tab.model] : []),
     ];
     return html`<details class="meta">
-      <summary><span class="elapsed">${failed ? 'Failed after' : 'Answered in'} ${seconds(elapsedMs)}</span>${parts.map(
+      <summary><span class="elapsed">${tab.error ? 'Failed after' : 'Answered in'} ${seconds(tab.elapsedMs)}</span>${parts.map(
         p => html` · <span>${p}</span>`,
       )}</summary>
-      ${steps.length ? html`<ol class="steps">${steps.map(s => html`<li>${s}</li>`)}</ol>` : nothing}
+      ${tab.steps.length ? html`<ol class="steps">${tab.steps.map(s => html`<li>${s}</li>`)}</ol>` : nothing}
     </details>`;
   }
 
-  private renderTurn(turn: Turn, index: number) {
-    const shown = turn.levels[turn.current];
-    const surface = shown?.surfaceId ? this.processor.model.surfacesMap.get(shown.surfaceId) : undefined;
-    const answering = turn.elapsedMs === undefined;
-    return html`<section class="turn">
-      <h2 class="question">${turn.question}</h2>
-      ${answering ? this.renderStatus(turn.steps, turn.startedAt) : nothing}
-      ${turn.error
-        ? html`<div class="error" role="alert">
-            <span>${turn.error}</span>
-            <button class="retry" type="button" ?disabled=${this.busy} @click=${() => void this.retry(index)}>Retry</button>
-          </div>`
-        : nothing}
-      ${this.renderBreadcrumb(turn, index)} ${this.renderActionBars(turn, index)}
-      <div class=${turn.running || this.busy ? 'level-view inert' : 'level-view'} ?inert=${!!turn.running}>
-        ${shown?.proseHtml ? html`<div class="prose">${unsafeHTML(shown.proseHtml)}</div>` : nothing}
+  private renderTab(tab: Tab) {
+    const surface = tab.surfaceId ? this.processor.model.surfacesMap.get(tab.surfaceId) : undefined;
+    const heading = tab.kind === 'question' || tab.kind === 'ask'; // a Board and a Drill-down title themselves
+    const examples = tab.kind === 'board' && !this.tabs.some(t => t.kind === 'question');
+    return html`<section class="tab-view" role="tabpanel">
+      ${heading ? html`<h2 class="question">${tab.title}</h2>` : nothing}
+      ${tab.running ? this.renderStatus(tab.steps, tab.startedAt) : nothing}
+      ${this.renderActionBars(tab)}
+      <div class=${this.busy ? 'level-view inert' : 'level-view'}>
+        ${tab.proseHtml ? html`<div class="prose">${unsafeHTML(tab.proseHtml)}</div>` : nothing}
         ${surface ? html`<a2ui-surface .surface=${surface}></a2ui-surface>` : nothing}
       </div>
-      ${shown
-        ? this.renderMeta(shown.elapsedMs, shown.steps, shown.model)
-        : turn.error && turn.elapsedMs !== undefined
-          ? this.renderMeta(turn.elapsedMs, turn.steps, undefined, true)
-          : nothing}
-    </section>`;
+      ${this.renderMeta(tab)}
+    </section>
+    ${examples ? this.renderEmpty() : nothing}`;
   }
 
   override render() {
-    const turn = this.turns[this.selected];
+    const tab = this.tab(this.selected);
     return html`
       ${this.renderHeader()}
       <div class="shell">
         ${this.renderSidebar()}
         <main class="canvas">
-          ${this.renderBanner()} ${this.renderBoard()} ${this.renderEmpty()} ${turn ? this.renderTurn(turn, this.selected) : nothing}
+          ${this.renderBanner()} ${this.renderTabStrip()} ${tab && !tab.closed ? this.renderTab(tab) : this.renderEmpty()}
         </main>
       </div>
     `;

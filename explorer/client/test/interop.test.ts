@@ -126,9 +126,13 @@ describe('interop with the stub agent', () => {
     const ask = {name: 'ask', surfaceId, sourceComponentId: String(followUp['id']), timestamp: new Date().toISOString(),
                  context: (followUp['action'] as {event: {context: Record<string, unknown>}}).event.context};
     let asked: AskEvent | undefined;
-    for await (const e of agent.act(ask, first.contextId, [surfaceId])) asked = e;
+    for await (const e of agent.act(ask, first.contextId, 't1')) asked = e;
     if (asked?.kind !== 'final') throw new Error('no ask');
     expect((asked.metadata?.['explorerLevel'] as {level: number}).level).toBe(3);
+    // Each Level opens a tab (SPEC §18 slice 1b): t1 the question, t2 the Drill-down, t3 the Ask.
+    expect(out.metadata?.['explorerTab']).toEqual({id: 't2', kind: 'drill', title: 'Contracts by buyer · Supplier A'});
+    expect(asked.metadata?.['explorerTab']).toMatchObject({id: 't3', kind: 'ask'});
+    expect(asked.metadata?.['explorerLogEntry']).toMatchObject({kind: 'ask', tag: 'NEW TAB · stub'});
   });
 
   it('opens the Explorer Board, then answers a question in the same conversation (SPEC §18)', async () => {
@@ -147,6 +151,22 @@ describe('interop with the stub agent', () => {
     const surface = processor.model.surfacesMap.get(level.surfaceId)!;
     expect(surface.componentsModel.get('board_layout')).toBeDefined();
     expect([...surface.componentsModel.entries].some(([, c]) => c.type === 'VegaChart')).toBe(true);
+    expect(board.metadata?.['explorerTab']).toEqual({id: 't1', kind: 'board', title: 'Explorer'});
+
+    // The Explorer's table drills down without the model (slice 1b), as a Level of Turn 0.
+    const grid = board.a2ui
+      .flatMap(m => ((m['updateComponents'] as {components?: Record<string, unknown>[]})?.components ?? []))
+      .find(c => c['component'] === 'DataGrid')!;
+    const gridAction = grid['action'] as {source: string; rows: number[]; drillable: boolean};
+    expect(gridAction.drillable).toBe(true);
+    let drilled: AskEvent | undefined;
+    const drill = {name: 'drill', surfaceId: level.surfaceId, sourceComponentId: String(grid['id']),
+                   timestamp: new Date().toISOString(), context: {source: gridAction.source, row: gridAction.rows[0]}};
+    for await (const e of agent.act(drill, board.contextId)) drilled = e;
+    if (drilled?.kind !== 'final') throw new Error('no drill-down');
+    const drillLevel = drilled.metadata?.['explorerLevel'] as {turn: number; level: number};
+    expect([drillLevel.turn, drillLevel.level]).toEqual([0, 2]);
+    expect((drilled.metadata?.['explorerTab'] as {id: string}).id).toBe('t2');
 
     let answer: AskEvent | undefined;
     for await (const e of agent.askQuestion('Which suppliers got the most?', board.contextId)) answer = e;

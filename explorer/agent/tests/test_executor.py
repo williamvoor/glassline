@@ -10,6 +10,8 @@ import pytest
 
 from explorer_agent.executor import (
     ACTION_FAILED_KEY,
+    LOG_KEY,
+    TAB_KEY,
     MODEL_KEY,
     BUSY_ERROR,
     LEVEL_KEY,
@@ -324,15 +326,81 @@ async def test_ask_on_an_older_turn_adds_a_level_there():
     assert (meta(out)[LEVEL_KEY]["turn"], meta(out)[LEVEL_KEY]["level"]) == (1, 2)
 
 
-async def test_viewing_lines_precede_the_user_text():
+async def test_viewing_line_names_the_selected_tab_when_it_is_not_the_newest():
+    """SPEC §18 slice 1b: explorerViewing is a tab ID; the line keeps §15's form."""
     client, answers, runner, _ = make(rows=0)
+    async with client:
+        ctx, events = await first_answer(client)  # t1
+        surface, _ = chart_action(events)
+        await send_action(client, act(surface, source="v1", row=0), ctx)  # t2, the newest
+        for viewing in ("t1", "t2", "t99", surface, ["t1"]):
+            await stream(client, "why?", context_id=ctx, metadata={**CAPS, VIEWING_KEY: viewing})
+    assert answers.texts[1] == "Viewing in Turn 1: Level 1\n\nwhy?"
+    # t2 was the newest when sent; then each question's tab is the newest, so t1 still counts
+    # only while it isn't; unknown IDs, surface IDs and lists send nothing.
+    assert answers.texts[2:] == ["Viewing in Turn 1: Level 2\n\nwhy?", "why?", "why?", "why?"]
+
+
+async def test_each_level_opens_a_tab_with_its_log_entry_and_failures_open_none():
+    client, answers, runner, _ = make(rows=0, model="muse")
     async with client:
         ctx, events = await first_answer(client)
         surface, _ = chart_action(events)
-        await send_action(client, act(surface, source="v1", row=0), ctx)
-        message_meta = {**CAPS, VIEWING_KEY: [surface, "turn-99-1-zzz"]}
-        await stream(client, "why?", context_id=ctx, metadata=message_meta)
-    assert answers.texts[1] == "Viewing in Turn 1: Level 1\n\nwhy?"
+        runner.fail_next = 1
+        failed = await send_action(client, act(surface, source="v1", row=0), ctx)
+        drill = await send_action(client, act(surface, source="v1", row=0), ctx)
+        ask = await send_action(client, act(surface, "ask", source="v1", row=1), ctx)
+    assert meta(events)[TAB_KEY] == {"id": "t1", "kind": "question", "title": "top suppliers?"}
+    assert meta(events)[LOG_KEY] == {"kind": "question", "tag": "NEW TAB · muse", "text": "top suppliers?"}
+    assert TAB_KEY not in meta(failed) and LOG_KEY not in meta(failed)
+    assert meta(drill)[TAB_KEY] == {"id": "t2", "kind": "drill", "title": "Agencies · Supplier A"}
+    assert meta(drill)[LOG_KEY] == {"kind": "drill", "tag": "NEW TAB · NO MODEL", "text": "Drill-down: Agencies · Supplier A"}
+    assert meta(ask)[TAB_KEY] == {"id": "t3", "kind": "ask", "title": "Supplier B"}
+    assert meta(ask)[LOG_KEY] == {"kind": "ask", "tag": "NEW TAB · muse", "text": "Ask: Supplier B"}
+
+
+async def test_a_question_whose_view_fails_opens_no_tab():
+    client, answers, _, _ = make(Answers('<a2ui>\nsurface("main")\nroot = Column([t])\nt = Text("{r9[0].x}")\n</a2ui>'), rows=0)
+    async with client:
+        _, events = await first_answer(client)
+    assert "couldn't build the view" in prose(events)
+    assert TAB_KEY not in meta(events) and LOG_KEY not in meta(events)
+
+
+async def test_an_unnamed_model_tags_its_tab_new_tab_only():
+    client, _, _, _ = make(rows=0)
+    async with client:
+        _, events = await first_answer(client)
+    assert meta(events)[LOG_KEY]["tag"] == "NEW TAB"
+
+
+async def test_tab_titles_are_plain_text():
+    """The client renders titles as text, so a row label isn't markdown-escaped there."""
+    runner = Runner()
+    answers = Answers(seed=lambda store: store.add(
+        sql="SELECT 1", purpose="p", columns=["supplier", "value"], column_types=["text", "numeric"],
+        rows=[{"supplier": "*Acme*", "value": 1.0}], truncated=False))
+    client, _, _, _ = make(answers, runner, rows=0)
+    async with client:
+        ctx, events = await first_answer(client)
+        surface, _ = chart_action(events)
+        out = await send_action(client, act(surface, source="v1", row=0), ctx)
+    assert meta(out)[TAB_KEY]["title"] == "Agencies · *Acme*"
+
+
+async def test_a_drill_title_filled_from_rows_is_plain_text_in_the_tab_and_log():
+    """Regression: `_fill` markdown-escapes database values, which a plain-text tab shows as backslashes."""
+    reply = REPLY.replace('drill_title="Agencies"', 'drill_title="Top: {r1[0].supplier} {r1[0].value|currency_m}"')
+    answers = Answers(reply, seed=lambda store: store.add(
+        sql="SELECT 1", purpose="p", columns=["supplier", "value"], column_types=["text", "numeric"],
+        rows=[{"supplier": "Smith (Pty) Ltd.", "value": 1_500_000.0}], truncated=False))
+    client, _, _, _ = make(answers, rows=0)
+    async with client:
+        ctx, events = await first_answer(client)
+        surface, _ = chart_action(events)
+        out = await send_action(client, act(surface, source="v1", row=0), ctx)
+    assert meta(out)[TAB_KEY]["title"] == "Top: Smith (Pty) Ltd. $1.5M · Smith (Pty) Ltd."
+    assert meta(out)[LOG_KEY]["text"] == "Drill-down: Top: Smith (Pty) Ltd. $1.5M · Smith (Pty) Ltd."
 
 
 # --- A8: prefetch in the executor ----------------------------------------------------------------------
@@ -622,6 +690,21 @@ async def test_the_stub_app_answers_a_question_after_its_board():
     assert any(c["component"] == "VegaChart" for c in components(events))
 
 
+async def test_the_stub_app_answers_a_question_after_a_drill_down_on_its_board():
+    """Regression: the stub named the store's first Result, which an Explorer Drill-down had taken."""
+    from explorer_agent.testing.stub_server import stub_answerer, stub_boards, stub_drills
+
+    app = build_app(stub_answerer, url=URL, client_origin=ORIGIN, conversations=Conversations(),
+                    drills=stub_drills(), boards=stub_boards())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL) as client:
+        board = await send_action(client, open_board(), None)
+        ctx = board[-1]["contextId"]
+        grid = next(c for c in components(board) if c["component"] == "DataGrid")
+        await send_action(client, act(meta(board)[LEVEL_KEY]["surfaceId"], source=grid["action"]["source"], row=0), ctx)
+        events = await stream(client, context_id=ctx)
+    assert "couldn't build the view" not in prose(events)
+
+
 async def test_a_board_that_fails_to_build_can_be_opened_again(monkeypatch):
     import explorer_agent.executor as executor_module
     from explorer_agent.ui import UiError
@@ -643,3 +726,80 @@ async def test_a_board_that_fails_to_build_can_be_opened_again(monkeypatch):
     assert meta(first)[ACTION_FAILED_KEY] and "couldn't be shown" in prose(first)
     assert not meta(second).get(ACTION_FAILED_KEY)
     assert meta(second)[LEVEL_KEY]["level"] == 1  # the failed attempt's Level was rolled back
+
+
+# --- SPEC §18 slice 1b: clicks on the Explorer, tabs -------------------------------------------------
+
+
+class FirstResultAnswers(Answers):
+    """PLAIN_REPLY naming the store's first Result (a Board takes the first IDs, SPEC §18)."""
+
+    async def __call__(self, conv, text, status):
+        if not conv.store.ids():
+            self.seed(conv.store)
+        self.reply = PLAIN_REPLY.replace('"r1"', f'"{conv.store.ids()[0]}"')
+        return await super().__call__(conv, text, status)
+
+
+def make_board_app(answers=None):
+    from explorer_agent.testing.stub_server import stub_boards, stub_drills
+
+    answers = answers or FirstResultAnswers()
+    conversations = Conversations()
+    drills = stub_drills()
+    app = build_app(answers, url=URL, client_origin=ORIGIN, conversations=conversations, drills=drills,
+                    boards=stub_boards(), model="muse")
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL)
+    return client, answers, conversations, drills.prefetcher
+
+
+def grid_action(events) -> tuple[str, dict]:
+    grid = next(c for c in components(events) if c["component"] == "DataGrid")
+    return meta(events)[LEVEL_KEY]["surfaceId"], grid["action"]
+
+
+async def test_the_explorer_opens_tab_t1_and_its_table_drills_into_turn_0_with_prefetch():
+    client, answers, conversations, prefetcher = make_board_app()
+    async with client:
+        board = await send_action(client, open_board(), None)
+        ctx = board[-1]["contextId"]
+        conv = conversations.get_or_create(ctx)
+        surface, action = grid_action(board)
+        assert action["drillable"] is True
+        await settle()
+        assert (action["source"], 0) in prefetcher.held(ctx)  # the Explorer's first rows, as for an answer
+        assert conv.actions.sources == {}  # Board sources live in the instance, outside MAX_ACTION_SOURCES
+        drill = await send_action(client, act(surface, source=action["source"], row=0), ctx)
+    assert meta(board)[TAB_KEY] == {"id": "t1", "kind": "board", "title": "Explorer"}
+    assert meta(board)[LOG_KEY] == {"kind": "board", "tag": "NEW TAB · NO MODEL", "text": "Opened Explorer"}
+    assert not meta(drill).get(ACTION_FAILED_KEY)
+    level = meta(drill)[LEVEL_KEY]
+    assert (level["turn"], level["level"], level["label"]) == (0, 2, "Supplier A")
+    assert meta(drill)[TAB_KEY] == {"id": "t2", "kind": "drill", "title": "Contracts by buyer · Supplier A"}
+
+
+async def test_an_ask_on_an_explorer_row_copies_its_result_into_the_store():
+    client, answers, conversations, _ = make_board_app()
+    async with client:
+        board = await send_action(client, open_board(), None)
+        ctx = board[-1]["contextId"]
+        conv = conversations.get_or_create(ctx)
+        surface, action = grid_action(board)
+        board_ids = {r.id for inst in conv.boards.values() for r in inst.results.values()}
+        out = await send_action(client, act(surface, "ask", source=action["source"], row=1), ctx)
+    assert not meta(out).get(ACTION_FAILED_KEY)
+    body = json.loads(answers.pairs[0][1]["content"])
+    assert body["result_id"] not in board_ids  # the model sees a store ID only
+    assert conv.store.get(body["result_id"]).rows[1]["supplier"] == "Supplier B"
+    assert "Visual in Turn 0" in answers.texts[0]
+    assert meta(out)[TAB_KEY] == {"id": "t2", "kind": "ask", "title": "Supplier B"}
+
+
+async def test_the_explorer_tab_never_gets_a_viewing_line():
+    client, answers, _, _ = make_board_app()
+    async with client:
+        board = await send_action(client, open_board(), None)
+        ctx = board[-1]["contextId"]
+        await stream(client, "first", context_id=ctx, metadata={**CAPS, VIEWING_KEY: "t1"})
+        await stream(client, "second", context_id=ctx, metadata={**CAPS, VIEWING_KEY: "t1"})
+    assert answers.texts == ["first", "second"]  # the model hasn't seen the Board (slice 2's Board pair)

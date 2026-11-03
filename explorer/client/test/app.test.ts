@@ -69,11 +69,11 @@ describe('explorer-app', () => {
     await settle(app);
     expect(agent.calls).toEqual([{text: 'Top suppliers?', contextId: undefined}]);
     expect(q(app, '.examples')).toBeNull();
-    expect(q(app, '.turn .question')!.textContent).toContain('Top suppliers?');
-    expect(q(app, '.turn .prose strong')!.textContent).toBe('Supplier A');
-    expect(q(app, '.turn .elapsed')!.textContent).toMatch(/^Answered in \d+\.\d s$/);
+    expect(q(app, '.tab-view .question')!.textContent).toContain('Top suppliers?');
+    expect(q(app, '.tab-view .prose strong')!.textContent).toBe('Supplier A');
+    expect(q(app, '.tab-view .elapsed')!.textContent).toMatch(/^Answered in \d+\.\d s$/);
     // No explorerModel from the agent: the status line names no model.
-    expect(q(app, '.turn .meta summary')!.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Answered in \d+\.\d s · 1 step$/);
+    expect(q(app, '.tab-view .meta summary')!.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Answered in \d+\.\d s · 1 step$/);
   });
 
   it('sends on Enter but not on Shift+Enter, and keeps the conversation', async () => {
@@ -104,7 +104,7 @@ describe('explorer-app', () => {
     await settle(app);
     (q(app, 'button.new-conversation') as HTMLButtonElement).click();
     await settle(app);
-    expect(app.querySelectorAll('.turn')).toHaveLength(0);
+    expect(app.querySelectorAll('.tab-view')).toHaveLength(0);
     expect(q(app, '.examples')).not.toBeNull();
     await app.ask('again');
     expect(agent.calls.at(-1)).toEqual({text: 'again', contextId: undefined});
@@ -116,17 +116,17 @@ describe('explorer-app', () => {
     const app = await mount(agent.connector);
     await app.ask('slow one');
     await settle(app);
-    expect(q(app, '.turn .error')!.textContent).toContain('Turn timed out');
-    expect(q(app, '.sidebar .turn-entry .entry-state')!.textContent).toContain('Failed');
-    expect(q(app, '.turn .meta summary')!.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Failed after \d+\.\d s$/);
+    expect(q(app, '.tab-view .error')!.textContent).toContain('Turn timed out');
+    expect(q(app, '.sidebar .log-entry .entry-state')!.textContent).toContain('Failed');
+    expect(q(app, '.tab-view .meta summary')!.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Failed after \d+\.\d s$/);
 
     fail = false;
-    (q(app, '.turn button.retry') as HTMLButtonElement).click();
+    (q(app, '.tab-view button.retry') as HTMLButtonElement).click();
     await settle(app);
     expect(agent.calls.map(c => c.text)).toEqual(['slow one', 'slow one']);
-    expect(app.querySelectorAll('.turn')).toHaveLength(1);
-    expect(q(app, '.turn .error')).toBeNull();
-    expect(q(app, '.turn .prose')!.textContent).toContain('recovered');
+    expect(app.querySelectorAll('.tab-view')).toHaveLength(1);
+    expect(q(app, '.tab-view .error')).toBeNull();
+    expect(q(app, '.tab-view .prose')!.textContent).toContain('recovered');
   });
 
   it('says when it cannot reach the agent, and reconnects on Retry', async () => {
@@ -146,10 +146,10 @@ describe('explorer-app', () => {
   });
 });
 
-// --- The Explorer Board on load (SPEC §18, slice 1a) -----------------------------------------------
+// --- The Explorer Board on load (SPEC §18, slices 1a and 1b) -----------------------------------------------
 
 import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
-import {ACTION_FAILED_KEY, LEVEL_KEY, NO_BOARDS_KEY, OPEN_BOARD} from '../src/app.js';
+import {ACTION_FAILED_KEY, LEVEL_KEY, LOG_KEY, NO_BOARDS_KEY, OPEN_BOARD, TAB_KEY} from '../src/app.js';
 import type {UiAction} from '../src/a2a.js';
 
 const BOARD_SID = 'turn-0-1-abc';
@@ -162,7 +162,11 @@ const boardReply = (contextId = 'ctx-board'): AskEvent => ({
       {id: 'board_title', component: 'Text', text: 'Explorer', variant: 'h2'},
     ]}},
   ],
-  metadata: {[LEVEL_KEY]: {turn: 0, level: 1, label: 'Explorer', surfaceId: BOARD_SID}},
+  metadata: {
+    [LEVEL_KEY]: {turn: 0, level: 1, label: 'Explorer', surfaceId: BOARD_SID},
+    [TAB_KEY]: {id: 't1', kind: 'board', title: 'Explorer'},
+    [LOG_KEY]: {kind: 'board', tag: 'NEW TAB · NO MODEL', text: 'Opened Explorer'},
+  },
 });
 
 function boardAgent(reply: () => AskEvent, gate?: Promise<void>) {
@@ -184,39 +188,49 @@ function boardAgent(reply: () => AskEvent, gate?: Promise<void>) {
 }
 
 describe('explorer-app Explorer Board', () => {
-  it('opens the Explorer on load and shows it above the examples; the first question joins its conversation', async () => {
+  it('opens the Explorer on load as the first tab, above the examples; the first question joins its conversation', async () => {
     const agent = boardAgent(() => boardReply());
     const app = await mount(agent.connector);
     expect(agent.acts.map(a => [a.action.name, a.action.context, a.contextId])).toEqual([[OPEN_BOARD, {board: 'explorer'}, undefined]]);
-    const board = q(app, '.canvas .board a2ui-surface');
+    const board = q(app, '.canvas .tab-view a2ui-surface');
     expect(board).not.toBeNull();
     expect(board!.textContent).toContain('Explorer');
-    // The examples move below it.
-    expect(board!.closest('.board')!.compareDocumentPosition(q(app, '.canvas .examples')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(q(app, '.turn-list')).toBeNull(); // Turn 0 has no Sidebar entry
+    // The examples sit below it until the first question.
+    expect(board!.closest('.tab-view')!.compareDocumentPosition(q(app, '.canvas .examples')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer']);
+    expect(q(app, '.tab-strip .tab-close')).toBeNull(); // the Explorer can't be closed
+    expect(q(app, '.tab-strip .new-tag')).toBeNull();
+    expect(texts(app, '.sidebar .log-entry .log-text')).toEqual(['Opened Explorer']);
+    expect(texts(app, '.sidebar .log-entry .log-tag')).toEqual(['NEW TAB · NO MODEL']);
     (q(app, '.examples button') as HTMLButtonElement).click();
     await settle(app);
     expect(agent.calls).toEqual([{text: 'Top suppliers?', contextId: 'ctx-board'}]);
-    expect(q(app, '.canvas .board')).toBeNull();
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer', 'Top suppliers?']);
+    expect(q(app, '.canvas .tab-view .question')!.textContent).toContain('Top suppliers?');
+    expect(q(app, '.canvas .examples')).toBeNull();
   });
 
-  it('a question asked before the Board arrives waits for it and uses its conversation', async () => {
+  it('a question asked before the Board arrives shows its tab at once, then sends in the Board\'s conversation', async () => {
     let open!: () => void;
     const agent = boardAgent(() => boardReply(), new Promise<void>(r => (open = r)));
     const app = await mount(agent.connector);
     void app.ask('Early?');
     await settle(app);
     expect(agent.calls).toEqual([]);
+    expect(q(app, '.canvas .tab-view .question')!.textContent).toContain('Early?');
+    expect(q(app, '.canvas .tab-view .status .spinner')).not.toBeNull(); // feedback while it waits
     open();
     await settle(app);
     expect(agent.calls).toEqual([{text: 'Early?', contextId: 'ctx-board'}]);
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer', 'Early?']); // the Explorer goes first
+    expect(q(app, '.canvas .tab-view .question')!.textContent).toContain('Early?'); // the question stays selected
   });
 
   it('without Boards shows the empty state as before', async () => {
     const agent = boardAgent(() => ({kind: 'final', contextId: 'ctx-x', prose: 'none', a2ui: [],
       metadata: {[ACTION_FAILED_KEY]: true, [NO_BOARDS_KEY]: true}}));
     const app = await mount(agent.connector);
-    expect(q(app, '.canvas .board')).toBeNull();
+    expect(q(app, '.canvas .tab-strip')).toBeNull(); // no Explorer tab
     expect(texts(app, '.examples button')).toEqual(['Top suppliers?']);
     (q(app, '.examples button') as HTMLButtonElement).click();
     await settle(app);
@@ -231,6 +245,7 @@ describe('explorer-app Explorer Board', () => {
     (q(app, '.new-conversation') as HTMLButtonElement).click();
     await settle(app);
     expect(agent.acts.map(a => [a.action.name, a.contextId])).toEqual([[OPEN_BOARD, undefined], [OPEN_BOARD, undefined]]);
-    expect(q(app, '.canvas .board a2ui-surface')).not.toBeNull();
+    expect(q(app, '.canvas .tab-view a2ui-surface')).not.toBeNull();
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer']);
   });
 });

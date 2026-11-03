@@ -509,7 +509,7 @@ import json
 import os
 from pathlib import Path
 
-from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, check_columns
+from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, check_columns, escape_markdown, unescape_markdown
 from explorer_agent.results import StoredResult
 
 TREEMAP_FIXTURE = Path(__file__).resolve().parents[2] / "client" / "test" / "fixtures" / "treemap_spec.json"
@@ -708,12 +708,68 @@ def test_board_mode_failed_query_gives_an_error_card_without_values():
     assert [c["text"] for c in by_type(comps, "Text")] == ["This panel couldn't load: 57014"]
 
 
-def test_board_placeholders_name_queries_and_clicks_can_be_turned_off(store):
-    with macro_context(_Named({"top": store.get("r1")}), board=True, clicks=False) as c:
+def test_board_placeholders_name_queries_and_board_visuals_are_clickable(store):
+    with macro_context(_Named({"top": store.get("r1")}), board=True) as c:
         comps = expand("BarChart", result_id="top", x="supplier", y="value", title="Top: {top[0].supplier}")
     assert by_type(comps, "Text")[0]["text"] == "Top: Beta"
-    assert "action" not in by_type(comps, "VegaChart")[0]
-    assert c.sources == []
+    assert by_type(comps, "VegaChart")[0]["action"]["source"] == c.sources[0].id
+
+
+def _drill_args(sql: str) -> dict:
+    return {"result_id": "top", "x": "supplier", "y": "value", "title": "T", "drill_sql": sql}
+
+
+def test_board_mode_has_no_drill_cap(store):
+    """SPEC §18: MAX_DRILLS_PER_SURFACE doesn't apply to a Board, which a person reviewed."""
+    sql = "SELECT * FROM fixture.contracts WHERE supplier IS NOT DISTINCT FROM :supplier"
+    with macro_context(_Named({"top": store.get("r1")}), board=True, max_drills=1, allowed_schemas=("fixture",)) as c:
+        for _ in range(3):
+            expand("BarChart", **_drill_args(sql))
+    assert len(c.drills) == 3
+    with macro_context(store, max_drills=1, allowed_schemas=("fixture",)), pytest.raises(MacroError, match="at most 1 Visuals"):
+        expand("BarChart", **{**_drill_args(sql), "result_id": "r1"})
+        expand("BarChart", **{**_drill_args(sql), "result_id": "r1"})
+
+
+def test_board_mode_drops_a_row_dependent_drill_and_keeps_the_ask(caplog):
+    """SPEC §18 slice 1b: a NULL under `=` in a clickable row drops only the Drill query."""
+    s = ResultStore()
+    r = s.add(sql="SELECT 1", purpose="p", columns=["supplier", "value"], column_types=["text", "numeric"],
+              rows=[{"supplier": "A", "value": 2.0}, {"supplier": None, "value": 1.0}], truncated=False)
+    sql = "SELECT * FROM fixture.contracts WHERE supplier = :supplier"
+    with macro_context(_Named({"top": r}), board=True, allowed_schemas=("fixture",)) as c:
+        comps = expand("BarChart", **_drill_args(sql))
+    action = by_type(comps, "VegaChart")[0]["action"]
+    assert action["drillable"] is False and action["source"] == c.sources[0].id
+    assert c.drills == [] and c.errors == []
+    assert "board drill query dropped: visual=0" in caplog.text
+    assert "'A'" not in caplog.text
+    with macro_context(s, allowed_schemas=("fixture",)), pytest.raises(MacroError, match="IS NOT DISTINCT FROM"):
+        expand("BarChart", **{**_drill_args(sql), "result_id": r.id})
+
+
+def test_board_mode_drops_a_drill_on_a_list_column_and_keeps_the_ask():
+    s = ResultStore()
+    r = s.add(sql="SELECT 1", purpose="p", columns=["supplier", "tags", "value"], column_types=["text", "text[]", "numeric"],
+              rows=[{"supplier": "A", "tags": ["a", "b"], "value": 2.0}], truncated=False)
+    sql = "SELECT * FROM fixture.contracts WHERE tags IS NOT DISTINCT FROM :tags"
+    with macro_context(_Named({"top": r}), board=True, allowed_schemas=("fixture",)) as c:
+        comps = expand("BarChart", **_drill_args(sql))
+    assert by_type(comps, "VegaChart")[0]["action"]["drillable"] is False
+    assert c.drills == [] and len(c.sources) == 1
+
+
+def test_unescape_markdown_inverts_escape_markdown():
+    for text in ("Smith (Pty) Ltd.", r"a\b *c* $1.5M", "\\", "[x](y) #1 <b>", ""):
+        assert unescape_markdown(escape_markdown(text)) == text
+
+
+def test_check_columns_checks_drill_title_placeholders():
+    """A bad drill_title would blank the panel at render (refuter, slice 1b)."""
+    outputs = {"q": (["name", "value"], ["text", "numeric"])}
+    comps = [{"id": "a", "component": "BarChart", "result_id": "q", "x": "name", "y": "value", "title": "T",
+              "drill_title": "{nope[0].x}"}]
+    assert check_columns(comps, outputs) == ["a: placeholder names unknown query 'nope'"]
 
 
 def test_check_columns_reports_unknown_queries_columns_and_kinds():

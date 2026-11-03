@@ -173,6 +173,10 @@ class UiPipeline:
         self.inference_catalog = self._expander.transform_to_inference_catalog(explorer_catalog())
         self.format = make_format(fmt_name, self.inference_catalog)
 
+    @property
+    def allowed_schemas(self) -> tuple[str, ...]:
+        return self._allowed_schemas
+
     @classmethod
     def from_settings(cls, settings: Any) -> UiPipeline:
         return cls(
@@ -202,7 +206,7 @@ class UiPipeline:
     ) -> UiResult:
         """`ids` reserves action source and Follow-up IDs (the Conversation's); `ignore_drills`
         rebuilds with those Visuals' drill arguments ignored. `board` builds a Board's layout in
-        Board mode (SPEC §18): `{"failed": {query: sqlstate}, "clicks": bool}`, with `store`
+        Board mode (SPEC §18): `{"failed": {query: sqlstate}}`, with `store`
         looking Results up by query name."""
         # Any SDK error here comes from what the model wrote (syntax, dangling references, bad
         # macro arguments, duplicate surfaces), so it goes back to the model as a UiError.

@@ -71,11 +71,11 @@ def _pipeline() -> UiPipeline:
 
 
 async def stub_answerer(conv: Conversation, text: str, status: StatusFn) -> UiResult:
-    ids = conv.store.ids()
-    rid = ids[0] if ids else seed_fixture(conv.store)
+    # The fixture by its purpose: a Board and its Drill-downs take Result IDs first (SPEC §18).
+    found = [i for i in conv.store.ids() if conv.store.get(i).purpose == FIXTURE_PURPOSE]  # type: ignore[union-attr]
+    rid = found[0] if found else seed_fixture(conv.store)
     conv.actions.take_pairs()  # the tool loop would send them to the model
     await status(STATUS_TEXT)
-    # FIXED_REPLY names r1; a Board opened first takes the first Result IDs.
     return _pipeline().build(FIXED_REPLY.replace("r1", rid), conv.store, conv.surface_id, conv.actions.ids)
 
 
@@ -96,6 +96,10 @@ def stub_drills(prefetch_rows: int = 3) -> DrillDowns:
     return DrillDowns(runner, _pipeline(), Prefetcher(runner, rows=prefetch_rows, timeout_ms=3000, max_held=30))
 
 
+# The Explorer's table drills into the same canned rows as the fixture answer (StubDrillRunner).
+STUB_BOARD_DRILL = (
+    "SELECT buyer, count(*) AS contracts FROM fixture.contracts WHERE supplier IS NOT DISTINCT FROM :supplier GROUP BY buyer"
+)
 STUB_BOARD = Board(
     name="explorer",
     path=Path("<stub>/boards/explorer.toml"),
@@ -108,13 +112,13 @@ STUB_BOARD = Board(
         BoardQuery("by_year", "SELECT year, sum(value) AS value FROM fixture.contracts GROUP BY year ORDER BY year"),
         BoardQuery("top_suppliers", FIXTURE_SQL),
     ),
-    layout="""root = Column([metrics, Row([tiles, years]), suppliers])
+    layout=f"""root = Column([metrics, Row([tiles, years]), suppliers])
 metrics = Row([total, contracts])
 total = Metric("totals", "value", "Total value", 0, "currency_compact")
 contracts = Metric("totals", "contracts", "Contracts", 0, "int")
 tiles = Treemap("by_buyer", "Value by buyer", "buyer", "value", "currency_compact")
 years = LineChart("by_year", "year", "value", "Value by year", format="currency_compact")
-suppliers = DataTable("top_suppliers", "Top suppliers", "supplier,contracts,value", "value:currency_compact", bars="value")""",
+suppliers = DataTable("top_suppliers", "Top suppliers", "supplier,contracts,value", "value:currency_compact", bars="value", drill_sql="{STUB_BOARD_DRILL}", drill_title="Contracts by buyer")""",
 )
 
 STUB_BOARD_ROWS: dict[str, SqlOk] = {

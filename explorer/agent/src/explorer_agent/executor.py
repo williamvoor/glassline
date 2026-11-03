@@ -41,7 +41,7 @@ from explorer_agent.actions import (
 from explorer_agent.boards import BoardInstance, BoardRenderer, build_board, instance_results
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.drill import Prefetcher, display_sql
-from explorer_agent.macros import escape_markdown
+from explorer_agent.macros import escape_markdown, unescape_markdown
 from explorer_agent.results import ResultStore
 from explorer_agent.sql import SqlFail
 from explorer_agent.ui import UiError, UiPipeline, UiResult
@@ -56,7 +56,11 @@ BUSY_ERROR = "The agent is busy answering; try again when it has finished."
 DRILL_FAILED = "The drill-down query failed ({reason}). You can retry, or ask the agent instead."
 NO_DRILLS = "Drill-downs aren't available here; ask the agent instead."
 LEVEL_KEY = "explorerLevel"  # final message metadata: the Level this answer is
-VIEWING_KEY = "explorerViewing"  # request metadata: surface IDs of Levels shown that aren't their Turn's latest
+VIEWING_KEY = "explorerViewing"  # request metadata: the selected tab's ID (SPEC §18)
+TAB_KEY = "explorerTab"  # final message metadata: the tab this Level opens, {id, kind, title}
+LOG_KEY = "explorerLogEntry"  # final message metadata: its investigation log entry, {kind, tag, text}
+NEW_TAB = "NEW TAB"
+NO_MODEL = "NO MODEL"
 MODEL_KEY = "explorerModel"  # final message metadata: the serving model's name, null for a Drill-down (SPEC §16)
 ACTION_FAILED_KEY = "explorerActionFailed"  # final message metadata: the Action failed, no Level was added
 NO_BOARDS_KEY = "explorerNoBoards"  # final message metadata: open_board in a Dataset without Boards (SPEC §18)
@@ -147,6 +151,15 @@ StatusFn = Callable[[str], Awaitable[None]]
 Answerer = Callable[[Conversation, str, StatusFn], Awaitable[UiResult]]
 
 
+@dataclass(frozen=True)
+class Tab:
+    """What a reply's tab and log entry say (SPEC §18): kind, plain-text title and log text."""
+
+    kind: str  # board | question | drill | ask
+    title: str
+    text: str
+
+
 @dataclass
 class DrillDowns:
     """What a Drill-down needs: the SQL runner (`run_bound`), the UI pipeline, and prefetch."""
@@ -221,7 +234,7 @@ class ExplorerExecutor(AgentExecutor):
             async def status(text: str) -> None:
                 await updater.update_status(TaskState.working, message=text_message(text))
 
-            async def send(level: Level, ui: UiResult, unknown: bool = False, *, model_run: bool = True) -> None:
+            async def send(level: Level, ui: UiResult, tab: Tab, unknown: bool = False, *, model_run: bool = True) -> None:
                 prose = f"{UNKNOWN_CONTEXT_PROSE}\n\n{ui.prose}" if unknown else ui.prose
                 parts = [Part(root=TextPart(text=prose))]
                 if ui_on:
@@ -232,6 +245,11 @@ class ExplorerExecutor(AgentExecutor):
                     meta[MODEL_KEY] = None  # a Drill-down: no model, database only
                 elif self._model:
                     meta[MODEL_KEY] = self._model  # unnamed: no key (null would say "no model")
+                # Titles and texts can hold database text; the client renders them as plain text.
+                tab_id = conv.actions.new_tab(level, board=tab.kind == "board")
+                tag = f"{NEW_TAB} · {NO_MODEL}" if not model_run else f"{NEW_TAB} · {self._model}" if self._model else NEW_TAB
+                meta[TAB_KEY] = {"id": tab_id, "kind": tab.kind, "title": tab.title}
+                meta[LOG_KEY] = {"kind": tab.kind, "tag": tag, "text": tab.text}
                 await updater.complete(updater.new_agent_message(parts, metadata=meta))
 
             async def fail(text: str, **extra: Any) -> None:
@@ -246,7 +264,7 @@ class ExplorerExecutor(AgentExecutor):
                 await self._open_board(conv, action, send, fail)
                 return
             try:
-                resolved = conv.actions.resolve(action)
+                resolved = conv.actions.resolve(action, {sid: s for b in conv.boards.values() for sid, s in b.sources.items()})
             except ActionError as e:
                 log.info("action rejected: %s", e)
                 await fail(str(e))
@@ -264,7 +282,7 @@ class ExplorerExecutor(AgentExecutor):
     async def _question(self, conv, text, viewing, status, send, text_message, updater) -> None:
         self._cancel_prefetch(conv)
         await self._model_run(conv, lambda: (conv.actions.new_turn(), text), viewing, status, send, text_message, updater,
-                              action=False)
+                              action=False, tab=Tab("question", text, text))
 
     async def _ask(self, conv, resolved: Resolved, viewing, status, send, text_message, updater) -> None:
         self._cancel_prefetch(conv)
@@ -281,9 +299,12 @@ class ExplorerExecutor(AgentExecutor):
             log.info("ask: kind=%s turn=%d level=%d", resolved.kind, level.turn, level.level)
             return level, ask_text(resolved, result_id)
 
-        await self._model_run(conv, start, viewing, status, send, text_message, updater, action=True)
+        label = resolved.label
+        await self._model_run(conv, start, viewing, status, send, text_message, updater, action=True,
+                              tab=Tab("ask", label, f"Ask: {label}"))
 
-    async def _model_run(self, conv, start, viewing, status, send, text_message, updater, *, action: bool) -> None:
+    async def _model_run(self, conv, start, viewing, status, send, text_message, updater, *, action: bool,
+                         tab: Tab) -> None:
         conv.model_runs_waiting += 1
         try:
             async with conv.lock:  # overlapping messages on one context run one after the other
@@ -306,7 +327,7 @@ class ExplorerExecutor(AgentExecutor):
                 registered = conv.actions.register(level, ui.sources, ui.drills, ui.follow_ups)
         finally:
             conv.model_runs_waiting -= 1
-        await send(level, ui, unknown)
+        await send(level, ui, tab, unknown)
         self._start_prefetch(conv, registered)
 
     # Drill-downs (no model) ----------------------------------------------------------------------
@@ -348,7 +369,8 @@ class ExplorerExecutor(AgentExecutor):
                 "drill-down: source=%s row=%d turn=%d level=%d prefetched=%s rows=%d",
                 src.id, resolved.row, level.turn, level.level, prefetched, result.row_count,
             )
-        await send(level, ui, model_run=False)
+        plain = f"{unescape_markdown(spec.title)} · {label}"  # the tab is plain text; `_fill` escaped its values
+        await send(level, ui, Tab("drill", plain, f"Drill-down: {plain}"), model_run=False)
 
     # Boards (no model) ----------------------------------------------------------------------------
 
@@ -388,9 +410,11 @@ class ExplorerExecutor(AgentExecutor):
             await fail(BOARD_BUILD_FAILED)
             return
         instance_id = f"b{len(conv.boards) + 1}"
-        conv.boards[instance_id] = BoardInstance(instance_id, board, level.surface_id, results)
+        sources = conv.actions.board_sources(level, ui.sources, ui.drills)
+        conv.boards[instance_id] = BoardInstance(instance_id, board, level.surface_id, results, sources)
         log.info("board opened: board=%s instance=%s failed=%d", board.name, instance_id, len(failed))
-        await send(level, ui, model_run=False)
+        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False)
+        self._start_prefetch(conv, list(sources.values()))
 
     # prefetch --------------------------------------------------------------------------------
 

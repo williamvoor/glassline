@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -146,6 +147,10 @@ class ActionState:
     turns: int = 0
     levels: dict[int, int] = field(default_factory=dict)  # highest Level number per Turn
     pending: deque[list[dict[str, Any]]] = field(default_factory=deque)  # synthetic pairs
+    # Tabs (SPEC §18 slice 1b): t<n> -> its Level, issued when a reply adds a Level, never reused.
+    tabs: dict[str, Level] = field(default_factory=dict)
+    board_tabs: set[str] = field(default_factory=set)  # tabs showing a Board
+    latest_tab: str | None = None
 
     # Turns and Levels ------------------------------------------------------------------------
 
@@ -163,7 +168,23 @@ class ActionState:
         self.surfaces[level.surface_id] = level
         return level
 
+    def new_tab(self, level: Level, *, board: bool = False) -> str:
+        """The tab ID of a Level a reply is about to add (SPEC §18): `t<n>`, never reused."""
+        tab = f"t{len(self.tabs) + 1}"
+        self.tabs[tab] = level
+        if board:
+            self.board_tabs.add(tab)
+        self.latest_tab = tab
+        return tab
+
     # registration ----------------------------------------------------------------------------
+
+    @staticmethod
+    def board_sources(level: Level, sources: list[SourceSpec], drills: list[DrillSpec]) -> dict[str, ActionSource]:
+        """A Board's action sources, kept by its Board instance: not in `sources`, so not counted
+        toward `max_sources` (SPEC §18)."""
+        by_source = {d.source: d for d in drills}
+        return {s.id: ActionSource(spec=s, level=level, drill=by_source.get(s.id)) for s in sources}
 
     def register(self, level: Level, sources: list[SourceSpec], drills: list[DrillSpec],
                  follow_ups: list[FollowUpSpec], *, drill_down: bool = False) -> list[ActionSource]:
@@ -184,8 +205,9 @@ class ActionState:
 
     # validation ------------------------------------------------------------------------------
 
-    def resolve(self, action: Any) -> Resolved:
-        """Validate an action. Raises ActionError and changes nothing when it's invalid."""
+    def resolve(self, action: Any, board_sources: Mapping[str, ActionSource] | None = None) -> Resolved:
+        """Validate an action. Raises ActionError and changes nothing when it's invalid.
+        `board_sources`: the live Board instances' sources, looked up after the Conversation's."""
         if not isinstance(action, dict):
             raise ActionError("The action is malformed.")
         missing = [f for f in REQUIRED_FIELDS if f not in action]
@@ -214,7 +236,7 @@ class ActionState:
         sid = context.get("source")
         if not isinstance(sid, str) or set(context) - {"source", "row"}:
             raise ActionError("The action is malformed.")
-        src = self.sources.get(sid)
+        src = self.sources.get(sid) or (board_sources or {}).get(sid)
         if src is None:
             raise ActionError(TOO_OLD if self.ids.issued_source(sid) else "Unknown view element.")
         if src.level != level:
@@ -235,18 +257,13 @@ class ActionState:
 
     # model-facing text -------------------------------------------------------------------------
 
-    def viewing_lines(self, surface_ids: Any) -> list[str]:
-        """`Viewing in Turn <t>: Level <l>` for each known surface ID. Unknown IDs are dropped."""
-        if not isinstance(surface_ids, list):
+    def viewing_lines(self, tab: Any) -> list[str]:
+        """`Viewing in Turn <t>: Level <l>` (§15's form) for the selected tab, when it isn't the
+        newest tab. Never for a Board tab: the model hasn't seen it (SPEC §18 slice 1b)."""
+        level = self.tabs.get(tab) if isinstance(tab, str) else None
+        if level is None or tab == self.latest_tab or tab in self.board_tabs:
             return []
-        lines = []
-        for sid in surface_ids:
-            level = self.surfaces.get(sid) if isinstance(sid, str) else None
-            if level is not None:
-                line = f"Viewing in Turn {level.turn}: Level {level.level}"
-                if line not in lines:
-                    lines.append(line)
-        return lines
+        return [f"Viewing in Turn {level.turn}: Level {level.level}"]
 
     def queue_pair(self, pair: list[dict[str, Any]]) -> None:
         self.pending.append(pair)

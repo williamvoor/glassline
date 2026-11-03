@@ -169,9 +169,31 @@ def test_pending_pairs_are_capped_oldest_dropped():
     assert state.take_pairs() == []
 
 
-def test_viewing_lines_drop_unknown_ids():
+def test_viewing_line_is_for_a_known_tab_that_is_not_the_newest_and_not_a_board():
+    """SPEC §18 slice 1b: tab IDs t<n>, never reused; the line keeps §15's form."""
     state, level, *_ = _state()
-    state.new_level(1, HOSTILE)
-    lines = state.viewing_lines([level.surface_id, "turn-7-1-zzz", 3, level.surface_id])
-    assert lines == ["Viewing in Turn 1: Level 1"]
-    assert state.viewing_lines("nope") == []
+    board = state.new_level(0, "Explorer")
+    assert state.new_tab(board, board=True) == "t1"
+    assert state.new_tab(level) == "t2"
+    l2 = state.new_level(1, HOSTILE)
+    assert state.new_tab(l2) == "t3"
+    assert state.viewing_lines("t2") == ["Viewing in Turn 1: Level 1"]
+    assert state.viewing_lines("t3") == []  # the newest
+    assert state.viewing_lines("t1") == []  # a Board tab
+    for bad in ("t9", level.surface_id, ["t2"], 3, None):
+        assert state.viewing_lines(bad) == []
+
+
+def test_board_sources_resolve_without_counting_toward_the_cap():
+    state, level, store, result = _state(max_sources=2)
+    board = state.new_level(0, "Explorer")
+    sid = state.ids.source()
+    spec = SourceSpec(id=sid, visual=0, result=result, title="B", rows=(0,), labels={0: "A"})
+    drill = DrillSpec(source=sid, visual=0, sql="SELECT $1", names=("name",), drill_as="table", drill_x="",
+                      drill_y="", title="B")
+    sources = state.board_sources(board, [spec], [drill])
+    assert sid not in state.sources and len(state.sources) == 2  # the answer's two stay
+    resolved = state.resolve(action(board.surface_id, source=sid, row=0), sources)
+    assert (resolved.kind, resolved.level, resolved.source.drill) == ("drill", board, drill)
+    with pytest.raises(ActionError, match="too old"):
+        state.resolve(action(board.surface_id, source=sid, row=0))  # without the instance: gone

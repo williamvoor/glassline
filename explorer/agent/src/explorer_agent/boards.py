@@ -5,9 +5,10 @@ calls name queries where an answer names Result IDs. Rendering runs the queries,
 query's rows into a Result owned by the Board instance, and builds the layout in Board mode. Every
 figure on a Board comes from the database when it renders (ADR 0001).
 
-Slice 1a: no Controls and no keys (placeholders are a startup error), and Board Visuals aren't
-clickable. Pure parts: loading and checking files. Async parts: the startup check, the cache
-with single-flight, and the warm-up of the Explorer.
+Slices 1a and 1b: no Controls and no keys (placeholders are a startup error). Board Visuals are
+clickable, and their action sources belong to the Board instance. Pure parts: loading and
+checking files. Async parts: the startup check, the cache with single-flight, and the warm-up of
+the Explorer.
 """
 
 from __future__ import annotations
@@ -26,13 +27,13 @@ from typing import TYPE_CHECKING, Any
 
 from a2ui.core.exceptions import A2uiError
 
-from explorer_agent.drill import DrillSqlError, normalise, rewrite, wrap
-from explorer_agent.macros import check_columns
+from explorer_agent.drill import DrillSpec, DrillSqlError, check_output, normalise, rewrite, wrap
+from explorer_agent.macros import VISUAL_MACROS, check_columns, static_drill
 from explorer_agent.results import StoredResult
 from explorer_agent.sql import GuardError, SqlFail, guard
 
 if TYPE_CHECKING:  # ui imports prompt, which imports config, which imports this module
-    from explorer_agent.actions import IdAllocator
+    from explorer_agent.actions import ActionSource, IdAllocator
     from explorer_agent.ui import UiPipeline, UiResult
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ RESULT_ID = re.compile(r"r\d+")
 RESERVED_PREFIX = "board_"  # IDs the server adds around the layout: board_heading, board_layout, ...
 BOARD_ALIAS = "_explorer_board"
 CHECK_ALIAS = "_explorer_board_check"
+DRILL_CHECK_ALIAS = "_explorer_board_drill_check"
 KEYS = frozenset({"title", "question", "scope", "queries", "layout"})
 NOT_YET = frozenset({"controls", "key", "key_type", "key_columns"})  # slices 2 and 3
 BOARD_COLD_TARGET_S = 1.5  # SPEC §18 speed targets: any Board, cold
@@ -216,7 +218,37 @@ async def check_board(board: Board, runner: Any, pipeline: UiPipeline) -> Output
     problems += check_columns(comps, outputs)
     if problems:
         raise BoardError(f"{board.path}: layout: {'; '.join(problems)}")
+    await _check_drills(board, comps, outputs, runner, pipeline.allowed_schemas)
     return outputs
+
+
+async def _check_drills(board: Board, comps: list[dict[str, Any]], outputs: Outputs, runner: Any,
+                        allowed_schemas: tuple[str, ...]) -> None:
+    """Each Visual's `drill_sql` (SPEC §18 slice 1b): §15's checks that need no rows, against the
+    query's output columns, then a `LIMIT 0` run with every placeholder bound to NULL and the
+    `drill_x`/`drill_y` check on its output. Row-dependent checks happen at render."""
+    for comp in comps:
+        sql = comp.get("drill_sql")
+        if comp.get("component") not in VISUAL_MACROS or not isinstance(sql, str) or not sql.strip():
+            continue
+        where = f"{board.path}: layout: {comp.get('id')}: "
+        query = comp["result_id"]  # check_columns has checked it names a query
+        drill_as, drill_x, drill_y = (str(comp.get(k) or d) for k, d in (("drill_as", "table"), ("drill_x", ""), ("drill_y", "")))
+        try:
+            rewritten = static_drill(outputs[query][0], f"query {query!r}", drill_sql=sql, drill_as=drill_as,
+                                     drill_x=drill_x, drill_y=drill_y, allowed_schemas=allowed_schemas)
+        except ValueError as e:
+            raise BoardError(f"{where}{e}") from None
+        outcome = await runner.run_bound(wrap(rewritten.sql, DRILL_CHECK_ALIAS, " LIMIT 0"), [None] * len(rewritten.names))
+        if isinstance(outcome, SqlFail):
+            state = f" (SQLSTATE {outcome.sqlstate})" if outcome.sqlstate else ""
+            hint = "; add a cast to the placeholder, e.g. :name::text" if outcome.sqlstate == "42P18" else ""
+            raise BoardError(f"{where}drill_sql fails with its placeholders NULL{state}: {outcome.message}{hint}")
+        spec = DrillSpec(source="", visual=0, sql=rewritten.sql, names=rewritten.names, drill_as=drill_as,
+                         drill_x=drill_x.strip(), drill_y=drill_y.strip(), title="")
+        problems = check_output(spec, outcome.columns, outcome.column_types)
+        if problems:
+            raise BoardError(f"{where}{'; '.join(problems)}")
 
 
 # --- rendering ----------------------------------------------------------------------------------------
@@ -360,12 +392,14 @@ class BoardRenderer:
 
 @dataclass
 class BoardInstance:
-    """A Board shown in a Conversation: its Results (under the Conversation's IDs) and surface."""
+    """A Board shown in a Conversation: its Results (under the Conversation's IDs), its surface,
+    and its action sources, which don't count toward the Conversation's `MAX_ACTION_SOURCES`."""
 
     id: str  # b<n>
     board: Board
     surface_id: str
     results: dict[str, StoredResult]  # by query name
+    sources: dict[str, ActionSource] = field(default_factory=dict)  # by source ID v<n>
 
 
 class _Named:
@@ -410,11 +444,11 @@ def heading_components(board: Board) -> list[dict[str, Any]]:
 
 def build_board(board: Board, results: Mapping[str, StoredResult], failed: Mapping[str, str], pipeline: UiPipeline,
                 surface_id: str, ids: IdAllocator | None = None) -> UiResult:
-    """The Board's Surface: heading, then the layout (renamed `board_layout`), in Board mode with
-    clicks off (slice 1a). Panel IDs are the layout's own, stable across renders (SPEC §18)."""
+    """The Board's Surface: heading, then the layout (renamed `board_layout`), in Board mode. Panel
+    IDs are the layout's own, stable across renders (SPEC §18)."""
     from explorer_agent.ui import validate  # noqa: PLC0415 - see TYPE_CHECKING above
 
-    ui = pipeline.build(board.express, _Named(results), surface_id, ids, board={"failed": dict(failed), "clicks": False})
+    ui = pipeline.build(board.express, _Named(results), surface_id, ids, board={"failed": dict(failed)})
     for message in ui.messages:
         update = message.get("updateComponents")
         if update is None:

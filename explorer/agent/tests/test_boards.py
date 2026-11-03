@@ -179,6 +179,61 @@ async def test_startup_check_fails_on_a_layout_that_does_not_parse(tmp_path, pip
         await check_board(board, CheckRunner(_outputs()), pipeline)
 
 
+# --- B1: Board drill_sql at startup (slice 1b) ------------------------------------------------------
+
+
+DRILL = "SELECT buyer, count(*) AS n FROM fixture.contracts WHERE buyer IS NOT DISTINCT FROM :buyer GROUP BY buyer"
+
+
+def _with_drill(drill: str, extra: str = "") -> str:
+    return GOOD.replace('"buyer", "value")"""', f'"buyer", "value", drill_sql="{drill}"{extra})"""')
+
+
+class DrillCheckRunner(CheckRunner):
+    def __init__(self, outputs, drill: SqlOk | SqlFail | None = None):
+        super().__init__(outputs)
+        self.drill = drill or SqlOk(columns=["buyer", "n"], column_types=["text", "bigint"], rows=[], truncated=False, elapsed_ms=1)
+        self.bound: list[tuple[str, list]] = []
+
+    async def run_bound(self, sql, params, *, timeout_ms=None):
+        self.bound.append((sql, params))
+        return self.drill
+
+
+async def test_board_drill_sql_runs_as_limit_0_with_null_placeholders(tmp_path, pipeline):
+    board = load_board(write(tmp_path, _with_drill(DRILL)), ALLOWED)
+    runner = DrillCheckRunner(_outputs())
+    await check_board(board, runner, pipeline)
+    [(sql, params)] = runner.bound
+    assert sql.rstrip().endswith("LIMIT 0") and "$1" in sql and params == [None]
+
+
+@pytest.mark.parametrize(("drill", "extra", "message"), [
+    (DRILL.replace(":buyer", ":supplier"), "", r"tiles: drill_sql placeholder :supplier is not a column of query 'by_buyer'"),
+    ("SELECT * FROM other.t WHERE buyer IS NOT DISTINCT FROM :buyer", "", r"tiles: drill_sql: .*other"),
+    ("SELECT * FROM fixture.contracts", "", "tiles: drill_sql needs at least one :column placeholder"),
+    (DRILL, ', drill_as="bar"', 'tiles: drill_as "bar" needs drill_x and drill_y'),
+])
+async def test_board_drill_sql_static_errors_stop_the_check(tmp_path, pipeline, drill, extra, message):
+    board = load_board(write(tmp_path, _with_drill(drill, extra)), ALLOWED)
+    runner = DrillCheckRunner(_outputs())
+    with pytest.raises(BoardError, match=message):
+        await check_board(board, runner, pipeline)
+    assert runner.bound == []  # nothing ran
+
+
+async def test_board_drill_sql_failing_at_limit_0_or_in_its_output_stops_the_check(tmp_path, pipeline):
+    board = load_board(write(tmp_path, _with_drill(DRILL)), ALLOWED)
+    untyped = SqlFail(sqlstate="42P18", message="could not determine data type of parameter $1")
+    with pytest.raises(BoardError, match=r"tiles: drill_sql fails with its placeholders NULL \(SQLSTATE 42P18\).*add a cast"):
+        await check_board(board, DrillCheckRunner(_outputs(), untyped), pipeline)
+    good = load_board(write(tmp_path, _with_drill(DRILL, ', drill_as="bar", drill_x="buyer", drill_y="n"')), ALLOWED)
+    await check_board(good, DrillCheckRunner(_outputs()), pipeline)  # a bar Drill-down with the right kinds passes
+    bar = load_board(write(tmp_path, _with_drill(DRILL, ', drill_as="bar", drill_x="n", drill_y="buyer"')), ALLOWED)
+    with pytest.raises(BoardError, match="tiles: drill_y 'buyer' is text, not a number"):
+        await check_board(bar, DrillCheckRunner(_outputs()), pipeline)
+
+
 # --- B4: the cache -------------------------------------------------------------------------------
 
 
@@ -349,7 +404,10 @@ async def test_board_heading_comes_first_then_the_layout_and_every_visual_shows_
     assert comps["board_layout"]["component"] == "Column"
     sql = [c for c in comps.values() if c["component"] == "SqlDetails"]
     assert len(sql) == 5  # two Metrics, the treemap, the bar chart and the table
-    assert not any("action" in c for c in comps.values())  # not clickable in slice 1a
+    # Clickable since slice 1b: the treemap, the line chart and the table, each with its source.
+    actions = [c["action"] for c in comps.values() if "action" in c]
+    assert [a["source"] for a in actions] == [s.id for s in ui.sources] and len(actions) == 3
+    assert [d.source for d in ui.drills] == [actions[2]["source"]]  # the table's Drill query
     assert next(c for c in comps.values() if c["component"] == "DataGrid")["columns"][2]["bars"][0] == 1.0
 
 
@@ -468,6 +526,20 @@ async def test_a_query_failing_at_limit_0_stops_the_check(seed_runner, tmp_path)
     text = SEED_BOARD.replace("SELECT agency_name,", "SELECT agency_nme,")
     board = load_board(write(tmp_path, text), ("mart",))
     with pytest.raises(BoardError, match=r"queries.by_agency.sql fails \(SQLSTATE 42703\)"):
+        await check_board(board, seed_runner, UiPipeline(allowed_schemas=("mart",)))
+
+
+@pytest.mark.db
+async def test_a_board_drill_sql_is_checked_against_the_seed_database(seed_runner, tmp_path):
+    """Postgres infers a NULL placeholder's type from the column it is compared with, and can't
+    when nothing gives it one (42P18), which stops the check (SPEC §18 slice 1b)."""
+    good = "SELECT supplier_name FROM mart.supplier WHERE supplier_name IS NOT DISTINCT FROM :supplier_name"
+    text = SEED_BOARD.replace('bars="total_value")', f'bars="total_value", drill_sql="{good}")')
+    board = load_board(write(tmp_path, text), ("mart",))
+    await check_board(board, seed_runner, UiPipeline(allowed_schemas=("mart",)))
+    untyped = "SELECT supplier_name FROM mart.supplier WHERE :supplier_name IS NULL"
+    board = load_board(write(tmp_path, text.replace(good, untyped)), ("mart",))
+    with pytest.raises(BoardError, match=r"suppliers: drill_sql fails with its placeholders NULL \(SQLSTATE 42P18\)"):
         await check_board(board, seed_runner, UiPipeline(allowed_schemas=("mart",)))
 
 
