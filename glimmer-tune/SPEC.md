@@ -1316,5 +1316,15 @@ The conflicts are listed in `docs/tuning-report-20261102.md` section 4 ("Conflic
 ## Test command
 
 ```bash
-cd glimmer-tune && uv run pytest
+cd glimmer-tune && uv run pytest -n auto --dist loadgroup -m "not slow"   # while iterating: 648 tests, ~11 s
+cd glimmer-tune && uv run pytest -n auto --dist loadgroup                 # before "done", a commit or a review: 790 tests, ~1:50
+cd glimmer-tune && uv run pytest                                          # the same suite serially, ~6:30
 ```
+
+### Test tiers (2026-11-03)
+
+- **`slow`** marks tests that generate many rows or every gallery family. `tests/conftest.py` sets it from the fixtures a test uses (`SLOW_FIXTURES`) or from its name (`SLOW_TESTS`, which lists the tests measured at 2 s or more without such a fixture). A new test on a heavy fixture is marked automatically.
+- **The fast tier is for iteration only.** Generation regressions (the A1 sample-size breakage, coverage reach) show up only in the slow tier, so "done" always means the whole suite.
+- **`pytest-xdist`** is a dev dependency. Each test file stays on one worker (`xdist_group` by file), so its module fixtures are built once. `test_generate.py` spreads across workers. The floor is now `test_synth_pipeline.py`, at about 100 s on one worker.
+- The trainer's suite (`cd trainer && uv run pytest`) takes seconds and is unchanged.
+- AGENTS.md's command list should point here. That edit waits until the other session's AGENTS.md changes are committed.

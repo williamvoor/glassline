@@ -16,7 +16,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.3"]
+dev = [
+    "pytest>=8.3",
+    "pytest-xdist>=3.8.0",
+]
 
 [tool.uv.sources]
 a2ui-agent-sdk = { git = "https://github.com/a2ui-project/a2ui", rev = "825beac2813a6d0ccef3b6fb4124ad6c3c8419f0", subdirectory = "python/a2ui_agent" }
@@ -31,3 +34,7 @@ packages = ["a2ui_eval"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: generates many rows or every gallery family; skipped by -m \"not slow\" while iterating",
+    "xdist_group: keeps a file on one pytest-xdist worker (set in conftest.py)",
+]
