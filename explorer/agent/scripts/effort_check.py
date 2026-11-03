@@ -33,10 +33,11 @@ import httpx
 from dotenv import dotenv_values
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
-from explorer_agent.executor import GENERIC_ERROR, UI_ERROR_PREFIX
+from explorer_agent.executor import ACTION_FAILED_KEY, GENERIC_ERROR, MODEL_KEY, UI_ERROR_PREFIX
 from explorer_agent.ui import BARE_NUMBERS_LOG
 from explorer_agent.llm import (
     CONTENT_POLICY_PROSE,
+    DRILLS_DROPPED_LOG,
     MODEL_FAILED_PROSE,
     NO_VIEW_PROSE,
     REPAIR_STATUS,
@@ -120,6 +121,10 @@ def classify_failure(prose: str) -> str:
 # --- one question over A2A -------------------------------------------------------------------
 
 
+def _envelope(message: dict[str, Any]) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/stream", "params": {"message": message}}
+
+
 def message_body(text: str, context_id: str | None = None) -> dict[str, Any]:
     message = {
         "kind": "message", "role": "user", "messageId": str(uuid.uuid4()),
@@ -127,24 +132,37 @@ def message_body(text: str, context_id: str | None = None) -> dict[str, Any]:
     }
     if context_id:  # continue a Conversation (scenarios with several turns)
         message["contextId"] = context_id
-    return {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/stream", "params": {"message": message}}
+    return _envelope(message)
+
+
+def action_body(
+    name: str, surface_id: str, component_id: str, context: dict[str, Any], context_id: str
+) -> dict[str, Any]:
+    """The A2UI action message the client sends for a click (client/src/a2a.ts `act`)."""
+    action = {
+        "name": name, "surfaceId": surface_id, "sourceComponentId": component_id,
+        "timestamp": datetime.now(UTC).isoformat(), "context": context,
+    }
+    return _envelope({
+        "kind": "message", "role": "user", "messageId": str(uuid.uuid4()), "contextId": context_id,
+        "parts": [{"kind": "data", "data": {"version": "v0.9", "action": action},
+                   "metadata": {"mimeType": "application/json+a2ui"}}],
+        "metadata": CAPS,
+    })
 
 
 def _texts(parts: list[dict[str, Any]]) -> str:
     return "\n\n".join(p["text"] for p in parts if p.get("kind") == "text")
 
 
-async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = None) -> dict[str, Any]:
-    """Sends `text` in a fresh Conversation, or in `context_id`'s. Never raises for transport
-    problems. The result's `context_id` is the reply's, for a following Turn."""
+async def _exchange(client: httpx.AsyncClient, body: dict[str, Any]) -> dict[str, Any]:
+    """Sends one message and reads the stream. Never raises for transport problems."""
     statuses: list[str] = []
     final: dict[str, Any] | None = None
     start = time.monotonic()
     error = ""
     try:
-        async with client.stream(
-            "POST", "/", json=message_body(text, context_id), headers={"X-A2A-Extensions": EXT_URI}
-        ) as r:
+        async with client.stream("POST", "/", json=body, headers={"X-A2A-Extensions": EXT_URI}) as r:
             if r.status_code != 200:
                 error = f"HTTP {r.status_code}"
             else:
@@ -172,7 +190,7 @@ async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = Non
         return {
             "wall_s": wall_s, "statuses": statuses, "repairs": statuses.count(REPAIR_STATUS),
             "prose": error or "stream ended without a final event", "failure": "transport",
-            "surface": surface_summary([]),
+            "surface": surface_summary([]), "metadata": {},
         }
     status = final.get("status") or {}
     message = status.get("message")
@@ -180,7 +198,7 @@ async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = Non
         return {
             "wall_s": wall_s, "statuses": statuses, "repairs": statuses.count(REPAIR_STATUS),
             "prose": f"final event not completed with a message (state {status.get('state')!r})",
-            "failure": "transport", "surface": surface_summary([]),
+            "failure": "transport", "surface": surface_summary([]), "metadata": {},
         }
     parts = message.get("parts") or []
     prose = _texts(parts)
@@ -188,15 +206,38 @@ async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = Non
     return {
         "wall_s": wall_s, "statuses": statuses, "repairs": statuses.count(REPAIR_STATUS),
         "prose": prose, "failure": classify_failure(prose), "surface": surface_summary(a2ui),
-        "context_id": final.get("contextId"),
+        "context_id": final.get("contextId"), "metadata": message.get("metadata") or {},
     }
 
 
+async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = None) -> dict[str, Any]:
+    """Sends `text` in a fresh Conversation, or in `context_id`'s. Never raises for transport
+    problems. The result's `context_id` is the reply's, for a following Turn."""
+    return await _exchange(client, message_body(text, context_id))
+
+
+async def act(
+    client: httpx.AsyncClient, name: str, surface_id: str, component_id: str, context: dict[str, Any],
+    context_id: str,
+) -> dict[str, Any]:
+    """Sends a click (SPEC §17). Like `ask`, plus the final message's `metadata`; an Action the
+    agent rejects (`explorerActionFailed`) has `failure: "action_failed"`."""
+    result = await _exchange(client, action_body(name, surface_id, component_id, context, context_id))
+    if result["failure"] == "none" and result["metadata"].get(ACTION_FAILED_KEY):
+        result["failure"] = "action_failed"
+    return result
+
+
 def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
-    """Metrics, tables, chart values and SQL from the Surface's components."""
+    """Metrics, tables, chart values, SQL and clickable Visuals from the Surface's components."""
     components: list[dict[str, Any]] = []
+    surface_of: dict[str, str] = {}
     for m in a2ui:
-        components += (m.get("updateComponents") or {}).get("components", [])
+        update = m.get("updateComponents") or {}
+        for c in update.get("components", []):
+            components.append(c)
+            if "id" in c:
+                surface_of[c["id"]] = update.get("surfaceId", "")
     by_id = {c["id"]: c for c in components if "id" in c}
     parent: dict[str, dict[str, Any]] = {}
     for c in components:
@@ -211,9 +252,17 @@ def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
                 return s.get("text", "")
         return ""
 
-    metrics, tables, charts, sql = [], [], [], []
+    metrics, tables, charts, sql, visuals = [], [], [], [], []
     for c in components:
         kind = c.get("component")
+        if kind in ("DataGrid", "VegaChart"):  # SPEC §17: what a click on this Visual would do
+            action = c.get("action") if isinstance(c.get("action"), dict) else None
+            visuals.append({
+                "kind": "table" if kind == "DataGrid" else "chart", "id": c.get("id"),
+                "surface_id": surface_of.get(c.get("id", ""), ""), "title": sibling_title(c["id"]),
+                "clickable": action is not None, "drillable": bool(action and action.get("drillable")),
+                "source": (action or {}).get("source"), "rows": list((action or {}).get("rows") or []),
+            })
         if kind == "DataGrid":
             tables.append({
                 "title": sibling_title(c["id"]), "columns": [col.get("label", col.get("key")) for col in c.get("columns", [])],
@@ -229,7 +278,7 @@ def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
             value = next((k.get("text") for k in kids if k.get("component") == "Text" and k.get("variant") == "h2"), None)
             if label is not None and value is not None:
                 metrics.append([label, value])
-    return {"metrics": metrics, "tables": tables, "charts": charts, "sql": sql, "a2ui": a2ui}
+    return {"metrics": metrics, "tables": tables, "charts": charts, "sql": sql, "visuals": visuals, "a2ui": a2ui}
 
 
 # --- agent log ---------------------------------------------------------------------------------
@@ -276,6 +325,7 @@ def parse_log_slice(text: str) -> dict[str, Any]:
     failures = 0
     bare: list[str] = []
     others: list[str] = []
+    dropped = 0
 
     def settle(**outcome: Any) -> None:
         if len(pending) == 1 and not pending[0].get("parallel"):
@@ -302,6 +352,8 @@ def parse_log_slice(text: str) -> dict[str, Any]:
             pending.append(attempt)
         elif msg.startswith("sql ok: "):
             settle(ok=True)
+        elif msg.startswith(DRILLS_DROPPED_LOG):  # SPEC §17: Drill queries the checks rejected
+            dropped += len([v for v in msg[len(DRILLS_DROPPED_LOG):].split(",") if v.strip()])
         elif msg.startswith(_BARE):
             bare += [n.strip() for n in msg[len(_BARE):].split(",") if n.strip()]
         elif level in ("WARNING", "ERROR", "CRITICAL") or (
@@ -310,7 +362,7 @@ def parse_log_slice(text: str) -> dict[str, Any]:
             others.append(f"{level} {name}: {msg}".strip())
     return {
         "model_calls": model_calls, "sql_attempts": attempts, "sql_failures": failures,
-        "bare_numbers": bare, "log_errors": others,
+        "bare_numbers": bare, "log_errors": others, "drills_dropped": dropped,
     }
 
 

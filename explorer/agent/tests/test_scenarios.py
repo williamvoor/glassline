@@ -8,7 +8,7 @@ import pytest
 
 import effort_check as ec
 import scenarios as sc
-from explorer_agent.llm import CONTENT_POLICY_PROSE
+from explorer_agent.llm import CONTENT_POLICY_PROSE, DRILLS_DROPPED_LOG
 from explorer_agent.sql import SqlFail, SqlOk
 
 AUSTENDER_SCENARIOS = Path(__file__).resolve().parents[2] / "datasets" / "austender" / "scenarios.toml"
@@ -570,3 +570,105 @@ async def test_run_secret_hit_and_part_way_failure(tmp_path, monkeypatch):
     (report_file,) = (tmp_path / "b").glob("report-*.md")
     assert "s1" in report_file.read_text()  # the finished scenario is still reported
     assert FakeAgent.instances[-1].stopped
+
+
+# --- SPEC §17 D6: Drill-down clicks after the last Turn --------------------------------------
+
+
+def visual(rows, *, drillable=True, vid="c1"):
+    return {"kind": "chart", "id": vid, "surface_id": "turn-1-1-x", "title": "T", "clickable": True,
+            "drillable": drillable, "source": f"src-{vid}", "rows": rows}
+
+
+def fake_clicks(monkeypatch, visuals, *, dropped=0, click_failure="none"):
+    """`fake_asks` with these Visuals on every answer; records each `act` call."""
+    calls: list[tuple] = []
+
+    async def fake_ask(client, text, context_id=None):
+        t = turn(prose="It won 37.", metrics=[("Contracts", "37")], sql=["SELECT 1"])
+        t["surface"]["visuals"] = visuals
+        if dropped and text != sc.WARMUP_QUESTION:  # the agent logs it; the harness reads its log
+            with FakeAgent.instances[-1].log_path.open("a") as log:
+                log.write(f"2026-11-03 01:00:00,001 WARNING explorer_agent.llm: {DRILLS_DROPPED_LOG}"
+                          + ", ".join(str(i) for i in range(dropped)) + "\n")
+        return {**t, "wall_s": 2.0, "repairs": 0, "statuses": [], "context_id": "ctx"}
+
+    async def fake_act(client, name, surface_id, component_id, context, context_id):
+        calls.append((name, surface_id, component_id, context, context_id))
+        shown = [] if click_failure != "none" else [{"summary": "T", "sql": f"SELECT 2 WHERE fy = '2024-25' AND row = {context['row']}"}]
+        return {"wall_s": 0.25, "failure": click_failure, "prose": "", "metadata": {"explorerModel": None},
+                "surface": {"sql": shown}}
+
+    monkeypatch.setattr(ec, "ask", fake_ask)
+    monkeypatch.setattr(ec, "act", fake_act)
+    monkeypatch.setattr(ec, "Agent", FakeAgent)
+    monkeypatch.setattr(ec, "LOG_SETTLE_S", 0)
+    monkeypatch.setattr(sc, "DRILL_SETTLE_S", 0)
+    return calls
+
+
+async def _one_run(tmp_path):
+    s = scenario(visual=["metric"], reference=ref(expect=("n",)), answer_in=["prose"])
+    jsonl = await sc.run([s], 1, "minimal", tmp_path, StubRunner({"SELECT 1": ok([{"n": 37}])}), ("mart",))
+    (record,) = sc.read_records(jsonl)
+    report_text = (tmp_path / jsonl.name.replace("runs-", "report-").replace(".jsonl", ".md")).read_text()
+    return record, report_text
+
+
+async def test_run_clicks_first_and_last_rows_of_the_first_drillable_visual(tmp_path, monkeypatch):
+    ask_only = visual([0, 1], drillable=False, vid="t0")
+    calls = fake_clicks(monkeypatch, [ask_only, visual([4, 0, 7]), visual([1], vid="c2")], dropped=1)
+    record, report_text = await _one_run(tmp_path)
+    assert calls == [
+        ("drill", "turn-1-1-x", "c1", {"source": "src-c1", "row": 4}, "ctx"),
+        ("drill", "turn-1-1-x", "c1", {"source": "src-c1", "row": 7}, "ctx"),
+    ], "first and last in displayed order, on the first drillable Visual only"
+    assert record["score"]["status"] == "pass", "clicks don't change the score"
+    assert [v["id"] for v in record["visuals"]] == ["t0", "c1", "c2"]
+    assert "visuals" not in record["surface"]
+    assert record["drills_dropped"] == 1
+    assert record["drill_downs"] == [
+        {"click": "first", "row": 4, "wall_s": 0.25, "failure": "none", "no_model": True,
+         "sql": ["SELECT 2 WHERE fy = '2024-25' AND row = 4"]},
+        {"click": "last", "row": 7, "wall_s": 0.25, "failure": "none", "no_model": True,
+         "sql": ["SELECT 2 WHERE fy = '2024-25' AND row = 7"]},
+    ], "each click keeps the Drill-down's SQL as shown, values bound, so its filters can be checked"
+    assert "- Drill queries: 3 clickable Visuals, 2 with a Drill query (67%), 1 dropped by the checks" in report_text
+    assert ("- Drill-downs: 2, median 0.25 s, p90 0.25 s; first click median 0.25 s, last click median 0.25 s; "
+            "called the model 0, failed 0") in report_text
+
+
+async def test_run_without_a_drillable_visual_makes_no_clicks(tmp_path, monkeypatch):
+    calls = fake_clicks(monkeypatch, [visual([0, 1], drillable=False)])
+    record, report_text = await _one_run(tmp_path)
+    assert calls == [] and record["drill_downs"] == []
+    assert "1 clickable Visuals, 0 with a Drill query (0%)" in report_text
+    assert "- Drill-downs: 0, median —" in report_text
+
+
+async def test_run_clicks_a_one_row_visual_once(tmp_path, monkeypatch):
+    calls = fake_clicks(monkeypatch, [visual([3])])
+    record, _ = await _one_run(tmp_path)
+    assert [c[3]["row"] for c in calls] == [3]
+
+
+async def test_failed_clicks_leave_the_score_as_a_run_without_clicks(tmp_path, monkeypatch):
+    fake_clicks(monkeypatch, [visual([0, 1], drillable=False)])
+    plain, _ = await _one_run(tmp_path / "a")
+    fake_clicks(monkeypatch, [visual([0, 1])], click_failure="transport")
+    clicked, _ = await _one_run(tmp_path / "b")
+    assert [c["failure"] for c in clicked["drill_downs"]] == ["transport", "transport"]
+    assert [c["sql"] for c in clicked["drill_downs"]] == [[], []]
+    assert clicked["score"] == plain["score"]
+
+
+def test_drill_summary_counts_model_calls_and_failures():
+    records = [{"visuals": [], "drill_downs": [
+        {"click": "first", "row": 0, "wall_s": 0.2, "failure": "none", "no_model": True},
+        {"click": "last", "row": 1, "wall_s": 6.0, "failure": "none", "no_model": False},
+        {"click": "first", "row": 2, "wall_s": 0.1, "failure": "action_failed", "no_model": False},
+    ]}]
+    d = sc.drill_summary(records)
+    assert (d["clicks"], d["click_model"], d["click_failed"]) == (3, 1, 1)
+    assert d["click_median"] == pytest.approx(3.1) and d["rate"] is None
+    assert (d["first_median"], d["last_median"]) == (0.2, 6.0)

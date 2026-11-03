@@ -196,9 +196,58 @@ def test_dataset_context_is_pure():
 # P6
 def test_instructions_are_generic():
     text = instructions()
-    assert len(text) < 2600  # raised from 2,000 for the Clicks section (SPEC §15)
+    assert len(text) < 3000  # 2,000, then 2,600 for the Clicks section (SPEC §15), 3,000 for its example (§17)
     for word in ("austender", "mart", "supplier", "agency", "contract"):
         assert word not in text.lower()
+
+
+def _clicks_example_sql() -> str:
+    """The `drill_sql` of the Clicks example, with the prompt's line breaks folded to spaces."""
+    m = re.search(r'Example: `BarChart\(.*?drill_sql="(.*?)"\)`', instructions(), re.DOTALL)
+    assert m, "the Clicks section has a BarChart example with a drill_sql"
+    return " ".join(m[1].split())
+
+
+# SPEC §17 D1
+def test_clicks_require_drill_sql():
+    text = " ".join(instructions().split())
+    assert "Give each chart or table whose rows have detail below them a `drill_sql`" in text
+    assert "When they have a meaningful next level of detail" not in text  # the optional wording is gone
+    assert text.count('drill_sql="') == 1
+
+
+# SPEC §17 D8 (regression, A17-M run 20261103T042912Z): LineChart arguments passed by position
+# shifted one slot (format=True, clickable=<the SQL>) and cost a Repair.
+def test_clicks_say_pass_arguments_after_the_title_by_name():
+    text = " ".join(instructions().split())
+    assert "Pass `drill_sql` and every argument after the title by name" in text
+
+
+# SPEC §17 D2: the example passes check step 1's database-free parts as written
+def test_clicks_example_is_a_valid_drill_query():
+    from explorer_agent.drill import null_dropping_params, rewrite
+    from explorer_agent.sql import guard
+
+    rewritten = rewrite(_clicks_example_sql())
+    assert rewritten.names == ("region",)
+    guard(rewritten.sql, ("shop",))
+    assert null_dropping_params(rewritten.sql) == set()
+
+
+# SPEC §17 D2 (refuter note): the example call itself, line breaks and all, builds a Drill query
+def test_clicks_example_builds_through_the_macro():
+    from explorer_agent.actions import IdAllocator
+    from explorer_agent.results import ResultStore
+
+    call = re.search(r"Example: `(BarChart\(.*?\))`", instructions(), re.DOTALL)[1]
+    store = ResultStore()
+    r = store.add(sql="SELECT region, sum(sales) AS sales FROM shop.orders GROUP BY 1", purpose="p",
+                  columns=["region", "sales"], column_types=["text", "numeric"],
+                  rows=[{"region": "North", "sales": 5}, {"region": None, "sales": 3}], truncated=False)
+    reply = f'<a2ui>\nsurface("main")\nroot = Column([chart])\nchart = {call.replace("r2", r.id, 1)}\n</a2ui>'
+    ui = UiPipeline(allowed_schemas=("shop",)).build(reply, store, "turn-1-1-abc", IdAllocator())
+    (drill,) = ui.drills
+    assert drill.names == ("region",) and drill.drill_as == "table"
 
 
 def test_make_format_rejects_unknown():

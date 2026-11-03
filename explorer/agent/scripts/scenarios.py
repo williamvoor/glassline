@@ -439,11 +439,42 @@ async def ask_turns(
     return turns, last
 
 
+DRILL_SETTLE_S = 1.0  # before the first click: about as long as a person takes to aim (SPEC §17)
+
+
+def click_rows(visual: dict[str, Any]) -> list[int]:
+    """The first and the last clickable row: likely prefetched, and likely not."""
+    rows = visual.get("rows") or []
+    return [] if not rows else sorted({rows[0], rows[-1]}, key=rows.index)
+
+
+async def drill_downs(client: httpx.AsyncClient, last: dict[str, Any]) -> list[dict[str, Any]]:
+    """Clicks the first drillable Visual of the last Turn (SPEC §17). Never changes the score."""
+    visual = next((v for v in (last.get("surface") or {}).get("visuals", []) if v.get("drillable")), None)
+    context_id = last.get("context_id")
+    if visual is None or not context_id:
+        return []
+    out: list[dict[str, Any]] = []
+    await asyncio.sleep(DRILL_SETTLE_S)
+    for row in click_rows(visual):
+        r = await ec.act(client, "drill", visual["surface_id"], visual["id"],
+                         {"source": visual["source"], "row": row}, context_id)
+        meta = r.get("metadata") or {}
+        out.append({
+            "click": "first" if not out else "last", "row": row, "wall_s": r["wall_s"], "failure": r["failure"],
+            "no_model": ec.MODEL_KEY in meta and meta[ec.MODEL_KEY] is None,
+            # as the Level shows it, values bound: to check by hand that the answer's filters are kept
+            "sql": [s["sql"] for s in (r.get("surface") or {}).get("sql", [])],
+        })
+    return out
+
+
 def _record(
     scenario: Scenario, run_no: int, level: str, started: str, references: dict[str, Any],
     turns: list[dict[str, Any]], last: dict[str, Any], notes: list[dict[str, Any]], result: dict[str, Any],
+    clicks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    surface = {k: v for k, v in (last.get("surface") or {}).items() if k != "a2ui"}
+    surface = {k: v for k, v in (last.get("surface") or {}).items() if k not in ("a2ui", "visuals")}
     return {
         "scenario": scenario.id, "run": run_no, "level": level, "started_at": started,
         "smoke": scenario.smoke, "categories": list(scenario.categories),
@@ -453,6 +484,8 @@ def _record(
         "model_calls": last.get("model_calls", []), "sql_attempts": last.get("sql_attempts", []),
         "bare_numbers": last.get("bare_numbers", []), "log_errors": last.get("log_errors", []),
         "surface": surface, "answer_sql": notes, "score": result,
+        "visuals": (last.get("surface") or {}).get("visuals", []), "drills_dropped": last.get("drills_dropped", 0),
+        "drill_downs": clicks or [],
     }
 
 
@@ -479,7 +512,8 @@ async def run(
                     rows, notes = await answer_rows(last.get("surface") or {}, runner)
                     result = score(s, references[s.id]["rows"], last, rows, notes=notes,
                                    write_attempt=write_attempted(last.get("sql_attempts", []), allowed))
-                    record = _record(s, r, level, started, references, turns, last, notes, result)
+                    clicks = await drill_downs(client, last)  # after scoring: clicks never change it
+                    record = _record(s, r, level, started, references, turns, last, notes, result, clicks)
                     with jsonl.open("a") as f:
                         f.write(json.dumps(record, default=str) + "\n")
                     print(f"{s.id} run {r}: {result['status']} {' '.join(result['reasons'])}".rstrip(), flush=True)
@@ -546,12 +580,38 @@ def summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def drill_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Drill queries and Drill-down times over all runs (SPEC §17)."""
+    visuals = [v for r in records for v in r.get("visuals") or []]
+    clickable = [v for v in visuals if v.get("clickable")]
+    drillable = sum(1 for v in clickable if v.get("drillable"))
+    clicks = [c for r in records for c in r.get("drill_downs") or []]
+    walls = [c["wall_s"] for c in clicks if c.get("failure") == "none"]
+
+    def median_of(which: str) -> float | None:
+        w = [c["wall_s"] for c in clicks if c.get("failure") == "none" and c.get("click") == which]
+        return statistics.median(w) if w else None
+    return {
+        "clickable": len(clickable), "drillable": drillable,
+        "rate": drillable / len(clickable) if clickable else None,
+        "dropped": sum(r.get("drills_dropped", 0) for r in records),
+        "clicks": len(clicks),
+        "click_median": statistics.median(walls) if walls else None,
+        "click_p90": _pct(walls, 0.9) if walls else None,
+        "first_median": median_of("first"), "last_median": median_of("last"),
+        "click_failed": sum(1 for c in clicks if c.get("failure") != "none"),
+        "click_model": sum(1 for c in clicks if c.get("failure") == "none" and not c.get("no_model")),
+    }
+
+
 def _fmt(value: float | None, unit: str = "", digits: int = 1) -> str:
     return "—" if value is None else f"{value:.{digits}f}{unit}"
 
 
 def report(records: list[dict[str, Any]]) -> str:
     s = summary(records)
+    d = drill_summary(records)
+    drill_rate = "—" if d["rate"] is None else f"{d['rate']:.0%}"
     rate = "—" if s["pass_rate"] is None else f"{s['pass_rate']:.0%} ({s['passed']}/{s['scored']})"
     lines = [
         "# Scenario report", "",
@@ -560,6 +620,11 @@ def report(records: list[dict[str, Any]]) -> str:
         f"- Wall time per scenario: median {_fmt(s['wall_median'], ' s')}, p90 {_fmt(s['wall_p90'], ' s')}",
         f"- Model calls on the last Turn: mean {_fmt(s['calls_mean'])}",
         "- Failures by type: " + (", ".join(f"{k} {v}" for k, v in sorted(s["failures"].items())) or "none"),
+        f"- Drill queries: {d['clickable']} clickable Visuals, {d['drillable']} with a Drill query "
+        f"({drill_rate}), {d['dropped']} dropped by the checks",
+        f"- Drill-downs: {d['clicks']}, median {_fmt(d['click_median'], ' s', 2)}, p90 {_fmt(d['click_p90'], ' s', 2)}; "
+        f"first click median {_fmt(d['first_median'], ' s', 2)}, last click median {_fmt(d['last_median'], ' s', 2)}; "
+        f"called the model {d['click_model']}, failed {d['click_failed']}",
         "",
         "| Scenario | Runs | pass | needs review | fail | blocked | Reasons | Matched wrong | Median wall | Calls | Repairs |",
         "|---|---:|---:|---:|---:|---:|---|---|---:|---:|---:|",

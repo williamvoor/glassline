@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -125,6 +126,28 @@ def test_committed_dataset_loads():
     assert (s.dataset.currency.code, s.dataset.currency.symbol) == ("AUD", "$")
     assert s.prompt_cache_key == "explorer-austender"
     assert len(s.dataset.notes) + len(s.dataset.glossary) < 2500
+
+
+def _drill_hints(notes: str) -> str:
+    """The notes' "Drill-downs" bullet with its sub-bullets (SPEC §17, round 2)."""
+    m = re.search(r"^- Drill-downs.*?(?=^- |\Z)", notes, re.MULTILINE | re.DOTALL)
+    assert m, "the notes have a Drill-downs bullet"
+    return m[0]
+
+
+# SPEC §17 D8: the Dataset hints name only tables and columns that exist
+@pytest.mark.db
+async def test_committed_drill_hints_name_real_tables_and_columns(ro_pool):
+    from explorer_agent.schema import SchemaCatalog
+
+    s = load_settings({**BASE_ENV, "DATASET_DIR": "datasets/austender"}, EXPLORER_ROOT)
+    hints = _drill_hints(s.dataset.notes)
+    tables = {f"{t.schema}.{t.name}": {c.name for c in t.columns} for t in await SchemaCatalog(ro_pool, ["mart"]).objects()}
+    names = re.findall(r"`([^`]+)`", hints)
+    named_tables = [n for n in names if "." in n]
+    assert named_tables and all(t in tables for t in named_tables), named_tables
+    columns = set().union(*(tables[t] for t in named_tables))
+    assert [n for n in names if "." not in n and n not in columns] == []
 
 
 # Regression (refuter): `$` let a trailing newline through.

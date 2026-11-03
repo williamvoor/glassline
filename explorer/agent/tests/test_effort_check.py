@@ -355,3 +355,94 @@ def test_surface_summary_metrics_come_from_cards():
     ]
     summary = ec.surface_summary([{"updateComponents": {"surfaceId": "s", "components": comps}}])
     assert summary["metrics"] == [["Overseas value", "$4,106.3M"]]
+    assert summary["visuals"] == [], "a Metric's Card is not a Visual (SPEC §17 D3)"
+
+
+# --- SPEC §17: drill counting and clicks ------------------------------------------------------
+
+
+# D3
+def test_surface_summary_lists_visuals_with_their_click():
+    comps = [
+        {"id": "root", "component": "Column", "children": ["c1", "t1", "c2"]},
+        {"id": "c1", "component": "VegaChart", "spec": {},
+         "action": {"source": "src-1", "rows": [0, 1, 2], "drillable": True}},
+        {"id": "t1", "component": "DataGrid", "columns": [], "rows": [],
+         "action": {"source": "src-2", "rows": [0], "drillable": False}},
+        {"id": "c2", "component": "VegaChart", "spec": {}},
+    ]
+    summary = ec.surface_summary([{"updateComponents": {"surfaceId": "turn-1-1-x", "components": comps}}])
+    assert summary["visuals"] == [
+        {"kind": "chart", "id": "c1", "surface_id": "turn-1-1-x", "title": "", "clickable": True,
+         "drillable": True, "source": "src-1", "rows": [0, 1, 2]},
+        {"kind": "table", "id": "t1", "surface_id": "turn-1-1-x", "title": "", "clickable": True,
+         "drillable": False, "source": "src-2", "rows": [0]},
+        {"kind": "chart", "id": "c2", "surface_id": "turn-1-1-x", "title": "", "clickable": False,
+         "drillable": False, "source": None, "rows": []},
+    ]
+
+
+# D4
+def test_parse_log_slice_counts_dropped_drills():
+    from explorer_agent.llm import DRILLS_DROPPED_LOG
+
+    line = f"2026-11-03 01:00:00,001 WARNING explorer_agent.llm: {DRILLS_DROPPED_LOG}0, 2\n"
+    assert ec.parse_log_slice(line)["drills_dropped"] == 2
+    assert ec.parse_log_slice(LOG)["drills_dropped"] == 0
+
+
+# D5
+async def test_act_sends_the_client_action_message():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        final = status_event("", final=True, parts=[])
+        final["status"]["message"]["metadata"] = {"explorerModel": None}
+        return sse_response(sse(final))
+
+    async with mock_client(handler) as c:
+        r = await ec.act(c, "drill", "turn-1-1-x", "c1", {"source": "src-1", "row": 2}, "ctx-9")
+    (req,) = seen
+    assert req.headers["X-A2A-Extensions"] == ec.EXT_URI
+    message = json.loads(req.content)["params"]["message"]
+    assert message["contextId"] == "ctx-9" and message["metadata"] == ec.CAPS
+    (part,) = message["parts"]
+    assert part["kind"] == "data" and part["metadata"] == {"mimeType": "application/json+a2ui"}
+    action = part["data"]["action"]
+    assert part["data"]["version"] == "v0.9"
+    assert {k: action[k] for k in ("name", "surfaceId", "sourceComponentId", "context")} == {
+        "name": "drill", "surfaceId": "turn-1-1-x", "sourceComponentId": "c1", "context": {"source": "src-1", "row": 2},
+    }
+    assert isinstance(action["timestamp"], str) and action["timestamp"]
+    assert r["failure"] == "none" and r["metadata"] == {"explorerModel": None} and r["wall_s"] >= 0
+
+
+async def test_act_transport_failure_and_rejected_action():
+    async with mock_client(lambda req: httpx.Response(500)) as c:
+        r = await ec.act(c, "drill", "s", "c", {"source": "x", "row": 0}, "ctx")
+    assert r["failure"] == "transport" and r["metadata"] == {}
+
+    def rejected(request: httpx.Request) -> httpx.Response:
+        final = status_event("That view is no longer available.", final=True)
+        final["status"]["message"]["metadata"] = {"explorerActionFailed": True}
+        return sse_response(sse(final))
+
+    async with mock_client(rejected) as c:
+        r = await ec.act(c, "drill", "s", "c", {"source": "x", "row": 0}, "ctx")
+    assert r["failure"] == "action_failed"
+
+
+async def test_act_drills_down_on_the_stub_agent_without_the_model():
+    from explorer_agent.testing.stub_server import stub_drills
+
+    app = build_app(stub_answerer, url=URL, client_origin="http://127.0.0.1:5173", drills=stub_drills(), model="stub")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL) as c:
+        answer = await ec.ask(c, "top suppliers?")
+        (visual,) = [v for v in answer["surface"]["visuals"] if v["drillable"]]
+        r = await ec.act(c, "drill", visual["surface_id"], visual["id"],
+                         {"source": visual["source"], "row": visual["rows"][0]}, answer["context_id"])
+    assert answer["metadata"]["explorerModel"] == "stub"
+    assert r["failure"] == "none", r["prose"]
+    assert r["metadata"]["explorerModel"] is None, "a Drill-down is database only"
+    assert r["surface"]["visuals"], "the Drill-down's Visual came back"
