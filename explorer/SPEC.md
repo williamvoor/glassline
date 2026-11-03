@@ -1208,3 +1208,205 @@ cd explorer/client && npm test && npm run build
   reads `Answered in 0.3 s · No model · database only`.
 - **Viewing for a typed question** is taken before the new Turn is selected (what was on screen
   when the user typed it).
+
+## 17. Amendment: Drill queries are required (2026-11-03)
+
+Status: **approved** (2026-11-03). The user asked Claude to take the design decisions (grilling
+round, 2026-11-03), and they are recorded below. Amends §15 "Prompt" and the P6 cap in
+`specs/llm-loop/SPEC.md`, and extends the scenario harness (`specs/scenarios/SPEC.md`).
+Decision: ADR 0027. No new glossary terms.
+
+**Why.** In the A16 manual run no answer had a Drill query (0 of 6 Visuals). The "Clicks" line
+makes `drill_sql` optional ("when they have a meaningful next level of detail"), has no example,
+and Muse Spark skipped it every time. So every click was a 6 s Ask, and §15's fast path never ran.
+
+### Behaviour
+
+**Prompt.** The "Clicks" section of `instructions.md` changes in two ways:
+- **Required wording:** each chart or table whose rows have detail below them gets a `drill_sql`,
+  at most two per Surface, picking the two with the most detail below. (A third would fail the
+  cap and cost a Repair.) Only a single total, or a list that is already the detail, goes
+  without.
+- **One generic example:** a `BarChart` call with a `drill_sql`, using made-up names (no dataset
+  words).
+
+The P6 cap rises from 2,600 to 3,000 characters. Layer 1 (the macro docstrings) is unchanged.
+
+**Harness.** The scenario harness records drills per run:
+- `surface_summary` adds `visuals`: one entry per VegaChart or DataGrid, `{kind, title, clickable,
+  drillable, rows}`. It is read from the component's `action` prop: `clickable` means the prop is
+  present, `drillable` is its `drillable` value, and `rows` is its `rows` list.
+- `parse_log_slice` adds `drills_dropped`: how many Visuals the `DRILLS_DROPPED_LOG` warning names
+  in the Turn's log slice. These are Drill queries the model wrote that failed the checks.
+- **Drill-down timing.** After the scenario's last Turn, the harness clicks the first drillable
+  Visual twice: on its first clickable row (likely prefetched) and on its last (likely not, when
+  there are more than `DRILL_PREFETCH_ROWS` rows). Before the first click it waits
+  `DRILL_SETTLE_S` (1.0 s), about as long as a person takes to aim. Each click goes through a new
+  `ec.act` helper. It sends the A2UI action message the client sends (`name: "drill"`, the
+  Level's `surfaceId`, the Visual's component ID as `sourceComponentId`, a `timestamp`, and
+  `context {source, row}`) in the same Conversation. The record keeps the `wall_s`, the
+  `failure`, and whether the reply's `explorerModel` metadata is `null` (no model).
+- The record gains `visuals`, `drills_dropped` and `drill_downs`. The report adds a "Drill
+  queries" block:
+  - clickable Visuals;
+  - Visuals with a surviving Drill query, with their rate;
+  - Visuals whose Drill query was dropped;
+  - median and p90 Drill-down `wall_s`;
+  - any Drill-down that called the model or failed.
+
+  Clicks never change the scenario's score: scoring uses the last Turn's answer as before.
+
+### Measurement (manual, A17-M)
+
+- **Scenarios:** the 8 reviewed scenarios that expect a chart or table, 3 runs each (24 per
+  prompt). Muse Spark's run-to-run spread may be close to the 1 s budget, so the report's p90 is
+  read beside the median. A difference smaller than the spread counts as "no slowdown shown",
+  not as proof of none.
+- **Order:** first with today's prompt (the baseline, with drill counting in place), then with
+  the new prompt. Both runs use the same agent settings, and the run IDs go into these notes.
+- **Bar:**
+  - at least half of the clickable Visuals carry a surviving Drill query;
+  - the median scenario `wall_s` rises by no more than 1.0 s over the baseline;
+  - the pass rate doesn't drop;
+  - Drill-down times are reported (median target < 1 s, §15).
+- **If the bar fails** (recorded here, no code):
+  - Too few Drill queries: try Dataset hints next. The Dataset lists its hierarchies, and the
+    model still writes the SQL.
+  - Too slow: revert to the optional wording, since speed wins.
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/src/explorer_agent/prompts/instructions.md` | "Clicks": required wording and the example |
+| `agent/tests/test_prompt.py` | P6 cap 3,000; D1, D2 |
+| `agent/tests/snapshots/*.sha256` | regenerated on purpose |
+| `agent/scripts/effort_check.py` | `visuals` in `surface_summary`; `drills_dropped` in `parse_log_slice`; `act()`, which returns the reply's metadata too |
+| `agent/scripts/scenarios.py` | Drill-down clicks after the last Turn; record fields; report block (first-click and last-click medians apart) |
+| `agent/tests/test_effort_check.py`, `agent/tests/test_scenarios.py` | D3–D6 |
+| `specs/llm-loop/SPEC.md` | P6 cap |
+| `specs/scenarios/SPEC.md` | the new record fields and the clicks |
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| D1 | `instructions.md` says a `drill_sql` is required for charts and tables with detail below their rows, has one `drill_sql=` example, stays under 3,000 characters and has no dataset words | `test_prompt.py::test_instructions_are_generic`, `::test_clicks_require_drill_sql` |
+| D2 | The example's SQL, as written in the prompt, passes the Drill query checks that need no database: it rewrites to `$n` with one placeholder, it is one guarded `SELECT`, and no placeholder is in a NULL-dropping comparison | `test_prompt.py::test_clicks_example_is_a_valid_drill_query` |
+| D3 | `surface_summary` lists a drillable chart, an Ask-only table (`drillable: false`) and a non-clickable chart (`clickable: false`, `rows: []`). A Metric's Card is not a Visual | `test_effort_check.py` |
+| D4 | `parse_log_slice` counts the Visuals named by one `DRILLS_DROPPED_LOG` line (`visuals 0, 2` → 2), and 0 without one | `test_effort_check.py` |
+| D5 | `act` sends the exact action message (name, surfaceId, sourceComponentId, timestamp, context, A2UI mime type, contextId) and returns `wall_s`, `failure` and the final metadata. Transport errors return `failure: "transport"` and don't raise | `test_effort_check.py` |
+| D6 | `run` clicks the first drillable Visual's first and last rows after the last Turn, and records `visuals`, `drills_dropped` and `drill_downs`. A run with no drillable Visual makes no clicks, a one-row Visual is clicked once, and the score is unchanged by the clicks. The report shows the "Drill queries" block, with the rate and the Drill-down median | `test_scenarios.py` |
+| D7 | Existing suites pass; snapshots regenerated only for this change | `uv run pytest` |
+| A17-M | The measurement above, by hand with the real model and database | manual, results recorded here |
+
+### Decisions
+
+- **The model writes the Drill query, now required** (ADR 0027). Rejected: Dataset-configured
+  drill paths, because a static path can't keep the answer's own filters and period without
+  parsing the model's SQL. Dataset hints stay the fallback.
+- **The example is generic, in `instructions.md`**, not in each Dataset's notes. Every Dataset
+  gets it for free, and made-up names aren't copied into real SQL. It shows a table Drill-down
+  (no `drill_as`), the default.
+- **"Clickable Visual" is the denominator.** "Has detail below its rows" is the model's call, and
+  a list that is already the detail lowers the rate. The bar (half) allows for that.
+- **No new baseline beyond today's 0 of 6, except the harness baseline** that the timing
+  comparison needs. The same scenarios run with the old prompt first.
+- **Clicks reuse the scenario's Conversation**, after scoring data is taken. They don't affect
+  the score, and a failed click is recorded, not scored.
+- **Not in scope:** changing `MAX_DRILLS_PER_SURFACE`, the macro docstrings, Dataset hints, and
+  the client.
+
+### Test command
+
+```bash
+cd explorer/agent && uv run pytest
+```
+
+### Build notes (2026-11-03)
+
+- **Each `visuals` entry also carries `id`, `surface_id` and `source`**: the click needs them.
+  Records keep `visuals` at the top level, not inside `surface`.
+- **The `DRILLS_DROPPED_LOG` warning is counted, not listed** in `log_errors`. The macro's
+  per-Visual "dropped after its Repairs ran out" warning is still listed there.
+- **`ask` results now carry the final message's `metadata`**, because `ask` and `act` share one
+  stream reader (`_exchange`). An Action the agent rejects (`explorerActionFailed`) is
+  `failure: "action_failed"`.
+- **The prompt grew from 2,528 to 2,879 characters.**
+- **Refuter review (PASS-WITH-NOTES), handled in one round:**
+  - **Spec fixes.** The prompt now says which two Visuals get a Drill query when more qualify.
+    Each scenario runs 3 times, not 2, with the spread read beside the median. The report
+    shows the first-click and last-click medians separately, since the first click is likely
+    prefetched and the last likely not.
+  - **Test fixes.** A test now builds the prompt's example through `UiPipeline`. Another shows
+    that failed clicks leave the score exactly as in a run without clicks.
+  - **Deferred.** Effort-check records now also hold `metadata` and `surface.visuals`
+    (harmless; the sheet ignores them).
+
+### A17-M results and round 2 (2026-11-03)
+
+**Runs.**
+- Baseline (old prompt): `runs-20261103T042513Z`, 24 runs. Pass 24/24, median 8.0 s, p90 11.2 s,
+  0 of 22 clickable Visuals with a Drill query.
+- New prompt: `runs-20261103T042912Z`, 22 of 24 runs (cut off; `top-growth-fy2324` run 3 was
+  blocked by a provider `ContentPolicyViolationError`). Pass 21/21, median 8.0 s, p90 16.6 s,
+  **5 of 22 (23%)** with a Drill query, 0 dropped. Ten Drill-downs, median 0.02 s, none called the
+  model.
+
+**Verdict: the bar fails on Drill queries**, under the spec's denominator and every alternative
+tried (at most 45%), so the denominator stays as decided. Speed passes on the median, so the
+wording stays required. Findings (refuter review):
+- Drill queries appeared only on 10–15 row breakdowns (by year, by agency). Two- and three-row
+  breakdowns with detail below (supplier location, procurement method) never got one.
+- Both value-by-fy Repairs (about 9 s each, most of the p90 rise) were a one-slot positional
+  shift in `LineChart`: `format` got `True` and `clickable` got the SQL. Positional arguments
+  map in signature order, so making the macro keyword-only wouldn't help.
+
+**Round 2 (the "too few Drill queries" branch).**
+- **Prompt:** the Clicks example is followed by "Pass `drill_sql` and every argument after the
+  title by name, never by position." The prompt grows to 2,962 characters.
+- **Dataset hints:** `datasets/austender/notes.md` gains a "Drill-downs" bullet that lists what
+  lies below a row and which table holds it, and says that small breakdowns have detail too. The
+  model still writes the SQL (ADR 0027). This replaces "Dataset hints" in "Not in scope" above.
+
+| # | Criterion | Test |
+|---|---|---|
+| D8 | The Clicks section says to pass arguments after the title by name; every table and column the austender Drill-down hints name exists in the schema | `test_prompt.py::test_clicks_say_pass_arguments_after_the_title_by_name`, `test_config.py::test_committed_drill_hints_name_real_tables_and_columns` |
+| D9 | Each `drill_downs` entry keeps the Drill-down's SQL as its Level shows it (values bound); a failed click keeps `[]` | `test_scenarios.py` (D6 tests) |
+| A17-M2 | Rerun `value-by-fy`, `overseas-share-fy2425`, `open-tender-share-fy2425`, `cancelled-fy2425` and `bare-year-top-agency` (3 runs each), then all 8 scenarios × 3 against the same bar | manual, results recorded here |
+
+**Round 2 subset** (`runs-20261103T051121Z`, the 5 scenarios × 3): pass 15/15, **20 of 24
+clickable Visuals (83%)** with a Drill query, 0 dropped, 0 Repairs, median 6.3 s (the same
+scenarios in `042912Z`: 8.1 s), 22 Drill-downs at about 0.02 s, none called the model.
+`cancelled-fy2425` showed only totals in all 3 runs, so it doesn't test drilling. The records
+held no Drill-down SQL, so whether the answer's filters were kept wasn't checked; D9 adds it
+before the full run.
+
+**A17-M2 full run** (`runs-20261103T052659Z`, 8 scenarios × 3, same settings as the baseline):
+
+| | Baseline `042513Z` | A17-M2 `052659Z` |
+|---|---|---|
+| Drill queries | 0 of 22 (0%) | **17 of 25 (68%)**, 0 dropped |
+| Median / p90 wall | 8.0 s / 11.2 s | **6.6 s / 10.4 s** |
+| Pass rate | 24/24 | 22/24 |
+| Drill-downs | 0 | 22, median 0.01 s, none called the model or failed |
+
+- **Drill-down SQL (D9), checked by hand:** all 22 keep the answer's period and filters and
+  bind the clicked row's value. `agency_fy` and `contract_supplier` FY totals are equal to the
+  cent (checked for 2012-13, 2023-24, 2024-25, 2026-27), so a month Drill-down from an
+  `agency_fy` answer adds up to the year.
+- **The two failures are not Drill-related:**
+  - `cancelled-fy2425` run 2: the model's reply stopped after one line of prose (87 completion
+    tokens, no `<a2ui>` block), so there was no Visual. With no block there is nothing for a
+    Repair to check.
+  - `follow-up-first-supplier` run 3: the prose cites the right count (37) from Turn 1's Result,
+    but the Surface shows only a contract list, so the count's SQL isn't shown and the scorer
+    marks it missing.
+  - Rerun of both scenarios × 3 (`runs-20261103T053148Z`): 6/6 pass.
+- **Verdict: the bar is met**, with the pass-rate drop recorded above and attributed to the two
+  unrelated failures.
+- **Open:**
+  - A reply with prose but no `<a2ui>` block is accepted as is.
+  - A count cited from an earlier Turn's Result can appear without its SQL on the Surface.
+  - Table twins of a drilled chart are still Ask-only (refuter note).
+

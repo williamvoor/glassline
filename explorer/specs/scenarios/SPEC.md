@@ -98,6 +98,12 @@ A scenario has a `reference`, `expect_empty`, or `smoke`. One with none of them 
    Turn's reply). A failed Turn ends the scenario; that Turn is the one scored (it fails on
    `failure`). If a Turn fails on transport and the agent process has exited, the run stops. Record, for the last Turn, what the effort check records (prose, failure,
    statuses, Repairs, wall time, model calls with tokens and latency, SQL attempts).
+   Since `../../SPEC.md` §17 the record also has `visuals` (each VegaChart or DataGrid with its
+   `clickable`, `drillable` and clickable rows), `drills_dropped` (Drill queries the checks
+   rejected, from the agent log) and `drill_downs`: after scoring, the harness clicks the first
+   drillable Visual's first and last clickable rows and records each click's wall time, failure
+   and whether the model was called, plus the Drill-down's `sql` as its Level shows it (values
+   bound), for checking by hand that the answer's filters are kept. Clicks never change the score.
 5. **Score the last Turn:**
    - Rerun each distinct SQL from the Surface's `SqlDetails` through the same `SqlRunner`. These
      rows are the **answer rows**. A rerun that fails is the fail reason `rerun_failed` (the rows
