@@ -1317,6 +1317,17 @@ Source: `docs/item7-sample-review-20261103.md` ("Second review"), plus the user'
 6. **Coverage** must still reach every key at full size, on seeds 0 and 1. The gallery still passes the linter with the existing allowlist, or the new rule gets justified allowlist entries. Result (2026-11-03): no gaps on either seed, minimum 30. The linter rejects about 60–80 attempts per 3640-row run. No gallery allowlist entries were needed.
 7. **Data:** the fixes act on new data only. The committed `data/synth/train` still has 138 rows that fail `repeated_value` (refuter count). Regeneration at full size, already planned, replaces them.
 
+### Regeneration (2026-11-03)
+
+The user approved 10 seed-31 samples from this generator; Spark Open, reviewing twice with a checklist built on the user's standard, approved the same 10. Then:
+
+- `synth --split train --count 3640 --seed 0` and `synth --split dev --count 200 --seed 0` replaced `data/synth/train` and `data/synth/dev`. Both pass the linter with 0 findings. Train rejections: lint 77, dedup 363, tail_miss 246, tail_over 89, size 67, data_conflict 15, grow 13.
+- `coverage`: 3640 rows, 0 keys below 30.
+- `export --mix 0.7 --max-seq-len 8192 --out exports/sft_mix.jsonl`: 5200 rows (3640 synthetic, all 1560 gallery rows once), none dropped. Synthetic tokens max 6519, p50 5481, p95 6036 (export's count).
+- `export --max-seq-len 8192` (gallery only, `exports/sft_train.jsonl`): 1560 rows. `export-dev`: 284 rows, subset 64.
+- The synthetic half of dev changed, so dev scores from run 1 and the Spark Open baseline are not comparable with run 2's on that half. Score files record the references version.
+- Not run: the trainer's local `prepare` (it loads the Glimmer tokenizer) on the new mix.
+
 ### Criteria → tests
 
 | # | Criterion | Test |
