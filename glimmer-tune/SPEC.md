@@ -1294,6 +1294,41 @@ The user approved both before regeneration.
 | B5c | No emitted Text, label or description shows a raw date; per-item labels never use a date column | `test_synth_plausibility.py::test_no_raw_date_or_money_is_shown`, `::test_per_item_labels_are_never_dates` |
 | C3 | Every key still reached | `test_synth_coverage.py::test_every_key_reached`, plus the full-size report on seeds 0 and 1 |
 
+## Sample review fixes D3–D7 (spec, 2026-11-03)
+
+Source: `docs/item7-sample-review-20261103.md` ("Second review"), plus the user's reject of a seed-21 sample ("Alignment is not correct"). The user approved D3–D7. D1 is skipped, and so are D2 and C1: the user doesn't count mismatched wording (titles, tabs, buttons that don't fit their screen) as a problem for run 2.
+
+### Facts
+
+- **D7, rendered** (seed-21 `dashboard_grid/00007`, screenshot through the review page): each item of a side-by-side list item Row gives its image and its button `weight` (flex-grow). The free space then depends on each item's text widths, so "Flu", "Tetanus" and "COVID booster" start at different x positions, and the items don't line up. An image "as a banner across the top" (`variant: header`) inside a Row is tall and leaves large gaps.
+- **D5:** among vocabulary entity names, the plural last words that aren't countable things are "totals", "standings", "hours" and "status" ("status" would also singularise to "statu").
+- **D6:** the long-text regex is `^[\s\S]{5,}$` (5 characters), while its length check's minimum is 2. The secret regex (8) and its length minimum (8) already agree.
+
+### Decisions
+
+1. **D3:** a new linter rule `repeated_value`. Two static Text components on one surface show the same string: a literal (heading mark stripped) or an absolute path's value, compared case-insensitively. Strings with no letter or under 4 characters don't count, and template items are not checked. The pipeline rejects such a surface and regenerates it, like every other linter rule.
+2. **D4:** a run of siblings never has two dividers next to each other. The grower collapses them, with the other B6 rules.
+3. **D5:** `plural_nouns` returns None for "totals", "standings", "hours", and any last word ending in "us". Those entities get no count row.
+4. **D6:** a length check's minimum is at least the regex's minimum for that kind: long text 5, secret 8, others 2. Messages follow the number.
+5. **D7:**
+   - A child of a list item that is a Row (items side by side) gets no `weight`. List siblings already share one layout (proto); this keeps their columns lined up. A stacked item (Column) may still weight its children.
+   - An Image inside a Row never gets the `header` variant ("as a banner across the top").
+   - Not done: the containers inside a screen that says "Everything is left-aligned" may still choose their own alignment. In the render that wasn't visible, because a parent with `align: start` shrinks a Row to its content.
+6. **Coverage** must still reach every key at full size, on seeds 0 and 1. The gallery still passes the linter with the existing allowlist, or the new rule gets justified allowlist entries.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| D3 | `repeated_value` fires on a repeated literal and on a literal equal to a bound value; it ignores short and non-letter strings | `test_synth_lint.py::test_rule_fires[repeated_value]`, `::test_repeated_value_scope` |
+| D4 | No run of siblings has two adjacent dividers | `test_synth_plausibility.py::test_no_adjacent_dividers` |
+| D5 | `plural_nouns` refuses non-countable last words | `test_synth_plausibility.py::test_plural_nouns_refuse_uncountable` |
+| D6 | A length minimum is never below the kind's regex minimum | `test_synth_plausibility.py::test_length_minimum_matches_regex` |
+| D7a | No weighted child inside a side-by-side list item | `test_synth_plausibility.py::test_side_by_side_items_have_no_weights` |
+| D7b | No banner Image inside a Row | `test_synth_plausibility.py::test_no_banner_image_in_a_row` |
+| S8 | Synthetic rows and the gallery still pass the linter | `test_synth_lint.py::test_gallery_passes`, `::test_synthetic_passes` (existing) |
+| C3 | Every key still reached | `test_synth_coverage.py::test_every_key_reached`, plus the full-size report on seeds 0 and 1 |
+
 ## Run 2 item 10: source conflicts resolved (2026-11-03)
 
 The conflicts are listed in `docs/tuning-report-20261102.md` section 4 ("Conflicts in the sources"). The Meta Model API terms stay out of scope (user).
