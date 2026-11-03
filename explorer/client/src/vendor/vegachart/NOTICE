@@ -17,3 +17,7 @@ Changes by the explorer project:
 - Theme (explorer SPEC §16): the default config is built from the page's CSS custom properties
   (`themedChartConfig`, passed to `transformSpec` as `baseConfig`), and the chart renders again
   when `prefers-color-scheme` changes.
+- Boards and new Visuals (explorer SPEC §18): the Ask confirmation label comes from the datum's
+  `_label` when present; a full Vega spec (`isFullVega`) gets a numeric width
+  (`FULL_VEGA_FALLBACK_WIDTH`) when the container is unmeasured, since only Vega-Lite accepts
+  'container'; and the themed config gives text marks the card colour (`text.fill` from `--panel`).

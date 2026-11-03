@@ -114,6 +114,12 @@ describe('VegaChart actions', () => {
 
 // SPEC §16 (L8): the chart's look comes from the page's CSS tokens.
 describe('VegaChart theme', () => {
+  it('gives text marks the card colour, so treemap labels read in both themes', () => {
+    const tokens: Record<string, string> = {'--panel': '#101418'};
+    expect(themedChartConfig(name => tokens[name] ?? '')['text']).toEqual({fill: '#101418'});
+    expect(themedChartConfig(() => '')['text']).toEqual({fill: '#ffffff'});
+  });
+
   it('builds its config from the CSS tokens, falling back per key', () => {
     const tokens: Record<string, string> = {
       '--sans': '"Public Sans Variable", sans-serif', '--fg': '#111111', '--muted': '#222222',
@@ -159,5 +165,43 @@ describe('VegaChart theme', () => {
       window.matchMedia = original;
       document.documentElement.style.removeProperty('--chart-1');
     }
+  });
+});
+
+// SPEC §18: the treemap is full Vega, built by the agent (fixture from agent tests/test_macros.py).
+import * as vega from 'vega';
+import treemapSpec from './fixtures/treemap_spec.json';
+import {FULL_VEGA_FALLBACK_WIDTH, transformSpec} from '../src/vendor/vegachart/vegaChart.js';
+
+describe('VegaChart labels and full Vega (SPEC §18)', () => {
+  it('takes the confirmation label from _label', async () => {
+    const actions = await chart({source: 'v1', rows: [0], drillable: false});
+    clicks[0]!({}, {datum: {name: 'A', v: 1, _row: 0, _label: 'A · 2024'}});
+    await new Promise(r => setTimeout(r, 0));
+    expect(actions[0]!['userMessage']).toBe('A · 2024');
+  });
+
+  it('gives full Vega a numeric width when the container is unmeasured', () => {
+    const out = transformSpec(treemapSpec as Record<string, unknown>, 290, 0);
+    expect(out['width']).toBe(FULL_VEGA_FALLBACK_WIDTH);
+    expect(transformSpec({mark: 'bar'}, 290, 0)['width']).toBe('container');
+  });
+
+  it('renders the agent treemap in real Vega: tiles keep _row and _label, only they get the pointer, no root mark', async () => {
+    const spec = transformSpec(treemapSpec as Record<string, unknown>, 290, 600);
+    const view = new vega.View(vega.parse(spec as vega.Spec), {renderer: 'none'});
+    await view.runAsync();
+    const tiles = view.data('tiles') as Record<string, unknown>[];
+    expect(tiles.map(t => [t['_name'], t['_row'], t['_label']])).toEqual([
+      ['Alpha', 0, 'Alpha'], ['Beta', 1, 'Beta'], ['Gamma', 2, 'Gamma'],
+    ]);
+    expect(tiles.every(t => (t['x1'] as number) > (t['x0'] as number) && (t['y1'] as number) > (t['y0'] as number))).toBe(true);
+    // Rect items: one per tile (the root isn't drawn), each with the clickable cursor.
+    type Item = {datum: Record<string, unknown>; cursor?: string};
+    const group = (view.scenegraph() as unknown as {root: {items: {items: {marktype: string; items: Item[]}[]}[]}}).root.items[0]!;
+    const rects = group.items.find(m => m.marktype === 'rect')!.items;
+    expect(rects).toHaveLength(3);
+    expect(rects.every(r => r.cursor === 'pointer' && typeof r.datum['_row'] === 'number')).toBe(true);
+    view.finalize();
   });
 });

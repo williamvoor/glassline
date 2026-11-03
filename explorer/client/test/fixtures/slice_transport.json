@@ -71,17 +71,20 @@
                 {
                   "supplier": "Supplier A",
                   "value": 3441.812603,
-                  "_row": 0
+                  "_row": 0,
+                  "_label": "Supplier A"
                 },
                 {
                   "supplier": "Supplier B",
                   "value": 812.4,
-                  "_row": 1
+                  "_row": 1,
+                  "_label": "Supplier B"
                 },
                 {
                   "supplier": "Supplier C",
                   "value": 96.2500005,
-                  "_row": 2
+                  "_row": 2,
+                  "_label": "Supplier C"
                 }
               ]
             },

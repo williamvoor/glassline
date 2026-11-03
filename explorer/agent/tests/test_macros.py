@@ -127,7 +127,7 @@ def test_bar_chart_shape_and_sorting(ctx):
     assert spec["encoding"]["y"]["title"] == "Value ($M)"
     assert spec["encoding"]["x"]["title"] == "Supplier"
     assert spec["encoding"]["y"]["axis"]["format"] == ",.1f"
-    assert spec["data"]["values"][0] == {"supplier": "Acme_[x]", "value": pytest.approx(3441.812603), "_row": 1}
+    assert spec["data"]["values"][0] == {"supplier": "Acme_[x]", "value": pytest.approx(3441.812603), "_row": 1, "_label": "Acme_[x]"}
     assert "url" not in spec["data"]
     sql = by_type(comps, "SqlDetails")[0]
     assert (sql["sql"], sql["summary"]) == (SUPPLIERS_SQL, "top suppliers")
@@ -475,7 +475,7 @@ def test_chart_field_references_are_escaped():
     assert enc["y"]["field"] == "value\\[aud\\]"
     assert enc["color"]["field"] == "kind\\.x"
     assert [t["field"] for t in enc["tooltip"]] == ["agency\\.name", "kind\\.x", "value\\[aud\\]"]
-    assert spec["data"]["values"][0] == {"agency.name": "A", "kind.x": "k", "value[aud]": 1.0, "_row": 0}
+    assert spec["data"]["values"][0] == {"agency.name": "A", "kind.x": "k", "value[aud]": 1.0, "_row": 0, "_label": "A · k"}
     assert enc["x"]["title"] == "Agency.name"  # titles are labels, not field references
 
 
@@ -501,3 +501,263 @@ def test_visual_specs_carry_no_vega_config(ctx):
     for name, args in [("BarChart", {"x": "supplier", "y": "value"}), ("LineChart", {"x": "supplier", "y": "value"})]:
         spec = by_type(expand(name, result_id="r1", title="T", **args), "VegaChart")[0]["spec"]
         assert "config" not in spec
+
+
+# --- Boards (SPEC §18): Treemap, bar cells, Board mode, check_columns --------------------------
+
+import json
+import os
+from pathlib import Path
+
+from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, check_columns
+from explorer_agent.results import StoredResult
+
+TREEMAP_FIXTURE = Path(__file__).resolve().parents[2] / "client" / "test" / "fixtures" / "treemap_spec.json"
+
+
+def _add(store: ResultStore, rows: list[dict], *, columns=("name", "value"), types=("text", "numeric"),
+         truncated: bool = False) -> StoredResult:
+    return store.add(sql="SELECT name, value FROM t", purpose="tiles", columns=list(columns),
+                     column_types=list(types), rows=rows, truncated=truncated)
+
+
+def _treemap(comps: list[dict]) -> tuple[dict, dict]:
+    chart = by_type(comps, "VegaChart")[0]
+    return chart, chart["spec"]
+
+
+def _tiles(spec: dict) -> list[dict]:
+    return [d for d in spec["data"][0]["values"] if d["_parent"] is not None]
+
+
+def test_treemap_is_full_vega_with_one_tile_per_row_and_no_root_mark():
+    s = ResultStore()
+    _add(s, [{"name": "B", "value": 20.0}, {"name": "A", "value": 50.0}, {"name": "C", "value": 20.0}])
+    with macro_context(s):
+        comps = expand("Treemap", result_id="r1", title="By name", label="name", value="value", format="int")
+    assert kinds(comps) == ["Card", "Column", "SqlDetails", "Text", "VegaChart"]
+    chart, spec = _treemap(comps)
+    assert spec["$schema"].endswith("/vega/v5.json")
+    root_datum = spec["data"][0]["values"][0]
+    assert root_datum == {"_id": "root", "_parent": None}  # the root has no _row, and isn't drawn:
+    assert spec["data"][1]["transform"] == [{"type": "filter", "expr": "datum._parent != null"}]
+    assert all(m["from"]["data"] == "tiles" for m in spec["marks"])
+    tiles = _tiles(spec)
+    # Displayed order: by value descending, ties by label ascending.
+    assert [(t["_name"], t["_row"], t["_label"], t["_value"]) for t in tiles] == [
+        ("A", 1, "A", "50"), ("B", 0, "B", "20"), ("C", 2, "C", "20"),
+    ]
+    assert chart["action"]["rows"] == [1, 0, 2]
+    assert "config" not in spec  # ADR 0026
+    # The pointer on clickable tiles only, from the item's own cursor (Vega overwrites a container style).
+    assert spec["marks"][0]["encode"]["update"]["cursor"] == {"signal": "isValid(datum._row) ? 'pointer' : null"}
+
+
+def test_an_unclickable_treemap_has_no_pointer():
+    s = ResultStore()
+    _add(s, [{"name": "A", "value": 50.0}])
+    with macro_context(s):
+        comps = expand("Treemap", result_id="r1", title="T", label="name", value="value", clickable=False)
+    assert "cursor" not in _treemap(comps)[1]["marks"][0]["encode"]["update"]
+
+
+def test_treemap_folds_the_rest_into_a_non_clickable_other_and_counts_left_out_rows():
+    s = ResultStore()
+    rows = [{"name": f"n{i:02}", "value": float(100 - i)} for i in range(MAX_TREEMAP_TILES + 3)]
+    rows += [{"name": "zero", "value": 0.0}, {"name": "neg", "value": -5.0}, {"name": "null", "value": None}]
+    _add(s, rows)
+    with macro_context(s):
+        comps = expand("Treemap", result_id="r1", title="T", label="name", value="value")
+    _, spec = _treemap(comps)
+    tiles = _tiles(spec)
+    assert len(tiles) == MAX_TREEMAP_TILES + 1
+    other = tiles[-1]
+    assert other["_name"] == "Other" and "_row" not in other and "_label" not in other
+    assert other["_size"] == sum(100 - i for i in range(MAX_TREEMAP_TILES, MAX_TREEMAP_TILES + 3))
+    caption = [t["text"] for t in by_type(comps, "Text") if t.get("variant") == "caption"][0]
+    assert "3 smaller rows in “Other”" in caption
+    assert "3 rows with no positive value left out" in caption
+
+
+def test_treemap_other_is_incomplete_when_the_result_was_truncated():
+    s = ResultStore()
+    _add(s, [{"name": f"n{i:02}", "value": float(100 - i)} for i in range(MAX_TREEMAP_TILES + 1)], truncated=True)
+    with macro_context(s):
+        comps = expand("Treemap", result_id="r1", title="T", label="name", value="value")
+    assert _tiles(_treemap(comps)[1])[-1]["_name"] == "Other (incomplete)"
+    caption = [t["text"] for t in by_type(comps, "Text") if t.get("variant") == "caption"][0]
+    assert "incomplete" in caption
+
+
+def test_treemap_without_positive_values_is_a_macro_error_in_answers():
+    s = ResultStore()
+    _add(s, [{"name": "a", "value": 0.0}])
+    with macro_context(s), pytest.raises(MacroError, match="no rows with a positive"):
+        expand("Treemap", result_id="r1", title="T", label="name", value="value")
+
+
+def test_treemap_value_must_be_numeric(ctx):
+    with pytest.raises(MacroError, match="not a number"):
+        expand("Treemap", result_id="r1", title="T", label="value", value="supplier")
+
+
+def test_treemap_spec_fixture_for_the_client_is_current():
+    """The client renders this spec with real Vega (B14, B17)."""
+    s = ResultStore()
+    _add(s, [{"name": "Alpha", "value": 60.0}, {"name": "Beta", "value": 30.0}, {"name": "Gamma", "value": 10.0}])
+    with macro_context(s):
+        comps = expand("Treemap", result_id="r1", title="T", label="name", value="value", format="int")
+    current = json.dumps(_treemap(comps)[1], indent=2, ensure_ascii=False) + "\n"
+    if os.environ.get("UPDATE_FIXTURES") == "1":
+        TREEMAP_FIXTURE.write_text(current, encoding="utf-8")
+    assert TREEMAP_FIXTURE.read_text(encoding="utf-8") == current
+
+
+def test_treemap_passes_strict_validation(store):
+    msgs = to_transport_with(store, '<a2ui>\nroot = Column([t])\nt = Treemap("r1", "T", "supplier", "value")\n</a2ui>')
+    assert any(c["component"] == "VegaChart" for m in msgs if "updateComponents" in m for c in m["updateComponents"]["components"])
+
+
+def to_transport_with(store: ResultStore, reply: str) -> list[dict]:
+    from explorer_agent.ui import validate
+
+    with macro_context(store):
+        msgs = to_transport(reply)
+    validate(msgs)
+    return msgs
+
+
+def test_bar_cells_are_shares_of_the_largest_shown_value(store):
+    store.add(sql="SELECT 1", purpose="p", columns=["name", "value", "n"], column_types=["text", "numeric", "bigint"],
+              rows=[{"name": "a", "value": 50.0, "n": 0}, {"name": "b", "value": None, "n": 0},
+                    {"name": "c", "value": 200.0, "n": 0}], truncated=False)
+    with macro_context(store):
+        comps = expand("DataTable", result_id="r2", title="T", bars="value,n")
+    columns = by_type(comps, "DataGrid")[0]["columns"]
+    by_key = {c["key"]: c for c in columns}
+    assert by_key["value"]["bars"] == [0.25, None, 1.0]
+    assert "bars" not in by_key["n"]  # every shown value zero: no bars
+    assert "bars" not in by_key["name"]
+    rows = by_type(comps, "DataGrid")[0]["rows"]
+    assert rows[0][1] == "50.00"  # the text stays the formatted value
+
+
+def test_bar_cells_reject_negatives_and_columns_not_shown_or_not_numeric(store):
+    store.add(sql="SELECT 1", purpose="p", columns=["name", "value"], column_types=["text", "numeric"],
+              rows=[{"name": "a", "value": -1.0}], truncated=False)
+    with macro_context(store):
+        with pytest.raises(MacroError, match="negative"):
+            expand("DataTable", result_id="r2", title="T", bars="value")
+        with pytest.raises(MacroError, match="not one of the shown columns"):
+            expand("DataTable", result_id="r2", title="T", columns="name", bars="value")
+        with pytest.raises(MacroError, match="not a number"):
+            expand("DataTable", result_id="r2", title="T", bars="name")
+
+
+def test_bar_cells_pass_strict_validation(store):
+    to_transport_with(store, '<a2ui>\nroot = Column([t])\nt = DataTable("r1", "T", "supplier,value", "", true, "", "table", "", "", "", "value")\n</a2ui>')
+
+
+def _board_store() -> ResultStore:
+    s = ResultStore()
+    _add(s, [], columns=("name", "value"), types=("text", "numeric"))
+    return s
+
+
+class _Named:
+    """A Board's results by query name (what boards.py hands macro_context)."""
+
+    def __init__(self, results: dict[str, StoredResult]):
+        self.results = results
+
+    def get(self, key: str):
+        return self.results.get(key)
+
+    def ids(self) -> list[str]:
+        return list(self.results)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        ("Metric", {"column": "value", "label": "Total"}),
+        ("BarChart", {"x": "name", "y": "value", "title": "Bars"}),
+        ("LineChart", {"x": "name", "y": "value", "title": "Line"}),
+        ("Treemap", {"label": "name", "value": "value", "title": "Tiles"}),
+        ("Cite", {"template": "Top is {q[0].name}"}),
+    ],
+)
+def test_board_mode_turns_zero_rows_into_a_no_rows_card(name, args):
+    empty = _board_store().get("r1")
+    with macro_context(_Named({"q": empty}), board=True):
+        comps = expand(name, **({"result_id": "q"} if name != "Cite" else {}), **args)
+    texts = [c["text"] for c in by_type(comps, "Text")]
+    assert NO_ROWS in texts
+    assert by_type(comps, "SqlDetails")  # with its SQL
+    assert root(comps)["component"] == "Card"
+
+
+def test_zero_rows_stay_a_repair_in_answers():
+    with macro_context(_board_store()), pytest.raises(MacroError, match="row 0 does not exist"):
+        expand("Metric", result_id="r1", column="value", label="Total")
+
+
+def test_board_mode_failed_query_gives_an_error_card_without_values():
+    with macro_context(_Named({}), board=True, failed={"q": "57014"}):
+        comps = expand("BarChart", result_id="q", x="name", y="value", title="Bars")
+    assert [c["text"] for c in by_type(comps, "Text")] == ["This panel couldn't load: 57014"]
+
+
+def test_board_placeholders_name_queries_and_clicks_can_be_turned_off(store):
+    with macro_context(_Named({"top": store.get("r1")}), board=True, clicks=False) as c:
+        comps = expand("BarChart", result_id="top", x="supplier", y="value", title="Top: {top[0].supplier}")
+    assert by_type(comps, "Text")[0]["text"] == "Top: Beta"
+    assert "action" not in by_type(comps, "VegaChart")[0]
+    assert c.sources == []
+
+
+def test_check_columns_reports_unknown_queries_columns_and_kinds():
+    outputs = {"q": (["name", "value", "day"], ["text", "numeric", "date"])}
+    comps = [
+        {"id": "a", "component": "BarChart", "result_id": "q", "x": "name", "y": "name", "title": "T"},
+        {"id": "b", "component": "Treemap", "result_id": "q", "label": "nope", "value": "value", "title": "T"},
+        {"id": "c", "component": "DataTable", "result_id": "q", "title": "T", "columns": "name", "bars": "value"},
+        {"id": "d", "component": "Metric", "result_id": "other", "column": "value", "label": "L"},
+        {"id": "e", "component": "Cite", "template": "{q[0].missing} and {zz[0].value}"},
+        {"id": "f", "component": "Text", "text": "Total {q[0].value|currency}"},
+        {"id": "g", "component": "LineChart", "result_id": "q", "x": "day", "y": "value", "title": "{q[0].nope}"},
+        {"id": "h", "component": "DataTable", "result_id": "q", "title": "T", "bars": "name", "format": "gone:int"},
+    ]
+    problems = check_columns(comps, outputs)
+    assert problems == [
+        "a: y column 'name' of query 'q' is text, not a number",
+        "b: label column 'nope' is not an output column of query 'q'",
+        "c: bars column 'value' is not a shown column",
+        "d: Metric names unknown query 'other'; queries are: q",
+        "e: placeholder column 'missing' is not an output column of query 'q'",
+        "e: placeholder names unknown query 'zz'",
+        "g: placeholder column 'nope' is not an output column of query 'q'",
+        "h: format column 'gone' is not an output column of query 'q'",
+        "h: bars column 'name' of query 'q' is text, not a number",
+    ]
+    assert check_columns(comps[5:6] + comps[:0], outputs) == []
+
+
+def test_the_visual_index_counts_treemaps(store):
+    with macro_context(store) as c:
+        expand("Treemap", result_id="r1", title="T", label="supplier", value="value")
+        expand("BarChart", result_id="r1", x="supplier", y="value", title="B")
+    assert c.visuals == 2
+    assert [s.visual for s in c.sources] == [0, 1]
+
+
+def test_treemap_drill_links_work_as_for_bar_charts():
+    s = ResultStore()
+    _add(s, [{"name": "B", "value": 20.0}, {"name": "A", "value": 50.0}])
+    with macro_context(s, allowed_schemas=("mart",)) as c:
+        comps = expand("Treemap", result_id="r1", title="T", label="name", value="value",
+                       drill_sql="SELECT x FROM mart.t WHERE name IS NOT DISTINCT FROM :name")
+    action = _treemap(comps)[0]["action"]
+    assert action["drillable"] is True
+    assert action["rows"] == [1, 0]  # displayed order: by value
+    assert c.drills[0].names == ("name",) and c.drills[0].source == action["source"]

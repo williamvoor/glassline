@@ -38,6 +38,7 @@ from explorer_agent.actions import (
     restore_result,
     row_pair,
 )
+from explorer_agent.boards import BoardInstance, BoardRenderer, build_board, instance_results
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.drill import Prefetcher, display_sql
 from explorer_agent.macros import escape_markdown
@@ -58,6 +59,12 @@ LEVEL_KEY = "explorerLevel"  # final message metadata: the Level this answer is
 VIEWING_KEY = "explorerViewing"  # request metadata: surface IDs of Levels shown that aren't their Turn's latest
 MODEL_KEY = "explorerModel"  # final message metadata: the serving model's name, null for a Drill-down (SPEC §16)
 ACTION_FAILED_KEY = "explorerActionFailed"  # final message metadata: the Action failed, no Level was added
+NO_BOARDS_KEY = "explorerNoBoards"  # final message metadata: open_board in a Dataset without Boards (SPEC §18)
+OPEN_BOARD = "open_board"
+NO_BOARDS = "This dataset has no Boards."
+BOARD_OPEN = "The Explorer is already open in this conversation."
+UNKNOWN_BOARD = "Unknown board."
+BOARD_BUILD_FAILED = "The Explorer couldn't be shown. You can still ask a question."
 
 
 @dataclass
@@ -78,6 +85,8 @@ class Conversation:
     max_action_sources: int = MAX_ACTION_SOURCES
     max_pending_pairs: int = MAX_PENDING_PAIRS
     actions: ActionState = field(init=False, repr=False)
+    boards: OrderedDict[str, BoardInstance] = field(default_factory=OrderedDict)  # by instance ID b<n>
+    board_opened: bool = False  # open_board is allowed once per Conversation (SPEC §18)
 
     def __post_init__(self) -> None:
         self.actions = ActionState(self.surface_tag, self.max_action_sources, self.max_pending_pairs)
@@ -148,6 +157,14 @@ class DrillDowns:
     rows_to_model: int = 20
 
 
+@dataclass
+class BoardViews:
+    """What a Board needs: the renderer (queries, cache) and the UI pipeline (SPEC §18)."""
+
+    renderer: BoardRenderer
+    pipeline: UiPipeline
+
+
 def client_supports_catalog(metadata: dict[str, Any] | None) -> bool:
     try:
         ids = metadata[A2UI_CLIENT_CAPABILITIES_KEY]["v0.9"]["supportedCatalogIds"]  # type: ignore[index]
@@ -172,8 +189,9 @@ def action_of(message: Any) -> Any:
 
 class ExplorerExecutor(AgentExecutor):
     def __init__(self, answerer: Answerer, conversations: Conversations, card: AgentCard,
-                 drills: DrillDowns | None = None, model: str | None = None):
+                 drills: DrillDowns | None = None, model: str | None = None, boards: BoardViews | None = None):
         self._answerer = answerer
+        self._boards = boards
         self._model = model
         self._conversations = conversations
         self._card = card
@@ -216,13 +234,16 @@ class ExplorerExecutor(AgentExecutor):
                     meta[MODEL_KEY] = self._model  # unnamed: no key (null would say "no model")
                 await updater.complete(updater.new_agent_message(parts, metadata=meta))
 
-            async def fail(text: str) -> None:
-                await updater.complete(text_message(text, {ACTION_FAILED_KEY: True}))
+            async def fail(text: str, **extra: Any) -> None:
+                await updater.complete(text_message(text, {ACTION_FAILED_KEY: True, **extra}))
 
             action = action_of(context.message)
             is_action = action is not _NOT_AN_ACTION
             if not is_action:
                 await self._question(conv, context.get_user_input(), viewing, status, send, text_message, updater)
+                return
+            if isinstance(action, dict) and action.get("name") == OPEN_BOARD:
+                await self._open_board(conv, action, send, fail)
                 return
             try:
                 resolved = conv.actions.resolve(action)
@@ -327,6 +348,48 @@ class ExplorerExecutor(AgentExecutor):
                 "drill-down: source=%s row=%d turn=%d level=%d prefetched=%s rows=%d",
                 src.id, resolved.row, level.turn, level.level, prefetched, result.row_count,
             )
+        await send(level, ui, model_run=False)
+
+    # Boards (no model) ----------------------------------------------------------------------------
+
+    async def _open_board(self, conv: Conversation, action: dict[str, Any], send, fail) -> None:
+        """Renders a Board as Turn 0, Level 1. The one action without an issued surfaceId."""
+        context = action.get("context")
+        if not isinstance(context, dict) or set(context) != {"board"} or not isinstance(context["board"], str):
+            await fail("The action is malformed.")
+            return
+        if self._boards is None or not self._boards.renderer.boards:
+            await fail(NO_BOARDS, **{NO_BOARDS_KEY: True})
+            return
+        board = self._boards.renderer.boards.get(context["board"])
+        if board is None:
+            await fail(UNKNOWN_BOARD)
+            return
+        if conv.board_opened:
+            await fail(BOARD_OPEN)
+            return
+        conv.board_opened = True
+        try:
+            outcomes = await self._boards.renderer.outcomes(board)
+        except BaseException:
+            conv.board_opened = False  # it can be tried again
+            raise
+        # No await from here to send: IDs, the Level and the instance are taken atomically.
+        level = conv.actions.new_level(0, board.title)
+        results, failed = instance_results(outcomes, conv.store.reserve_id)
+        try:
+            ui = build_board(board, results, failed, self._boards.pipeline, level.surface_id, conv.actions.ids)
+        except UiError:
+            # Panels that can't be drawn are Cards (Board mode), so this is the Surface itself.
+            log.error("board build failed: board=%s", board.name)  # the message can quote values
+            conv.actions.surfaces.pop(level.surface_id, None)
+            conv.actions.levels.pop(0, None)
+            conv.board_opened = False
+            await fail(BOARD_BUILD_FAILED)
+            return
+        instance_id = f"b{len(conv.boards) + 1}"
+        conv.boards[instance_id] = BoardInstance(instance_id, board, level.surface_id, results)
+        log.info("board opened: board=%s instance=%s failed=%d", board.name, instance_id, len(failed))
         await send(level, ui, model_run=False)
 
     # prefetch --------------------------------------------------------------------------------

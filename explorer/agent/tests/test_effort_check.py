@@ -446,3 +446,16 @@ async def test_act_drills_down_on_the_stub_agent_without_the_model():
     assert r["failure"] == "none", r["prose"]
     assert r["metadata"]["explorerModel"] is None, "a Drill-down is database only"
     assert r["surface"]["visuals"], "the Drill-down's Visual came back"
+
+
+def test_surface_summary_reads_a_full_vega_treemap():
+    """B18: full Vega keeps its data in `data[]`; reading `data.values` used to raise."""
+    spec = {"$schema": "https://vega.github.io/schema/vega/v5.json",
+            "data": [{"name": "tree", "values": [{"_id": "root"}, {"_id": "t0", "_row": 0}]},
+                     {"name": "tiles", "source": "tree"}]}
+    comps = [{"id": "c", "component": "Column", "children": ["t", "v"]},
+             {"id": "t", "component": "Text", "text": "Tiles", "variant": "h4"},
+             {"id": "v", "component": "VegaChart", "spec": spec}]
+    summary = ec.surface_summary([{"updateComponents": {"surfaceId": "s", "components": comps}}])
+    assert summary["charts"] == [{"title": "Tiles", "values": [{"_id": "root"}, {"_id": "t0", "_row": 0}]}]
+    assert summary["visuals"][0]["kind"] == "chart"

@@ -13,7 +13,7 @@ import functools
 import logging
 import math
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,7 +25,7 @@ from a2ui.transformers.macros import MacroExpander, macro
 from explorer_agent.actions import FollowUpSpec, IdAllocator, SourceSpec
 from explorer_agent.catalog import DataGrid, SqlDetails, VegaChart
 from explorer_agent.drill import BINDABLE, DRILL_AS, DrillSpec, DrillSqlError, null_dropping_params, rewrite
-from explorer_agent.results import INTEGER_TYPES, ResultStore, StoredResult
+from explorer_agent.results import INTEGER_TYPES, NUMERIC_TYPES, ResultStore, StoredResult
 from explorer_agent.sql import GuardError, guard
 
 log = logging.getLogger(__name__)
@@ -41,6 +41,11 @@ MAX_FOLLOW_UPS = 3  # per Surface, a fixed rule
 FOLLOW_UP_REQUEST_MAX = 500
 ROW_LABEL_MAX = 80
 ROW_FIELD = "_row"  # hidden field on a clickable chart datum: its row index in the Result
+LABEL_FIELD = "_label"  # hidden field on a clickable chart datum: its row label (SPEC §18)
+MAX_TREEMAP_TILES = 12
+NO_ROWS = "No rows"
+PANEL_FAILED = "This panel couldn't load: {reason}"
+PANEL_UNDRAWABLE = "This panel couldn't be drawn from its rows."
 DRILL_ERROR_PREFIX = "drill: "
 
 
@@ -74,6 +79,11 @@ class MacroContext:
     follow_ups: list[FollowUpSpec] = field(default_factory=list)
     drill_errors: set[int] = field(default_factory=set)  # Visual indices with a drill error
     drill_error_count: int = 0  # entries of `errors` that are drill errors
+    # Boards (SPEC §18). In Board mode a zero-row Result or a failed query replaces its panel with
+    # a Card instead of failing, and placeholders name queries (`{by_agency[0].value}`).
+    board: bool = False
+    failed: Mapping[str, str] = field(default_factory=dict)  # Board mode: query name -> SQLSTATE
+    clicks: bool = True  # False builds every Visual unclickable (Boards before slice 1b)
 
 
 _context: ContextVar[MacroContext | None] = ContextVar("explorer_macro_context", default=None)
@@ -96,13 +106,28 @@ def _ctx() -> MacroContext:
     return ctx
 
 
+class _PanelReplaced(Exception):  # noqa: N818 - control flow, not an error
+    """Board mode: the macro's panel is replaced by `card` (no rows, or a failed query)."""
+
+    def __init__(self, card: Any):
+        super().__init__("panel replaced")
+        self.card = card
+
+
 def _captured(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
+        except _PanelReplaced as e:
+            return e.card
         except Exception as e:
             ctx = _context.get()
+            if ctx is not None and ctx.board and isinstance(e, MacroError):
+                # A data-dependent error (negative bars, ...): only this panel is lost (SPEC §18).
+                # The message can quote a value, so only the macro's name is logged.
+                log.warning("board panel could not be drawn: macro=%s", func.__name__)
+                return _card([Text(text=PANEL_UNDRAWABLE)])
             if ctx is not None:
                 if isinstance(e, DrillError):
                     ctx.errors.append(f"{func.__name__}: {DRILL_ERROR_PREFIX}{e}")
@@ -119,7 +144,10 @@ def _captured(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def _result(result_id: str) -> StoredResult:
-    store = _ctx().store
+    ctx = _ctx()
+    store = ctx.store
+    if ctx.board and result_id in ctx.failed:
+        raise _PanelReplaced(_card([Text(text=PANEL_FAILED.format(reason=ctx.failed[result_id] or "query error"))]))
     result = store.get(result_id)
     if result is None:
         valid = ", ".join(store.ids()) or "none yet: call run_sql first"
@@ -451,7 +479,7 @@ def _register_visual(
     """Reserve an action source for a clickable Visual, check its Drill query, and return the
     component's `action`. A Visual with no clickable rows isn't clickable."""
     ctx = _ctx()
-    if not clickable:
+    if not clickable or not ctx.clicks:
         return None
     if not rows:
         if drill.sql.strip():
@@ -469,6 +497,12 @@ def _register_visual(
 def _card(children: list[Any]) -> Card:
     """Every Visual is a Card holding its title, the Visual and its SQL (SPEC §16)."""
     return Card(child=Column(children=children))
+
+
+def _no_rows(result: StoredResult, title: str) -> _PanelReplaced:
+    """Board mode: a panel whose Result has nothing to show (SPEC §18), with its title and SQL."""
+    heading = [Text(text=title, variant="h4")] if title else []
+    return _PanelReplaced(_card([*heading, Text(text=NO_ROWS, variant="caption"), _sql_details(result)]))
 
 
 def _chart(*args: Any, **kwargs: Any) -> Card:
@@ -499,6 +533,8 @@ def _chart_parts(
         _column(result, color)
     axis_format, scale, suffix = _axis(result, y, fmt)
     values, domain = _chart_values(result, x, y, color, scale, clickable)
+    if ctx.board and not any(_is_number(v[y]) for v in values):
+        raise _no_rows(result, title)
     if fmt == "currency_compact":  # one unit for the chart, from the largest value plotted
         divisor, unit = compact_unit(_largest(_plotted_extents(values, x, y, stacked=mark == "bar" and bool(color))))
         values = [{**v, y: v[y] / divisor if _is_number(v[y]) else v[y]} for v in values]
@@ -542,9 +578,12 @@ def _chart_parts(
         if ROW_FIELD in v:
             text = label_text(result, x, v[x])
             labels[v[ROW_FIELD]] = f"{text} · {label_text(result, color, v[color])}" if color else text
+            v[LABEL_FIELD] = labels[v[ROW_FIELD]]  # the client's confirmation label (SPEC §18)
     action = _register_visual(result, visual=visual, clickable=clickable, rows=rows, labels=labels, title=title, drill=drill)
     chart = VegaChart(spec=spec, action=action) if action else VegaChart(spec=spec)
-    return [Text(text=title, variant="h4"), chart, _sql_details(result)]
+    # A cut Result draws a partial series: say so, as tables do (SPEC §18).
+    caption = [Text(text=f"query truncated at {result.row_count:,} rows", variant="caption")] if result.truncated else []
+    return [Text(text=title, variant="h4"), chart, *caption, _sql_details(result)]
 
 
 @macro
@@ -629,6 +668,144 @@ def LineChart(
     )
 
 
+def _plural(n: int, word: str) -> str:
+    return f"{n:,} {word}{'' if n == 1 else 's'}"
+
+
+def _treemap_parts(
+    result: StoredResult, *, title: str, label: str, value: str, fmt: str, clickable: bool, drill: _Drill,
+) -> list[Any]:
+    """A full Vega treemap (Vega-Lite has none): a flat `stratify` under one root, then
+    `treemap`. Only the leaves are drawn, so the root has no mark (SPEC §18)."""
+    ctx = _ctx()
+    visual = ctx.visuals
+    ctx.visuals += 1
+    _column(result, label)
+    _numeric_column(result, value, "value")
+    fmt = _format_name(fmt or "auto")
+    drawn = [(i, r) for i, r in enumerate(result.rows) if _is_number(r.get(value)) and r[value] > 0]
+    left_out = result.row_count - len(drawn)
+    # Displayed order, which prefetch uses: by value descending, ties by label ascending.
+    drawn.sort(key=lambda t: (-t[1][value], label_text(result, label, t[1].get(label))))
+    shown, rest = drawn[:MAX_TREEMAP_TILES], drawn[MAX_TREEMAP_TILES:]
+    if not shown:
+        if ctx.board:
+            raise _no_rows(result, title)
+        raise MacroError(f"{result.id} has no rows with a positive {value!r} to draw")
+    rest_total = sum(r[value] for _, r in rest)
+    unit = compact_unit(max(shown[0][1][value], rest_total)) if fmt == "currency_compact" else None
+    label_title, value_title = column_label(label), column_label(value)
+
+    def tile(tile_id: str, name: str, size: float) -> dict[str, Any]:
+        text = _format(result, size, value, fmt, unit)
+        return {"_id": tile_id, "_parent": "root", "_size": size, "_name": name, "_value": text,
+                "_tooltip": {label_title: name, value_title: text}}
+
+    leaves: list[dict[str, Any]] = []
+    rows: list[int] = []
+    labels: dict[int, str] = {}
+    for i, r in shown:
+        name = label_text(result, label, r.get(label))
+        leaf = tile(f"t{i}", name, r[value])
+        if clickable and i < ctx.table_row_cap:
+            leaf[ROW_FIELD], leaf[LABEL_FIELD] = i, name
+            rows.append(i)
+            labels[i] = name
+        leaves.append(leaf)
+    if rest:  # not clickable: it stands for many rows
+        leaves.append(tile("other", f"{OTHER} (incomplete)" if result.truncated else OTHER, rest_total))
+    spec = {
+        "$schema": "https://vega.github.io/schema/vega/v5.json",
+        "data": [
+            {
+                "name": "tree",
+                "values": [{"_id": "root", "_parent": None}, *leaves],
+                "transform": [
+                    {"type": "stratify", "key": "_id", "parentKey": "_parent"},
+                    {"type": "treemap", "field": "_size", "sort": {"field": "value", "order": "descending"},
+                     "round": True, "method": "squarify", "size": [{"signal": "width"}, {"signal": "height"}]},
+                ],
+            },
+            {"name": "tiles", "source": "tree", "transform": [{"type": "filter", "expr": "datum._parent != null"}]},
+        ],
+        "scales": [
+            {"name": "color", "type": "ordinal", "domain": ["tile"], "range": "category"},
+        ],
+        "marks": [
+            {
+                "type": "rect",
+                "from": {"data": "tiles"},
+                "encode": {"update": {
+                    "x": {"field": "x0"}, "y": {"field": "y0"}, "x2": {"field": "x1"}, "y2": {"field": "y1"},
+                    "fill": {"scale": "color", "value": "tile"},
+                    "stroke": {"value": "white"}, "strokeWidth": {"value": 1},
+                    "tooltip": {"field": "_tooltip"},
+                }},
+            },
+            {
+                "type": "text",
+                "from": {"data": "tiles"},
+                "interactive": False,
+                "encode": {"update": {
+                    "x": {"signal": "datum.x0 + 6"}, "y": {"signal": "datum.y0 + 16"},
+                    "text": {"signal": "datum.x1 - datum.x0 >= 70 && datum.y1 - datum.y0 >= 36 ? [datum._name, datum._value] : ''"},
+                    "limit": {"signal": "max(0, datum.x1 - datum.x0 - 12)"},
+                    "fontSize": {"value": 12}, "fontWeight": {"value": "bold"},  # fill: the client theme's text colour
+                }},
+            },
+        ],
+    }
+    notes = []
+    if rest:
+        notes.append(f"{_plural(len(rest), 'smaller row')} in “{OTHER}”")
+    if left_out:
+        notes.append(f"{_plural(left_out, 'row')} with no positive {value_title.lower()} left out")
+    if result.truncated:
+        notes.append(f"query truncated at {result.row_count:,} rows, so “{OTHER}” is incomplete")
+    action = _register_visual(result, visual=visual, clickable=clickable, rows=rows, labels=labels, title=title, drill=drill)
+    if action:  # Vega sets the cursor from the hovered item's own `cursor`, so clickable tiles carry it
+        spec["marks"][0]["encode"]["update"]["cursor"] = {"signal": f"isValid(datum.{ROW_FIELD}) ? 'pointer' : null"}
+    chart = VegaChart(spec=spec, action=action) if action else VegaChart(spec=spec)
+    caption = [Text(text="; ".join(notes), variant="caption")] if notes else []  # caption Text isn't markdown
+    return [Text(text=title, variant="h4"), chart, *caption, _sql_details(result)]
+
+
+@macro
+@_captured
+def Treemap(
+    result_id: str,
+    title: str,
+    label: str,
+    value: str,
+    format: str = "",
+    clickable: bool = True,
+    drill_sql: str = "",
+    drill_as: str = "table",
+    drill_x: str = "",
+    drill_y: str = "",
+    drill_title: str = "",
+) -> Card:
+    """Treemap of a stored query result: one tile per row, its area proportional to the value, followed by its SQL. Shows the 12 largest rows; the rest become one "Other" tile.
+
+    Args:
+        result_id: ID of a stored query result, e.g. "r1".
+        title: Chart title, plain text.
+        label: Text column naming each tile.
+        value: Numeric column for tile area; rows with no positive value are left out.
+        format: Value format: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct.
+        clickable: Tiles can be clicked to explore them (default true); false turns it off.
+        drill_sql: Optional SQL for the next level of detail below a clicked tile: one SELECT with :column placeholders naming columns of this result. It runs without you when a tile is clicked.
+        drill_as: How the drill-down is shown: table (default), bar or line.
+        drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
+        drill_y: For drill_as bar or line: the numeric drill_sql output column.
+        drill_title: Optional title of the drill-down (default: this title); the clicked tile's label is appended.
+    """
+    return _card(_treemap_parts(
+        _result(result_id), title=_fill(title), label=label, value=value, fmt=format, clickable=clickable,
+        drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title),
+    ))
+
+
 def _parse_formats(result: StoredResult, spec: str) -> dict[str, str]:
     formats: dict[str, str] = {}
     for pair in filter(None, (p.strip() for p in spec.split(","))):
@@ -650,9 +827,21 @@ def _table(*args: Any, **kwargs: Any) -> Card:
     return _card(_table_parts(*args, **kwargs))
 
 
+def _bar_shares(result: StoredResult, rows: list[dict[str, Any]], column: str) -> list[float | None] | None:
+    """A bar column's shares of its largest shown value, 0 to 1, `None` for NULL (SPEC §18).
+    None when every shown value is zero or NULL: no bars."""
+    values = [r.get(column) for r in rows]
+    if any(_is_number(v) and v < 0 for v in values):
+        raise MacroError(f"bars column {column!r} of {result.id} has negative values; bars need values of 0 or more")
+    largest = max((v for v in values if _is_number(v)), default=0)
+    if largest <= 0:
+        return None
+    return [round(v / largest, 4) if _is_number(v) else None for v in values]
+
+
 def _table_parts(
     result: StoredResult, *, title: str, columns: str = "", format: str = "", clickable: bool = True,
-    drill: _Drill = _Drill(),
+    drill: _Drill = _Drill(), bars: str = "",
 ) -> list[Any]:
     """`title` is display text (placeholders already filled)."""
     ctx = _ctx()
@@ -666,6 +855,13 @@ def _table_parts(
         {"key": c, "label": column_label(c), **({"align": "end"} if result.is_numeric(c) else {})}
         for c in shown
     ]
+    for c in (b.strip() for b in bars.split(",") if b.strip()):
+        if c not in shown:
+            raise MacroError(f"bars column {c!r} is not one of the shown columns: {', '.join(shown)}")
+        _numeric_column(result, c, "bars")
+        shares = _bar_shares(result, rows, c)
+        if shares is not None:
+            grid_columns[shown.index(c)]["bars"] = shares
     # currency_compact columns share one unit, from the largest value shown.
     units = {
         c: compact_unit(_largest(r.get(c) for r in rows)) for c in shown if formats.get(c) == "currency_compact"
@@ -698,6 +894,7 @@ def DataTable(
     drill_x: str = "",
     drill_y: str = "",
     drill_title: str = "",
+    bars: str = "",
 ) -> Card:
     """Table of a stored query result, followed by its SQL.
 
@@ -712,10 +909,11 @@ def DataTable(
         drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked row's label is appended.
+        bars: Optional comma-separated numeric shown columns to draw as share bars under their numbers (each cell's share of the column's largest value), e.g. "value".
     """
     return _table(
         _result(result_id), title=_fill(title), columns=columns, format=format, clickable=clickable,
-        drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title),
+        drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title), bars=bars,
     )
 
 
@@ -782,6 +980,8 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
     """
     result = _result(result_id)
     _column(result, column)
+    if _ctx().board and not 0 <= row < result.row_count:
+        raise _no_rows(result, _fill(label))
     value = _row(result, row)[column]
     return Card(
         child=Column(
@@ -801,8 +1001,10 @@ def _row(result: StoredResult, index: int) -> dict[str, Any]:
 
 
 _PLACEHOLDER = re.compile(r"\{(r\d+)\[(\d+)\]\.([A-Za-z_][A-Za-z0-9_]*)(?:\|([a-z_]+))?\}")
+# Board layouts name queries where answers name Result IDs (SPEC §18).
+_BOARD_PLACEHOLDER = re.compile(r"\{([a-z_][a-z0-9_]*)\[(\d+)\]\.([A-Za-z_][A-Za-z0-9_]*)(?:\|([a-z_]+))?\}")
 # Anything placeholder-shaped, valid or not, so its digits are not counted as bare numbers.
-_PLACEHOLDER_SHAPE = re.compile(r"\{r\d+\[\d+\]\.[^}]*\}")
+_PLACEHOLDER_SHAPE = re.compile(r"\{[a-z_][a-z0-9_]*\[\d+\]\.[^}]*\}")  # r<n> or a Board query name
 _MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$])")
 
 
@@ -810,20 +1012,35 @@ def escape_markdown(text: str) -> str:
     return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
 
 
+def placeholders(template: str, board: bool = False) -> list[tuple[str, int, str, str]]:
+    """The `Cite` placeholders in a template: (Result ID or query name, row, column, format)."""
+    pattern = _BOARD_PLACEHOLDER if board else _PLACEHOLDER
+    return [(m.group(1), int(m.group(2)), m.group(3), m.group(4) or "auto") for m in pattern.finditer(template)]
+
+
 def _fill(template: str, on_error: Callable[[Exception], None] | None = None) -> str:
+    board = _ctx().board
+
     def fill(m: re.Match[str]) -> str:
         try:
             result = _result(m.group(1))
             column = _column(result, m.group(3))
-            value = _row(result, int(m.group(2)))[column]
+            row = int(m.group(2))
+            if board and not 0 <= row < result.row_count:
+                raise _no_rows(result, "")
+            value = _row(result, row)[column]
             return escape_markdown(_format(result, value, column, m.group(4) or "auto"))
+        except _PanelReplaced:
+            if on_error is None:  # inside a macro: the macro's panel is replaced
+                raise
+            return "—"  # a Board's own Text: no row, or its query failed
         except MacroError as e:
             if on_error is None:
                 raise
             on_error(e)
             return m.group(0)
 
-    return _PLACEHOLDER.sub(fill, template)
+    return (_BOARD_PLACEHOLDER if board else _PLACEHOLDER).sub(fill, template)
 
 
 @macro
@@ -902,7 +1119,82 @@ def _bare_numbers(text: str) -> list[str]:
     return _BARE_NUMBER.findall(_DATE.sub(" ", _PLACEHOLDER_SHAPE.sub("", text)))
 
 
-MACROS = [BarChart, LineChart, DataTable, Metric, Cite, FollowUp]
+MACROS = [BarChart, LineChart, Treemap, DataTable, Metric, Cite, FollowUp]
+VISUAL_MACROS = frozenset({"BarChart", "LineChart", "Treemap", "DataTable"})
+
+
+# --- startup checks for Board layouts (SPEC §18) ----------------------------------------------
+
+Outputs = Mapping[str, tuple[list[str], list[str]]]  # query name -> (columns, types)
+
+
+def _csv(value: Any) -> list[str]:
+    return [p.strip() for p in str(value or "").split(",") if p.strip()]
+
+
+def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> list[str]:
+    """Columns-only check of a Board layout's macro calls against its queries' output columns and
+    types. Runs no macro over rows, so zero-row outputs are fine. Returns the problems found."""
+    problems: list[str] = []
+
+    def kind_of(query: str, column: str, role: str, want: str, cid: str) -> None:
+        columns, types = outputs[query]
+        if column not in columns:
+            problems.append(f"{cid}: {role} column {column!r} is not an output column of query {query!r}")
+            return
+        type_ = types[columns.index(column)]
+        if want == "numeric" and type_ not in NUMERIC_TYPES:
+            problems.append(f"{cid}: {role} column {column!r} of query {query!r} is {type_}, not a number")
+
+    def template(text: Any, cid: str) -> None:
+        if not isinstance(text, str):
+            return
+        for query, _row_index, column, _fmt in placeholders(text, board=True):
+            if query not in outputs:
+                problems.append(f"{cid}: placeholder names unknown query {query!r}")
+            else:
+                kind_of(query, column, "placeholder", "any", cid)
+
+    for comp in components:
+        name, cid = comp.get("component"), str(comp.get("id"))
+        if name == "Text":
+            template(comp.get("text"), cid)
+        elif name == "Tabs":
+            for tab in comp.get("tabs") or []:
+                if isinstance(tab, dict):
+                    template(tab.get("title"), cid)
+        elif name == "Cite":
+            template(comp.get("template"), cid)
+        if name not in VISUAL_MACROS and name != "Metric":
+            continue
+        for key in ("title", "label"):
+            template(comp.get(key), cid)
+        query = comp.get("result_id")
+        if query not in outputs:
+            problems.append(f"{cid}: {name} names unknown query {query!r}; queries are: {', '.join(outputs)}")
+            continue
+        if name in ("BarChart", "LineChart"):
+            kind_of(query, comp.get("x", ""), "x", "any", cid)
+            kind_of(query, comp.get("y", ""), "y", "numeric", cid)
+            if comp.get("color"):
+                kind_of(query, comp["color"], "color", "any", cid)
+        elif name == "Treemap":
+            kind_of(query, comp.get("label", ""), "label", "any", cid)
+            kind_of(query, comp.get("value", ""), "value", "numeric", cid)
+        elif name == "Metric":
+            kind_of(query, comp.get("column", ""), "column", "any", cid)
+        elif name == "DataTable":
+            shown = _csv(comp.get("columns")) or list(outputs[query][0])
+            for c in shown:
+                kind_of(query, c, "columns", "any", cid)
+            for pair in _csv(comp.get("format")):
+                kind_of(query, pair.rpartition(":")[0].strip(), "format", "any", cid)
+            for c in _csv(comp.get("bars")):
+                if c not in shown:
+                    problems.append(f"{cid}: bars column {c!r} is not a shown column")
+                else:
+                    kind_of(query, c, "bars", "numeric", cid)
+    return problems
 
 
 def macro_expander() -> MacroExpander:

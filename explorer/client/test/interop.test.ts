@@ -130,4 +130,28 @@ describe('interop with the stub agent', () => {
     if (asked?.kind !== 'final') throw new Error('no ask');
     expect((asked.metadata?.['explorerLevel'] as {level: number}).level).toBe(3);
   });
+
+  it('opens the Explorer Board, then answers a question in the same conversation (SPEC §18)', async () => {
+    const processor = createProcessor();
+    const agent = await connect(agentUrl, processor.getRendererCapabilities({versions: ['v0.9']}));
+    const open = {name: 'open_board', surfaceId: '', sourceComponentId: '', timestamp: new Date().toISOString(),
+                  context: {board: 'explorer'}};
+    let board: AskEvent | undefined;
+    for await (const e of agent.act(open)) board = e;
+    if (board?.kind !== 'final') throw new Error('no board');
+    expect(board.metadata?.['explorerActionFailed']).toBeUndefined();
+    const level = board.metadata?.['explorerLevel'] as {turn: number; level: number; surfaceId: string};
+    expect([level.turn, level.level]).toEqual([0, 1]);
+    expect(board.metadata?.['explorerModel']).toBeNull();
+    processor.processMessages(board.a2ui as unknown as A2uiMessage[]); // the renderer accepts it
+    const surface = processor.model.surfacesMap.get(level.surfaceId)!;
+    expect(surface.componentsModel.get('board_layout')).toBeDefined();
+    expect([...surface.componentsModel.entries].some(([, c]) => c.type === 'VegaChart')).toBe(true);
+
+    let answer: AskEvent | undefined;
+    for await (const e of agent.askQuestion('Which suppliers got the most?', board.contextId)) answer = e;
+    if (answer?.kind !== 'final') throw new Error('no answer');
+    expect(answer.contextId).toBe(board.contextId);
+    expect(answer.prose).toContain('Supplier A');
+  });
 });

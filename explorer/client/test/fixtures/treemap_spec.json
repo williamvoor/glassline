@@ -1,0 +1,167 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "data": [
+    {
+      "name": "tree",
+      "values": [
+        {
+          "_id": "root",
+          "_parent": null
+        },
+        {
+          "_id": "t0",
+          "_parent": "root",
+          "_size": 60.0,
+          "_name": "Alpha",
+          "_value": "60",
+          "_tooltip": {
+            "Name": "Alpha",
+            "Value": "60"
+          },
+          "_row": 0,
+          "_label": "Alpha"
+        },
+        {
+          "_id": "t1",
+          "_parent": "root",
+          "_size": 30.0,
+          "_name": "Beta",
+          "_value": "30",
+          "_tooltip": {
+            "Name": "Beta",
+            "Value": "30"
+          },
+          "_row": 1,
+          "_label": "Beta"
+        },
+        {
+          "_id": "t2",
+          "_parent": "root",
+          "_size": 10.0,
+          "_name": "Gamma",
+          "_value": "10",
+          "_tooltip": {
+            "Name": "Gamma",
+            "Value": "10"
+          },
+          "_row": 2,
+          "_label": "Gamma"
+        }
+      ],
+      "transform": [
+        {
+          "type": "stratify",
+          "key": "_id",
+          "parentKey": "_parent"
+        },
+        {
+          "type": "treemap",
+          "field": "_size",
+          "sort": {
+            "field": "value",
+            "order": "descending"
+          },
+          "round": true,
+          "method": "squarify",
+          "size": [
+            {
+              "signal": "width"
+            },
+            {
+              "signal": "height"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tiles",
+      "source": "tree",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum._parent != null"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "color",
+      "type": "ordinal",
+      "domain": [
+        "tile"
+      ],
+      "range": "category"
+    }
+  ],
+  "marks": [
+    {
+      "type": "rect",
+      "from": {
+        "data": "tiles"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "field": "x0"
+          },
+          "y": {
+            "field": "y0"
+          },
+          "x2": {
+            "field": "x1"
+          },
+          "y2": {
+            "field": "y1"
+          },
+          "fill": {
+            "scale": "color",
+            "value": "tile"
+          },
+          "stroke": {
+            "value": "white"
+          },
+          "strokeWidth": {
+            "value": 1
+          },
+          "tooltip": {
+            "field": "_tooltip"
+          },
+          "cursor": {
+            "signal": "isValid(datum._row) ? 'pointer' : null"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {
+        "data": "tiles"
+      },
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "datum.x0 + 6"
+          },
+          "y": {
+            "signal": "datum.y0 + 16"
+          },
+          "text": {
+            "signal": "datum.x1 - datum.x0 >= 70 && datum.y1 - datum.y0 >= 36 ? [datum._name, datum._value] : ''"
+          },
+          "limit": {
+            "signal": "max(0, datum.x1 - datum.x0 - 12)"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fontWeight": {
+            "value": "bold"
+          }
+        }
+      }
+    }
+  ]
+}

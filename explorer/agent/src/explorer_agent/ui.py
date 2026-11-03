@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -180,11 +180,11 @@ class UiPipeline:
             settings.dataset.allowed_schemas, settings.max_drills_per_surface,
         )
 
-    def _context(self, store: ResultStore, ids: IdAllocator | None, ignore_drills: Iterable[int] = ()):
+    def _context(self, store: Any, ids: IdAllocator | None, ignore_drills: Iterable[int] = (), **board: Any):
         return macro_context(
             store, currency_symbol=self._currency_symbol, table_row_cap=self._table_row_cap,
             ids=ids or IdAllocator(), allowed_schemas=self._allowed_schemas, max_drills=self._max_drills,
-            ignore_drills=frozenset(ignore_drills),
+            ignore_drills=frozenset(ignore_drills), **board,
         )
 
     @staticmethod
@@ -198,9 +198,12 @@ class UiPipeline:
         surface_id: str,
         ids: IdAllocator | None = None,
         ignore_drills: Iterable[int] = (),
+        board: Mapping[str, Any] | None = None,
     ) -> UiResult:
         """`ids` reserves action source and Follow-up IDs (the Conversation's); `ignore_drills`
-        rebuilds with those Visuals' drill arguments ignored."""
+        rebuilds with those Visuals' drill arguments ignored. `board` builds a Board's layout in
+        Board mode (SPEC §18): `{"failed": {query: sqlstate}, "clicks": bool}`, with `store`
+        looking Results up by query name."""
         # Any SDK error here comes from what the model wrote (syntax, dangling references, bad
         # macro arguments, duplicate surfaces), so it goes back to the model as a UiError.
         try:
@@ -213,7 +216,8 @@ class UiPipeline:
 
         prose: FilledProse | None = None
         try:
-            with self._context(store, ids, ignore_drills) as ctx:
+            board_args = {"board": True, **board} if board is not None else {}
+            with self._context(store, ids, ignore_drills, **board_args) as ctx:
                 prose = fill_prose(prose_raw)
                 prose_ok = not ctx.errors
                 bare = prose.bare_numbers + fill_surface_text(c for m in typed for c in _components(m))

@@ -16,6 +16,8 @@ import {renderSafeMarkdown} from './markdown.js';
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
 export const MODEL_KEY = 'explorerModel';
+export const NO_BOARDS_KEY = 'explorerNoBoards';
+export const OPEN_BOARD = 'open_board';
 
 interface Level {
   surfaceId?: string;
@@ -46,6 +48,10 @@ interface Turn {
   running?: Running; // an Action in flight
   actionError?: {message: string; label: string; action: UiAction};
 }
+
+/** The Explorer Board (SPEC §18): Turn 0, shown before the first question. Not clickable yet
+ * (slice 1a). `none`: the Dataset has no Boards; `failed`: shown as `none`, the examples alone. */
+type BoardView = {state: 'loading'} | {state: 'none'} | {state: 'failed'} | {state: 'shown'; surfaceId: string};
 
 interface ActionPayload extends UiAction {
   userMessage?: string;
@@ -80,6 +86,8 @@ export class ExplorerApp extends LitElement {
   @state() private info?: AgentInfo;
   @state() private connectError?: string;
   @state() private now = Date.now();
+  @state() private board: BoardView = {state: 'loading'};
+  private boardOpening?: Promise<void>; // a question waits for it, so both use one conversation
 
   private processor: MessageProcessor<ComponentApi> = this.newProcessor();
   private connection?: Promise<AgentConnection>;
@@ -99,6 +107,36 @@ export class ExplorerApp extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     void this.connectionOnce().catch(() => {}); // load the card early for the header and examples
+    this.openBoard();
+  }
+
+  /** Sends `open_board` for the Explorer when a conversation starts (SPEC §18). Its reply starts
+   * the conversation, so the first question waits for it and uses the same contextId. */
+  private openBoard() {
+    const processor = this.processor;
+    this.board = {state: 'loading'};
+    const action: UiAction = {
+      name: OPEN_BOARD, surfaceId: '', sourceComponentId: '', timestamp: new Date().toISOString(), context: {board: 'explorer'},
+    };
+    this.boardOpening = (async () => {
+      try {
+        const agent = await this.connectionOnce();
+        for await (const event of agent.act(action, this.contextId)) {
+          if (processor !== this.processor) return; // a new conversation replaced this one
+          if (event.kind !== 'final') continue;
+          const surfaceId = surfaceIdOf(event.a2ui);
+          if (event.metadata?.[ACTION_FAILED_KEY] || !surfaceId) {
+            this.board = {state: event.metadata?.[NO_BOARDS_KEY] ? 'none' : 'failed'};
+            return;
+          }
+          this.contextId = event.contextId;
+          processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
+          this.board = {state: 'shown', surfaceId};
+        }
+      } catch {
+        if (processor === this.processor) this.board = {state: 'failed'};
+      }
+    })();
   }
 
   override disconnectedCallback() {
@@ -161,6 +199,8 @@ export class ExplorerApp extends LitElement {
   // typed questions ----------------------------------------------------------------------------
 
   async ask(question: string) {
+    if (this.busy) return;
+    await this.boardOpening; // the Board's reply carries the conversation's contextId
     if (this.busy) return;
     const viewing = this.viewing(); // what was on screen when the question was typed
     this.turns = [...this.turns, {question, viewing, steps: [], startedAt: Date.now(), levels: [], current: 0}];
@@ -323,6 +363,7 @@ export class ExplorerApp extends LitElement {
     this.processor = this.newProcessor();
     this.busy = false;
     this.stopTicker();
+    this.openBoard();
     this.querySelector('textarea')?.focus();
   }
 
@@ -364,6 +405,13 @@ export class ExplorerApp extends LitElement {
       Cannot reach the agent at <code>${this.agentUrl}</code> (${this.connectError}).
       <button type="button" @click=${() => void this.connectionOnce().catch(() => {})}>Retry</button>
     </div>`;
+  }
+
+  /** The Explorer Board on the Canvas before the first question, above the examples (SPEC §18). */
+  private renderBoard() {
+    if (this.turns.length || this.board.state !== 'shown') return nothing;
+    const surface = this.processor.model.surfacesMap.get(this.board.surfaceId);
+    return surface ? html`<section class="board"><a2ui-surface .surface=${surface}></a2ui-surface></section>` : nothing;
   }
 
   private renderEmpty() {
@@ -520,7 +568,7 @@ export class ExplorerApp extends LitElement {
       <div class="shell">
         ${this.renderSidebar()}
         <main class="canvas">
-          ${this.renderBanner()} ${this.renderEmpty()} ${turn ? this.renderTurn(turn, this.selected) : nothing}
+          ${this.renderBanner()} ${this.renderBoard()} ${this.renderEmpty()} ${turn ? this.renderTurn(turn, this.selected) : nothing}
         </main>
       </div>
     `;

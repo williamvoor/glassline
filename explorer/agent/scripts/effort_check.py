@@ -228,6 +228,17 @@ async def act(
     return result
 
 
+def chart_values(spec: dict[str, Any]) -> list[Any]:
+    """A chart's data values: Vega-Lite's `data.values`, or each full-Vega `data[]` entry's
+    `values` (a treemap, SPEC §18)."""
+    data = spec.get("data")
+    if isinstance(data, dict):
+        return list(data.get("values") or [])
+    if isinstance(data, list):
+        return [v for d in data if isinstance(d, dict) for v in d.get("values") or []]
+    return []
+
+
 def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
     """Metrics, tables, chart values, SQL and clickable Visuals from the Surface's components."""
     components: list[dict[str, Any]] = []
@@ -269,7 +280,7 @@ def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
                 "rows": c.get("rows", []), "caption": c.get("caption"),
             })
         elif kind == "VegaChart":
-            charts.append({"title": sibling_title(c["id"]), "values": (c.get("spec", {}).get("data") or {}).get("values", [])})
+            charts.append({"title": sibling_title(c["id"]), "values": chart_values(c.get("spec") or {})})
         elif kind == "SqlDetails":
             sql.append({"summary": c.get("summary", ""), "sql": c.get("sql", "")})
         elif kind == "Card":  # what Metric expands to: Card > Column > [caption, h2, SqlDetails]

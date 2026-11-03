@@ -39,7 +39,7 @@ class VegaChart(ComponentBuilderNode):
 
 class DataGrid(ComponentBuilderNode):
     component: Literal["DataGrid"] = "DataGrid"
-    columns: list[dict[str, str]]
+    columns: list[dict[str, Any]]  # key, label, align?, bars? (SPEC §18)
     rows: list[list[str]]
     caption: str | None = None
     action: dict[str, Any] | None = None  # {source, rows, drillable}: clickable rows (SPEC §15)

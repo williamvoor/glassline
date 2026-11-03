@@ -22,7 +22,13 @@ export const DataGridApi = {
       .object({
         columns: z.array(
           z
-            .object({key: z.string(), label: z.string(), align: z.enum(['start', 'end']).optional()})
+            .object({
+              key: z.string(),
+              label: z.string(),
+              align: z.enum(['start', 'end']).optional(),
+              // Share bars (SPEC §18): per row, the cell's share of the column's largest shown value.
+              bars: z.array(z.number().min(0).max(1).nullable()).optional(),
+            })
             .strict(),
         ),
         rows: z.array(z.array(z.string())),
@@ -35,7 +41,15 @@ export const DataGridApi = {
   ),
 } satisfies ComponentApi;
 
-type Column = {key: string; label: string; align?: 'start' | 'end'};
+type Column = {key: string; label: string; align?: 'start' | 'end'; bars?: (number | null)[]};
+
+/** A cell: its formatted text, then a thin share bar under it when the column has bars. The bar
+ * is decoration (aria-hidden); the text is what screen readers read. */
+function cell(text: string, column: Column, row: number) {
+  const share = column.bars?.[row];
+  if (share === undefined || share === null) return text;
+  return html`${text}<span class="share-bar" aria-hidden="true"><span style=${`width:${(share * 100).toFixed(1)}%`}></span></span>`;
+}
 
 export class ExplorerDataGrid extends A2uiLitElement<typeof DataGridApi> {
   static readonly tagName = 'explorer-data-grid';
@@ -85,10 +99,10 @@ export class ExplorerDataGrid extends A2uiLitElement<typeof DataGridApi> {
                   }
                 }}
               >
-                ${columns.map((c, i) => html`<td style=${align(c)}>${row[i] ?? ''}${i === last ? askTag : nothing}</td>`)}
+                ${columns.map((c, i) => html`<td style=${align(c)}>${cell(row[i] ?? '', c, index)}${i === last ? askTag : nothing}</td>`)}
               </tr>`
             : html`<tr>
-                ${columns.map((c, i) => html`<td style=${align(c)}>${row[i] ?? ''}</td>`)}
+                ${columns.map((c, i) => html`<td style=${align(c)}>${cell(row[i] ?? '', c, index)}</td>`)}
               </tr>`,
         )}
       </tbody>

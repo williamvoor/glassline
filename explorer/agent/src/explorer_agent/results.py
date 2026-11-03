@@ -96,6 +96,13 @@ class ResultStore:
             self._results.popitem(last=False)
         return result
 
+    def reserve_id(self) -> str:
+        """The next Result ID, for a Result kept outside the store (a Board's, SPEC §18), so the
+        Conversation's one counter never issues an ID twice."""
+        rid = f"r{self._next}"
+        self._next += 1
+        return rid
+
     def readd(self, result: StoredResult) -> StoredResult:
         """Put an evicted Result back under a fresh ID (an Ask on an old Visual, SPEC §15)."""
         return self.add(

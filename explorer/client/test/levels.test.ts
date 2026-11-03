@@ -3,7 +3,7 @@
 import {afterEach, describe, expect, it} from 'vitest';
 import type {AgentConnection, AskEvent, UiAction} from '../src/a2a.js';
 import '../src/app.js';
-import {ACTION_FAILED_KEY, LEVEL_KEY, MODEL_KEY, type ExplorerApp} from '../src/app.js';
+import {ACTION_FAILED_KEY, LEVEL_KEY, MODEL_KEY, NO_BOARDS_KEY, OPEN_BOARD, type ExplorerApp} from '../src/app.js';
 import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
 
 const CTX = 'ctx-1';
@@ -54,6 +54,11 @@ function fakeAgent(
       yield* events;
     },
     async *act(action, _contextId, viewing) {
+      if (action.name === OPEN_BOARD) {
+        // These tests cover Levels (SPEC §15), not Boards: the Dataset has none (SPEC §18).
+        yield {kind: 'final', contextId: CTX, prose: 'No Boards', a2ui: [], metadata: {[ACTION_FAILED_KEY]: true, [NO_BOARDS_KEY]: true}};
+        return;
+      }
       agent.actions.push({action, viewing});
       if (agent.gate) await agent.gate;
       if (opts.actionStatus ?? true) yield {kind: 'status', text: 'Running the drill-down'};

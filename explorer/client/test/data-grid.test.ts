@@ -85,4 +85,27 @@ describe('DataGrid', () => {
     const el = await grid();
     expect(el.querySelector('.visual-hint')).toBeNull();
   });
+
+  it('draws share bars under the formatted text, none for a null cell (SPEC §18, B16)', async () => {
+    const processor = createProcessor();
+    processor.processMessages([
+      {version: 'v0.9', createSurface: {surfaceId: 's', catalogId: EXPLORER_CATALOG_ID}},
+      {version: 'v0.9', updateComponents: {surfaceId: 's', components: [{
+        id: 'root', component: 'DataGrid',
+        columns: [{key: 'n', label: 'Name'}, {key: 'v', label: 'Value', align: 'end', bars: [1, 0.25, null]}],
+        rows: [['a', '$200'], ['b', '$50'], ['c', '—']],
+      }]}},
+    ] as unknown as A2uiMessage[]);
+    const el = document.createElement('a2ui-surface') as HTMLElement & {surface: unknown};
+    el.surface = processor.model.surfacesMap.get('s');
+    document.body.replaceChildren(el);
+    for (let i = 0; i < 10; i++) await new Promise(r => setTimeout(r, 10));
+
+    const cells = [...el.querySelectorAll('tbody tr')].map(tr => tr.querySelectorAll('td')[1]!);
+    expect(cells.map(td => td.textContent)).toEqual(['$200', '$50', '—']);
+    const widths = cells.map(td => (td.querySelector('.share-bar > span') as HTMLElement | null)?.style.width ?? null);
+    expect(widths).toEqual(['100.0%', '25.0%', null]);
+    expect(cells[0]!.querySelector('.share-bar')!.getAttribute('aria-hidden')).toBe('true');
+    expect(el.querySelector('tbody tr td:first-child .share-bar')).toBeNull(); // the Name column has none
+  });
 });

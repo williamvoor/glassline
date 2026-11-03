@@ -9,9 +9,10 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from explorer_agent.boards import Board, BoardError, load_boards
 from explorer_agent.sql import check_dsn
 
 FORMATS = ("express", "direct_json")
@@ -53,6 +54,7 @@ class Dataset:
     currency: Currency
     comment_overlay: CommentOverlay | None = None
     examples: tuple[str, ...] = ()  # example questions for the client; never in the prompt
+    boards: Mapping[str, Board] = field(default_factory=dict)  # SPEC §18; empty: no Explorer tab
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,11 @@ class Settings:
     max_action_sources: int = 50
     max_prefetched: int = 30
     max_pending_pairs: int = 5
+    # Boards (SPEC §18)
+    board_query_concurrency: int = 2
+    board_row_cap: int = 500
+    board_cache_ttl_s: int = 300
+    max_board_cache: int = 20
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
         return f"Settings(model={self.model!r}, format={self.format!r}, dataset={self.dataset.name!r})"
@@ -107,6 +114,10 @@ _INTS = {
     "MAX_ACTION_SOURCES": 50,
     "MAX_PREFETCHED": 30,
     "MAX_PENDING_PAIRS": 5,
+    "BOARD_QUERY_CONCURRENCY": 2,
+    "BOARD_ROW_CAP": 500,
+    "BOARD_CACHE_TTL_S": 300,
+    "MAX_BOARD_CACHE": 20,
 }
 
 
@@ -196,7 +207,15 @@ def load_dataset(dataset_dir: Path) -> Dataset:
         ),
         comment_overlay=overlay,
         examples=tuple(e.strip() for e in examples),
+        boards=_boards(dataset_dir, allowed),
     )
+
+
+def _boards(dataset_dir: Path, allowed: tuple[str, ...]) -> dict[str, Board]:
+    try:
+        return load_boards(dataset_dir, allowed)
+    except BoardError as e:
+        raise ConfigError(str(e)) from None
 
 
 def _comment_text(value: object) -> bool:
@@ -259,6 +278,8 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         raise ConfigError("DATASET_DIR is required (the dataset directory, relative to explorer/)")
     dataset_dir = explorer_root / dataset_dir_name
     dataset = load_dataset(dataset_dir)
+    if dataset.boards and fmt != "express":
+        raise ConfigError(f"the dataset has Boards, whose layouts are Express, so FORMAT must be express (it is {fmt})")
     return Settings(
         model=env.get("MODEL", "").strip() or "meta/muse-spark-1.3",
         format=fmt,
@@ -287,4 +308,8 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         max_action_sources=_positive_int(env, "MAX_ACTION_SOURCES"),
         max_prefetched=_positive_int(env, "MAX_PREFETCHED"),
         max_pending_pairs=_positive_int(env, "MAX_PENDING_PAIRS"),
+        board_query_concurrency=_positive_int(env, "BOARD_QUERY_CONCURRENCY"),
+        board_row_cap=_positive_int(env, "BOARD_ROW_CAP"),
+        board_cache_ttl_s=_positive_int(env, "BOARD_CACHE_TTL_S"),
+        max_board_cache=_positive_int(env, "MAX_BOARD_CACHE"),
     )

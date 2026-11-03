@@ -1,0 +1,35 @@
+# The Explorer Board template (SPEC §18, slice 4). Dataset-agnostic: no SQL, no table, column or
+# domain names. The bootstrap tool has Muse Wonder fill it in for one database, writing
+# `datasets/<name>/boards/explorer.toml`, which a person reviews. The agent never loads this file.
+#
+# Slots are written <like this>. A filled Board keeps this shape: top-level keys first (TOML puts a
+# key written after a [[queries]] table inside that table), then one [[queries]] per query. Query
+# names replace the <..._query> slots in the layout, and must differ from the layout's own names
+# (root, metrics, breakdown, trend, top). Every figure comes from a query (ADR 0001).
+
+title = "Explorer"
+question = "<one question this dataset answers, plain text>"
+scope = "<what the Board covers: all rows, the period, what is excluded>"
+layout = """
+root = Column([metrics, Row([breakdown, trend]), top])
+metrics = Row([<2 to 4 Metric calls on the totals query>])
+breakdown = Treemap("<share_query>", "<title>", "<category column>", "<value column>", "<format>")
+trend = LineChart("<trend_query>", "<period column>", "<value column>", "<title>", format="<format>")
+top = DataTable("<top_query>", "<title>", "<columns>", "<column:format pairs>", bars="<value column>")
+"""
+
+[[queries]]
+name = "<totals_query>"
+sql = "<one row: the headline totals>"
+
+[[queries]]
+name = "<share_query>"
+sql = "<one row per category with its value; every category, so the treemap's Other is complete>"
+
+[[queries]]
+name = "<trend_query>"
+sql = "<one row per period in time order, with its value>"
+
+[[queries]]
+name = "<top_query>"
+sql = "<the top rows by value, at most 10 to 20>"

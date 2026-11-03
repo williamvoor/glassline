@@ -106,3 +106,67 @@ def test_overlay_drift_fails_startup(pg, tmp_path):
         done, "comment overlay", "unknown table mart.gone", "unknown column mart.contract.no_such_col",
         secret="explorer_ro:",
     )
+
+
+# --- `boards` (SPEC §18, B19) ---------------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+DATASET = Path(__file__).resolve().parents[2] / "datasets" / "austender"
+
+
+def _dataset_with_board(tmp_path, totals_sql):
+    import shutil
+
+    from tests.test_boards import SEED_BOARD
+
+    for name in ("dataset.toml", "notes.md", "glossary.md"):
+        shutil.copy(DATASET / name, tmp_path / name)
+    (tmp_path / "boards").mkdir()
+    board = SEED_BOARD.replace("SELECT sum(total_value) AS total_value FROM mart.agency", totals_sql)
+    (tmp_path / "boards" / "explorer.toml").write_text(board, encoding="utf-8")
+    return str(tmp_path)
+
+
+def run_boards(env_extra):
+    env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY")}
+    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", **env_extra})
+    return subprocess.run([sys.executable, "-m", "explorer_agent", "boards"], env=env, capture_output=True,
+                          text=True, timeout=120)
+
+
+@pytest.mark.db
+def test_boards_check_renders_each_board_cold(pg, tmp_path):
+    dataset = _dataset_with_board(tmp_path, "SELECT sum(total_value) AS total_value FROM mart.agency")
+    done = run_boards({"DATABASE_URL": pg.ro_dsn, "DATASET_DIR": dataset})
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("ok explorer: ")
+
+
+@pytest.mark.db
+def test_boards_check_fails_a_board_whose_query_fails_when_rendered(pg, tmp_path):
+    # Passes the LIMIT 0 check (nothing is evaluated), fails when rows are produced.
+    sql = "SELECT sum(total_value) / (count(*) - count(*)) AS total_value FROM mart.agency"
+    done = run_boards({"DATABASE_URL": pg.ro_dsn, "DATASET_DIR": _dataset_with_board(tmp_path, sql)})
+    assert done.returncode == 1
+    assert "FAIL explorer" in done.stdout and "failed queries: totals" in done.stdout
+
+
+def test_main_rejects_unknown_arguments():
+    done = subprocess.run([sys.executable, "-m", "explorer_agent", "nope"], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 2 and "usage" in done.stderr
+
+
+@pytest.mark.db
+async def test_boards_check_fails_a_board_over_the_cold_target(pg, tmp_path, capsys):
+    """B19: the time comparison itself (a target of 0 s, which every render misses)."""
+    from explorer_agent.__main__ import EXPLORER_ROOT, _boards_check
+    from explorer_agent.config import load_settings
+
+    dataset = _dataset_with_board(tmp_path, "SELECT sum(total_value) AS total_value FROM mart.agency")
+    settings = load_settings({"DATABASE_URL": pg.ro_dsn, "DATASET_DIR": dataset}, EXPLORER_ROOT)
+    assert await _boards_check(settings, target_s=0.0) == 1
+    out = capsys.readouterr().out
+    assert out.startswith("FAIL explorer: ") and "s cold (target < 0.0 s)" in out
+    assert "failed queries" not in out  # it failed on time alone
+    assert await _boards_check(settings, target_s=60.0) == 0

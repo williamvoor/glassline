@@ -107,6 +107,9 @@ export function themedChartConfig(token: (name: string) => string): Record<strin
     title: {...d.title, color: t('--fg', d.title.color)},
     range: {category: category.length ? category : CHART_COLORS},
     mark: {color: category[0] ?? CHART_COLORS[0]}, // a single series isn't coloured by `range`
+    // Explorer: labels drawn on a mark (treemap tiles, SPEC §18) in the card's colour, which
+    // contrasts with --chart-1 in both themes. The agent's specs leave their fill to this.
+    text: {fill: t('--panel', '#ffffff')},
   };
 }
 
@@ -450,10 +453,20 @@ export function transformSpec(
     }
   } else {
     transformedSpec['height'] = effectiveHeight;
-    transformedSpec['width'] = containerWidth > 0 ? containerWidth : 'container';
+    // Explorer: full Vega (a treemap, SPEC §18) has no 'container' width; Vega-Lite does.
+    transformedSpec['width'] = containerWidth > 0 ? containerWidth : isFullVega(vegaSpec) ? FULL_VEGA_FALLBACK_WIDTH : 'container';
   }
 
   return transformedSpec;
+}
+
+/** Explorer: width for a full-Vega spec when the container hasn't been measured. */
+export const FULL_VEGA_FALLBACK_WIDTH = 600;
+
+/** Explorer: a full Vega spec (its `$schema` names Vega, not Vega-Lite), e.g. the treemap. */
+export function isFullVega(vegaSpec: Record<string, unknown>): boolean {
+  const schema = vegaSpec['$schema'];
+  return typeof schema === 'string' && /\/vega\/v\d/.test(schema);
 }
 
 /** Explorer: a pointer on every clickable mark (SPEC §15, §16; the hint line names the kind). A
@@ -469,8 +482,10 @@ function withCursor(vegaSpec: Record<string, unknown>, action: ActionProp | unde
   return {...vegaSpec, mark: {...base, cursor: 'pointer'}};
 }
 
-/** Explorer: the clicked mark's category values, for the Ask confirmation. */
+/** Explorer: the clicked mark's label, for the Ask confirmation: the row label the agent put in
+ * `_label` (SPEC §18), or for older specs the category values from the encoding. */
 function markLabel(vegaSpec: Record<string, unknown>, datum: Record<string, unknown>): string {
+  if (typeof datum['_label'] === 'string') return datum['_label'];
   const encoding = isPlainObject(vegaSpec['encoding']) ? vegaSpec['encoding'] : {};
   const parts: string[] = [];
   for (const channel of ['x', 'y', 'color']) {

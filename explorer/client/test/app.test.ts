@@ -145,3 +145,92 @@ describe('explorer-app', () => {
     expect(texts(app, '.examples button')).toHaveLength(2);
   });
 });
+
+// --- The Explorer Board on load (SPEC §18, slice 1a) -----------------------------------------------
+
+import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
+import {ACTION_FAILED_KEY, LEVEL_KEY, NO_BOARDS_KEY, OPEN_BOARD} from '../src/app.js';
+import type {UiAction} from '../src/a2a.js';
+
+const BOARD_SID = 'turn-0-1-abc';
+const boardReply = (contextId = 'ctx-board'): AskEvent => ({
+  kind: 'final', contextId, prose: '',
+  a2ui: [
+    {version: 'v0.9', createSurface: {surfaceId: BOARD_SID, catalogId: EXPLORER_CATALOG_ID}},
+    {version: 'v0.9', updateComponents: {surfaceId: BOARD_SID, components: [
+      {id: 'root', component: 'Column', children: ['board_title']},
+      {id: 'board_title', component: 'Text', text: 'Explorer', variant: 'h2'},
+    ]}},
+  ],
+  metadata: {[LEVEL_KEY]: {turn: 0, level: 1, label: 'Explorer', surfaceId: BOARD_SID}},
+});
+
+function boardAgent(reply: () => AskEvent, gate?: Promise<void>) {
+  const calls: Call[] = [];
+  const acts: {action: UiAction; contextId?: string}[] = [];
+  const connection: AgentConnection = {
+    info: {description: 'Demo contracts', examples: ['Top suppliers?']},
+    async *askQuestion(text, contextId) {
+      calls.push({text, contextId});
+      yield* answer('ok', contextId ?? 'ctx-new');
+    },
+    async *act(action, contextId) {
+      acts.push({action, contextId});
+      if (gate) await gate;
+      yield reply();
+    },
+  };
+  return {calls, acts, connector: async () => connection};
+}
+
+describe('explorer-app Explorer Board', () => {
+  it('opens the Explorer on load and shows it above the examples; the first question joins its conversation', async () => {
+    const agent = boardAgent(() => boardReply());
+    const app = await mount(agent.connector);
+    expect(agent.acts.map(a => [a.action.name, a.action.context, a.contextId])).toEqual([[OPEN_BOARD, {board: 'explorer'}, undefined]]);
+    const board = q(app, '.canvas .board a2ui-surface');
+    expect(board).not.toBeNull();
+    expect(board!.textContent).toContain('Explorer');
+    // The examples move below it.
+    expect(board!.closest('.board')!.compareDocumentPosition(q(app, '.canvas .examples')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(q(app, '.turn-list')).toBeNull(); // Turn 0 has no Sidebar entry
+    (q(app, '.examples button') as HTMLButtonElement).click();
+    await settle(app);
+    expect(agent.calls).toEqual([{text: 'Top suppliers?', contextId: 'ctx-board'}]);
+    expect(q(app, '.canvas .board')).toBeNull();
+  });
+
+  it('a question asked before the Board arrives waits for it and uses its conversation', async () => {
+    let open!: () => void;
+    const agent = boardAgent(() => boardReply(), new Promise<void>(r => (open = r)));
+    const app = await mount(agent.connector);
+    void app.ask('Early?');
+    await settle(app);
+    expect(agent.calls).toEqual([]);
+    open();
+    await settle(app);
+    expect(agent.calls).toEqual([{text: 'Early?', contextId: 'ctx-board'}]);
+  });
+
+  it('without Boards shows the empty state as before', async () => {
+    const agent = boardAgent(() => ({kind: 'final', contextId: 'ctx-x', prose: 'none', a2ui: [],
+      metadata: {[ACTION_FAILED_KEY]: true, [NO_BOARDS_KEY]: true}}));
+    const app = await mount(agent.connector);
+    expect(q(app, '.canvas .board')).toBeNull();
+    expect(texts(app, '.examples button')).toEqual(['Top suppliers?']);
+    (q(app, '.examples button') as HTMLButtonElement).click();
+    await settle(app);
+    expect(agent.calls[0]!.contextId).toBeUndefined(); // a rejected open_board started no conversation for us
+  });
+
+  it('a new conversation opens the Explorer again', async () => {
+    const agent = boardAgent(() => boardReply());
+    const app = await mount(agent.connector);
+    (q(app, '.examples button') as HTMLButtonElement).click();
+    await settle(app);
+    (q(app, '.new-conversation') as HTMLButtonElement).click();
+    await settle(app);
+    expect(agent.acts.map(a => [a.action.name, a.contextId])).toEqual([[OPEN_BOARD, undefined], [OPEN_BOARD, undefined]]);
+    expect(q(app, '.canvas .board a2ui-surface')).not.toBeNull();
+  });
+});

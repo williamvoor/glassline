@@ -29,8 +29,9 @@ export interface AgentConnection {
   info: AgentInfo;
   /** A typed question. `viewing`: surface IDs of Levels shown that aren't their Turn's latest. */
   askQuestion(text: string, contextId?: string, viewing?: string[]): AsyncGenerator<AskEvent, void, undefined>;
-  /** An Action: a Drill-down or a confirmed Ask. */
-  act(action: UiAction, contextId: string, viewing?: string[]): AsyncGenerator<AskEvent, void, undefined>;
+  /** An Action: a Drill-down, a confirmed Ask, or `open_board`, which may start the conversation
+   * (no contextId yet, SPEC §18). */
+  act(action: UiAction, contextId?: string, viewing?: string[]): AsyncGenerator<AskEvent, void, undefined>;
 }
 
 export const VIEWING_KEY = 'explorerViewing';

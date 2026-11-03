@@ -532,3 +532,114 @@ async def test_a_model_run_without_a_model_name_sends_no_model_key():
     async with client:
         _, events = await first_answer(client)
     assert MODEL_KEY not in meta(events)  # absent, not null: null means "no model"
+
+
+# --- open_board (SPEC §18, B5) ---------------------------------------------------------------------
+
+from explorer_agent.executor import NO_BOARDS_KEY, BoardViews  # noqa: E402
+from explorer_agent.testing.stub_server import STUB_BOARD, StubBoardRunner  # noqa: E402
+from explorer_agent.boards import BoardRenderer  # noqa: E402
+
+
+class NoModel(Answers):
+    async def __call__(self, conv, text, status):
+        raise AssertionError("the model must not be called for a Board")
+
+
+def make_boards(boards=True):
+    answers = NoModel()
+    views = None
+    if boards:
+        renderer = BoardRenderer({"explorer": STUB_BOARD}, StubBoardRunner(), concurrency=2, row_cap=500, ttl_s=300, max_cache=20)
+        views = BoardViews(renderer, answers.pipeline)
+    app = build_app(answers, url=URL, client_origin=ORIGIN, conversations=Conversations(), boards=views)
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL)
+
+
+def open_board(board="explorer", **extra):
+    return {"name": "open_board", "surfaceId": "", "sourceComponentId": "", "timestamp": "2026-11-03T00:00:00Z",
+            "context": {"board": board, **extra}}
+
+
+async def test_open_board_renders_the_explorer_as_turn_0_without_the_model():
+    async with make_boards() as client:
+        events = await send_action(client, open_board(), None)
+    m = meta(events)
+    assert not m.get(ACTION_FAILED_KEY)
+    assert m[LEVEL_KEY]["turn"] == 0 and m[LEVEL_KEY]["level"] == 1
+    assert m[LEVEL_KEY]["surfaceId"].startswith("turn-0-1-")
+    assert m[MODEL_KEY] is None  # no model, database only
+    kinds = {c["component"] for c in components(events)}
+    assert {"VegaChart", "DataGrid", "SqlDetails"} <= kinds
+
+
+async def test_a_second_open_board_unknown_and_malformed_are_rejected():
+    async with make_boards() as client:
+        events = await send_action(client, open_board(), None)
+        context_id = events[-1]["contextId"]
+        again = await send_action(client, open_board(), context_id)
+        unknown = await send_action(client, open_board("nope"), None)
+        malformed = await send_action(client, open_board(extra=1), None)
+    assert meta(again)[ACTION_FAILED_KEY] and "already open" in prose(again)
+    assert meta(unknown)[ACTION_FAILED_KEY] and "Unknown board" in prose(unknown)
+    assert meta(malformed)[ACTION_FAILED_KEY] and "malformed" in prose(malformed)
+
+
+async def test_open_board_without_boards_says_so():
+    async with make_boards(boards=False) as client:
+        events = await send_action(client, open_board(), None)
+    m = meta(events)
+    assert m[ACTION_FAILED_KEY] and m[NO_BOARDS_KEY]
+
+
+async def test_a_question_after_the_board_uses_the_next_turn_and_unique_result_ids():
+    answers = Answers()
+    renderer = BoardRenderer({"explorer": STUB_BOARD}, StubBoardRunner(), concurrency=2, row_cap=500, ttl_s=300, max_cache=20)
+    conversations = Conversations()
+    app = build_app(answers, url=URL, client_origin=ORIGIN, conversations=conversations,
+                    boards=BoardViews(renderer, answers.pipeline))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL) as client:
+        events = await send_action(client, open_board(), None)
+        context_id = events[-1]["contextId"]
+        conv = conversations.get_or_create(context_id)
+        board_ids = {r.id for inst in conv.boards.values() for r in inst.results.values()}
+        conv.store.add(sql="SELECT 1", purpose="p", columns=["x"], column_types=["int"], rows=[], truncated=False)
+        assert not board_ids & set(conv.store.ids())
+        assert conv.actions.new_turn().turn == 1
+
+
+async def test_the_stub_app_answers_a_question_after_its_board():
+    """Regression: the Board takes r1–r4, so the stub's canned reply must name the fixture's own ID."""
+    from explorer_agent.testing.stub_server import stub_answerer, stub_boards, stub_drills
+
+    app = build_app(stub_answerer, url=URL, client_origin=ORIGIN, conversations=Conversations(),
+                    drills=stub_drills(), boards=stub_boards())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=URL) as client:
+        board = await send_action(client, open_board(), None)
+        events = await stream(client, context_id=board[-1]["contextId"])
+    assert not meta(events).get(ACTION_FAILED_KEY)
+    assert "couldn't build the view" not in prose(events)
+    assert any(c["component"] == "VegaChart" for c in components(events))
+
+
+async def test_a_board_that_fails_to_build_can_be_opened_again(monkeypatch):
+    import explorer_agent.executor as executor_module
+    from explorer_agent.ui import UiError
+
+    real = executor_module.build_board
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise UiError(["invalid UI: boom"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(executor_module, "build_board", flaky)
+    async with make_boards() as client:
+        first = await send_action(client, open_board(), None)
+        context_id = first[-1]["contextId"]
+        second = await send_action(client, open_board(), context_id)
+    assert meta(first)[ACTION_FAILED_KEY] and "couldn't be shown" in prose(first)
+    assert not meta(second).get(ACTION_FAILED_KEY)
+    assert meta(second)[LEVEL_KEY]["level"] == 1  # the failed attempt's Level was rolled back
