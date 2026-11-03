@@ -1306,24 +1306,25 @@ Source: `docs/item7-sample-review-20261103.md` ("Second review"), plus the user'
 
 ### Decisions
 
-1. **D3:** a new linter rule `repeated_value`. Two static Text components on one surface show the same string: a literal (heading mark stripped) or an absolute path's value, compared case-insensitively. Strings with no letter or under 4 characters don't count, and template items are not checked. The pipeline rejects such a surface and regenerates it, like every other linter rule.
+1. **D3:** a new linter rule `repeated_value`. Two static Text components on one surface show the same string: a literal (heading mark stripped) or an absolute path's value, compared case-insensitively. Strings with no letter or under 4 characters don't count. Texts inside a template item don't count, and neither does a cell repeated across a static list's rows (the same place in sibling containers: two claims both "Pending"). A Text that echoes a value elsewhere still counts, even inside a row. The pipeline rejects such a surface and regenerates it, like every other linter rule. Amended after the refuter's review, which found the first version rejected static lists whose rows shared a status.
 2. **D4:** a run of siblings never has two dividers next to each other. The grower collapses them, with the other B6 rules.
-3. **D5:** `plural_nouns` returns None for "totals", "standings", "hours", and any last word ending in "us". Those entities get no count row.
-4. **D6:** a length check's minimum is at least the regex's minimum for that kind: long text 5, secret 8, others 2. Messages follow the number.
+3. **D5:** `plural_nouns` returns None for a fixed list of last words: "totals", "standings", "hours", and "-us" words whose singular isn't the word minus "s" ("status", "campus", "bonus", "census", "focus", "virus", "radius"). Those entities get no count row. "Menus" still counts ("menu"). Amended after the refuter's review: the first version dropped every "-us" word.
+4. **D6:** a length check's minimum is at least the regex's minimum for that kind, read from the regex (`{n,}`), and never below 2: long text 5, secret 8, others 2. The form-level `not(length(max: n))` check agrees too: n is the field's minimum minus 1 (at least 2). Messages state the number. Amended after the refuter's review: the minimum is derived from `REGEX`, not copied, and the form-level check had the same contradiction.
 5. **D7:**
    - A child of a list item that is a Row (items side by side) gets no `weight`. List siblings already share one layout (proto); this keeps their columns lined up. A stacked item (Column) may still weight its children.
    - An Image inside a Row never gets the `header` variant ("as a banner across the top").
    - Not done: the containers inside a screen that says "Everything is left-aligned" may still choose their own alignment. In the render that wasn't visible, because a parent with `align: start` shrinks a Row to its content.
-6. **Coverage** must still reach every key at full size, on seeds 0 and 1. The gallery still passes the linter with the existing allowlist, or the new rule gets justified allowlist entries.
+6. **Coverage** must still reach every key at full size, on seeds 0 and 1. The gallery still passes the linter with the existing allowlist, or the new rule gets justified allowlist entries. Result (2026-11-03): no gaps on either seed, minimum 30. The linter rejects about 60–80 attempts per 3640-row run. No gallery allowlist entries were needed.
+7. **Data:** the fixes act on new data only. The committed `data/synth/train` still has 138 rows that fail `repeated_value` (refuter count). Regeneration at full size, already planned, replaces them.
 
 ### Criteria → tests
 
 | # | Criterion | Test |
 |---|---|---|
-| D3 | `repeated_value` fires on a repeated literal and on a literal equal to a bound value; it ignores short and non-letter strings | `test_synth_lint.py::test_rule_fires[repeated_value]`, `::test_repeated_value_scope` |
+| D3 | `repeated_value` fires on a repeated literal and on a literal equal to a bound value; it ignores short and non-letter strings, list cells and template items | `test_synth_lint.py::test_rule_fires[repeated_value]`, `::test_repeated_value_scope`, `::test_repeated_value_ignores_list_cells_and_template_items` |
 | D4 | No run of siblings has two adjacent dividers | `test_synth_plausibility.py::test_no_adjacent_dividers` |
 | D5 | `plural_nouns` refuses non-countable last words | `test_synth_plausibility.py::test_plural_nouns_refuse_uncountable` |
-| D6 | A length minimum is never below the kind's regex minimum | `test_synth_plausibility.py::test_length_minimum_matches_regex` |
+| D6 | A length minimum is never below the kind's regex minimum, its message states it exactly, and the form-level not-length check agrees | `test_synth_plausibility.py::test_length_min_follows_the_regex`, `::test_length_minimum_matches_regex`, `::test_not_length_check_agrees_with_the_field` |
 | D7a | No weighted child inside a side-by-side list item | `test_synth_plausibility.py::test_side_by_side_items_have_no_weights` |
 | D7b | No banner Image inside a Row | `test_synth_plausibility.py::test_no_banner_image_in_a_row` |
 | S8 | Synthetic rows and the gallery still pass the linter | `test_synth_lint.py::test_gallery_passes`, `::test_synthetic_passes` (existing) |
