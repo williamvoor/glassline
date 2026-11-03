@@ -121,7 +121,7 @@ B1, B3, B4 and B6 didn't come up again. These are new findings, with the row tha
 - Fix: when a regex and a length check land on the same field, derive both from one minimum.
 - Test: a field's regex minimum and its length-check minimum agree.
 
-Still open from section B (as planned): money shown raw ("Monthly Limit 400", "Expected salary 52000") is B5, and the folder icon on courses and the error icon for a disliked meal are B2.
+The seed-7 rows were most likely generated before the B5 and B2 fixes (commit `4a0694a`) reached the working tree. So their raw money ("Monthly Limit 400", "Expected salary 52000") and ill-fitting icons (a folder on courses, an error icon for a disliked meal) are probably already fixed. Check them in the next samples. D1–D6 are separate from B2 and B5 and still stand.
 
 ### Reviewer comparison (for automated review)
 
