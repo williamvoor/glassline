@@ -47,6 +47,14 @@ _Avoid_: Page, step, view
 The generated UI of one Level.
 _Avoid_: Panel, widget, card
 
+**Sidebar**:
+The client's left column: the list of Turns and the composer.
+_Avoid_: Nav, history
+
+**Canvas**:
+The client's main area, showing the selected Turn's shown Level.
+_Avoid_: Main view, page
+
 ### Interaction
 
 **Action**:

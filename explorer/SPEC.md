@@ -1055,3 +1055,156 @@ Decisions made while building, where the text above was silent or had to change:
   Visuals were Ask-only, so no click could be a Drill-down. The "Clicks" instruction makes
   `drill_sql` optional and Muse Spark never wrote one. Drill-down speed is therefore unmeasured
   with the real model. Open, not yet specified: make Drill queries happen.
+
+## 16. Amendment: look and feel (2026-11-03)
+
+Status: **approved** (2026-11-03), built; refuter PASS after one fix round. The user settled three choices: one Turn on the Canvas at a
+time, Follow-ups stay inside the Surface, and both light and dark themes. The rest is decided
+below. Amends §8 (the chat view of §14) and the provisional Ask-only cue of §15. The look comes
+from the "Follow the Contract" prototype (`../docs/Follow the Contract · SaC prototype.html`):
+a dark ink top bar, a white Sidebar, a light grey Canvas, white bordered Cards, Public Sans for
+text and JetBrains Mono for labels, figures and SQL. Decision: ADR 0026. New terms in
+`../CONTEXT.md`: **Sidebar**, **Canvas**.
+
+### Layout
+
+- **Top bar** (ink background, full width): "Explorer", the Dataset description (one line,
+  ellipsis), and New conversation on the right.
+- **Sidebar** (left, 300 px): a mono header "TURNS" with the count, then one entry per Turn (the
+  question; below it a mono line with a spinner and timer while it runs, "Failed" after an
+  question, or the Level count once there is more than one Level; a failed Action doesn't mark
+  the entry, its error shows on the Canvas). The selected Turn is marked
+  (`aria-current`). At the bottom, pinned: a mono "ASK" label, the composer textarea and the
+  Ask button. Enter / Shift+Enter as in §14.
+- **Canvas** (the rest, scrolls on its own): the selected Turn only. Its question as the Canvas
+  title (`h2`; the top bar's "Explorer" is the page's one `h1`), then the Breadcrumb, the confirmation, errors and status as in §15, then the
+  prose and the Surface, then the Level's status line (below). Before the first question the
+  Canvas shows the §14 explanation and the examples as pill buttons.
+- **Selecting.** A new question selects its new Turn. Clicking a Sidebar entry selects that
+  Turn (no agent call), also while another Turn runs. A running Turn keeps running when it
+  isn't selected; its Sidebar entry shows the spinner. Clicks inside the Canvas stay disabled
+  while anything runs (§15).
+- **Narrow screens** (< 760 px): one column. The Turn list becomes a horizontal strip of chips
+  under the top bar (none before the first question), the Canvas follows, and the composer is
+  pinned to the bottom. The Dataset description, the "TURNS" header and the "ASK" label are
+  hidden there.
+- **Viewing.** `explorerViewing` now holds at most one surface ID: the selected Turn's shown
+  Level, when it isn't that Turn's latest. Other Turns aren't on screen. A typed question takes it
+  before its new Turn is selected, keeps it on the Turn, and Retry sends the same value again.
+
+### Status line (serving model)
+
+- Every final answer that adds a Level carries metadata `explorerModel`: the model's name
+  (`Settings.model`) for a model run (question or Ask), `null` for a Drill-down. The stub server
+  sends `"stub"`.
+- The client keeps elapsed time, steps and model **per Level** and shows, under the Level, a mono
+  line: `Answered in 7.9 s · 4 steps · meta/muse-spark-1.3`, or for a Drill-down
+  `Answered in 0.3 s · No model · database only`. The steps expand as before. A Level from an
+  agent that sends no `explorerModel` shows no model part; an agent with no model name configured
+  leaves the key out rather than sending `null`. A failed question shows
+  `Failed after X s · N steps`.
+
+### Theme
+
+- **Tokens** are CSS custom properties on `:root` in `index.html`: `--ink`, `--fg`, `--muted`,
+  `--faint`, `--line`, `--line-strong`, `--canvas`, `--panel`, `--soft`, `--accent`,
+  `--accent-soft`, `--error`, `--error-bg`, `--warn-bg`, `--chart-1` … `--chart-6`, `--sans`,
+  `--mono`. Light values come from the prototype (ink `#17202E`, muted `#4A5363`, line
+  `#E2E5EA`, canvas `#F2F3F5`, accent `#1F5FBF`, accent-soft `#EAF0F8`, error `#B00020`, chart
+  navy `#2E4A7D` and orange `#D97757` first). Dark values are ours (the prototype has none) and
+  apply under `@media (prefers-color-scheme: dark)`. There is no theme switch; the page sets
+  `color-scheme: light dark`.
+- **A2UI components** get the tokens through their `--a2ui-*` variables (colours, border, radius,
+  fonts, Card, Button, Text). Their defaults are zero-specificity, so plain `:root` rules win.
+- **Fonts:** `@fontsource-variable/public-sans` and `@fontsource-variable/jetbrains-mono`, pinned
+  exactly, imported in `main.ts` (bundled, no font CDN). Material Symbols keeps its link (§14).
+  Mono is used for: Sidebar and section labels, Metric captions, table headers and numeric
+  cells, the status line, the Breadcrumb and SQL.
+- **Cards.** Every Visual is a Card: `BarChart`, `LineChart` and `DataTable` return
+  `Card(Column(title, Visual, SQL))` instead of the bare Column (Metric already returns a Card).
+  Cards are white (dark: `--panel`), 1 px `--line` border, 8 px radius, no shadow. Buttons
+  (Follow-ups, a Drill-down's Ask) are pills with a `--line-strong` border.
+- **Charts.** The vendored VegaChart builds its default Vega config (font, axis, legend and title
+  colours, `range.category`) from the tokens via `getComputedStyle` when it renders, instead of
+  fixed colours, and renders again when `prefers-color-scheme` changes. The agent's specs still
+  carry no `config` (ADR 0026).
+
+### Ask-only cue (replaces the provisional `help` cursor)
+
+Clickable marks and rows all get a pointer cursor; on a line chart that means its points, and a
+click on the line itself does nothing (a line item's datum is an arbitrary point of the series). Each clickable VegaChart and DataGrid shows a
+mono hint line above itself (constants in `client/src/actions.ts`): "Click a bar or point for
+detail" / "Click a row for detail" when drillable, "Click a bar or point to ask the agent about it
+(you confirm first)" / "Click a row to ask the agent about it (you confirm first)" when Ask-only.
+The wording names no dataset. DataGrid rows that
+are Ask-only also show a small "Ask" tag at the end of the row on hover and focus.
+
+### Files
+
+| File | Change |
+|---|---|
+| `client/index.html` | tokens (light and dark), `--a2ui-*` mapping, layout and component styles |
+| `client/src/main.ts`, `client/package.json`, `package-lock.json` | the two fontsource packages |
+| `client/src/app.ts` | top bar, Sidebar, Canvas, selected Turn, per-Level status line, `explorerModel`, narrower `explorerViewing` |
+| `client/src/vendor/vegachart/vegaChart.ts`, `NOTICE` | config from tokens, re-render on scheme change, pointer for all clickable marks, hint line |
+| `client/src/components/data-grid.ts` | hint line, Ask tag |
+| `agent/src/explorer_agent/macros.py` | `BarChart`, `LineChart`, `DataTable` return a Card |
+| `agent/src/explorer_agent/executor.py`, `__main__.py`, `testing/stub_server.py` | `explorerModel` metadata |
+| `client/test/fixtures/slice_transport.json`, prompt snapshots | regenerated if the change reaches them |
+| `../CONTEXT.md` | Sidebar, Canvas |
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| L1 | Light tokens on `:root`, dark tokens under `prefers-color-scheme: dark`, every token defined in both, `--a2ui-*` mapped from tokens | `client/test/index-html.test.ts` |
+| L2 | Sidebar lists every Turn with its state; clicking an entry shows that Turn and makes no agent call; a new question selects its Turn; a running Turn keeps its spinner while another is selected | `client/test/app.test.ts` |
+| L3 | Only the selected Turn's Surface is in the Canvas; Breadcrumb, confirmation, Retry and examples work as before (existing §14/§15 tests updated, not dropped) | `app.test.ts`, `levels.test.ts` |
+| L4 | `explorerViewing` holds only the selected Turn's shown Level when it isn't the latest | `levels.test.ts` |
+| L5 | `explorerModel` is the model name for a question and an Ask, `null` for a Drill-down, absent on a failed Action and when no name is configured | `agent/tests/test_executor.py` |
+| L6 | The status line shows the model, or "No model · database only" for a Drill-down (no steps), per Level; a failed question shows "Failed after"; Retry resends the question's `explorerViewing` | `app.test.ts`, `levels.test.ts` |
+| L7 | Visual macros return a Card holding title, Visual and SQL; strict validation passes | `agent/tests/test_macros.py`, `test_ui.py` |
+| L8 | VegaChart config takes font and colours from the CSS tokens, and re-renders on a scheme change | `client/test/vegachart.test.ts` |
+| L9 | Drillable and Ask-only Visuals show their hint; all clickable marks get a pointer (line charts: the points; clicks on the line ignored); Ask-only rows have the Ask tag; non-clickable Visuals show no hint | `vegachart.test.ts`, `data-grid.test.ts` |
+| L10 | Prompt prefix still byte-identical across requests (snapshots regenerated only if a return type reaches it) | `test_prompt.py` |
+| L11 | Suites and build pass. Screenshots of the stub app, light and dark, wide and 390 px, checked by eye against the prototype | `uv run pytest`, `npm test`, `npm run build`, Playwright screenshots |
+
+### Decisions
+
+- **Look and feel lives in the client** (ADR 0026): the agent sends structure (a Card per
+  Visual) but no colours, fonts or Vega `config`. The viewer's light or dark scheme is only known
+  in the browser, and one set of tokens drives both A2UI and Vega.
+- **One Turn on the Canvas.** Levels already replace each other in place; showing one Turn makes
+  the Canvas a page, as in the prototype. Older Turns are one click away in the Sidebar.
+- **Follow-ups stay in the Surface**, restyled as pills; the Sidebar doesn't lift them out.
+- **Dark mode follows the OS**; no switch.
+- **Not taken from the prototype:** "COMPUTED"/"SOURCED" badges, tabs, Share/Fork buttons, the
+  controls bar, treemaps (a later catalog component, §15 Decisions), and the "What the app
+  received" panel.
+- **Nested Cards (deferred).** `Card` stays a passthrough component, so a model that wraps a
+  Visual in its own `Card` gets a Card inside a Card. Watch for it in the manual run; a prompt
+  line or a flattening step can follow if it happens.
+- **Fonts are bundled** with fontsource rather than loaded from Google Fonts, so the app works
+  offline and adds no third-party request per load.
+
+### Test command
+
+```bash
+cd explorer/agent && uv run pytest
+cd explorer/client && npm test && npm run build
+```
+
+### Build notes (2026-11-03)
+
+- **Return types don't reach the prompt.** The Visual macros' annotation changed from `Column` to
+  `Card` and the prompt snapshots still match; only `slice_transport.json` was regenerated.
+- **Drill-down's Ask button** sits inside the Drill-down's Card, after the SQL.
+- **Single-series colour.** Vega colours a single series with `config.mark.color`, not
+  `range.category`, so the themed config also sets `mark.color` to `--chart-1`.
+- **Captions.** A2UI wraps caption text in `<em>`; the page sets it upright.
+- **Extra tokens:** `--on-ink`, `--primary`/`--on-primary` (ink buttons, inverted in dark),
+  `--on-accent`, `--accent-line`.
+- **The status line counts the Level's own status steps.** A Drill-down sends none, so its line
+  reads `Answered in 0.3 s · No model · database only`.
+- **Viewing for a typed question** is taken before the new Turn is selected (what was on screen
+  when the user typed it).
