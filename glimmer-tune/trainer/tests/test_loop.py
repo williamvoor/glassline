@@ -29,7 +29,10 @@ def fake_scorer(dev):
         want = {r["id"] for r in dev if full or r["subset"]}
         assert {p["id"] for p in preds} == want
         seen.append((ckpt, full))
-        result = {"checkpoint": ckpt, "selection": (FULL if full else SUBSET)[ckpt]}
+        blind = (FULL if full else SUBSET)[ckpt]
+        # literal selection ranks the other way round: run 2 must select on the name-blind score
+        rows = [{"id": p["id"], "outside_catalog": i == 0} for i, p in enumerate(preds)]
+        result = {"checkpoint": ckpt, "selection_blind": blind, "selection": 1 - blind, "rows": rows}
         out.write_text(json.dumps(result))
         return result
 
@@ -102,7 +105,7 @@ def test_run_end_to_end_with_fakes(tmp_path):
     assert sorted(c for c, full in seen if full) == ["s000", "s004", "s005"]  # base + top 2 by subset
     assert result["winner"] == "s005"  # full dev overrules the subset ranking
     assert promoted == [("accounts/a/trainingSessions/ts-1", "s005", "glimmer-a2ui-t1-s005")]
-    assert calls[-1] == ("delete",)
+    assert calls[-2:] == [("delete",), ("close",)]  # item 9: the service is closed at the end
     # the full files reuse the subset answers and sample only the rest
     samples = [c[1] for c in calls if c[0] == "sample"]
     assert samples.count("acct/run-abc/s002") == 5 and samples.count("acct/run-abc/s004") == 10
@@ -137,6 +140,7 @@ def test_failure_keeps_session(tmp_path, failure):
         manifest = json.loads((tmp_path / "t1" / "manifest.json").read_text())
         assert manifest["stage"] == "failed" and "RuntimeError" in manifest["error"]
         assert ("delete",) not in svc.calls and promoted == []
+        assert ("close",) not in svc.calls  # closing might end the session that is kept for promotion
         assert any("ts-1" in line for line in logs)
     else:
         run.run()
@@ -175,7 +179,8 @@ def run_with(tmp_path, subset, full):
 
     def score(pred, out, is_full):
         ckpt = json.loads(pred.read_text().splitlines()[0])["checkpoint"]
-        return {"checkpoint": ckpt, "selection": (full if is_full else subset)[ckpt]}
+        blind = (full if is_full else subset)[ckpt]
+        return {"checkpoint": ckpt, "selection_blind": blind, "selection": 1 - blind, "rows": []}
 
     run.deps.scorer = score
     return run.run(), promoted
@@ -223,6 +228,38 @@ def test_failed_delete_is_recorded(tmp_path):
     run, *_ = make(tmp_path, svc)
     result = run.run()
     assert result["promoted"] and result["session_deleted"] is False and "delete failed" in result["delete_error"]
+    assert ("close",) in svc.calls  # item 9: closed even when the delete fails
+
+
+def test_failed_close_is_recorded(tmp_path):
+    svc = Service()
+
+    def boom():
+        raise RuntimeError("close failed")
+
+    svc.close = boom
+    run, *_ = make(tmp_path, svc)
+    result = run.run()
+    assert result["stage"] == "done" and "close failed" in result["close_error"]
+
+
+def test_error_rows_carry_zero_tokens():
+    from types import SimpleNamespace
+
+    from glimmer_trainer.loop import sample_one
+
+    class Broken:
+        def sample(self, **kw):
+            raise RuntimeError("down")
+
+    import glimmer_trainer.loop as loop
+
+    old, loop.RETRY_DELAYS = loop.RETRY_DELAYS, ()
+    try:
+        row = sample_one(API, Renderer(), Broken(), {"id": "d0", "messages": []}, 10, "s000")
+    finally:
+        loop.RETRY_DELAYS = old
+    assert row["finish"] == "error" and row["tokens"] == 0
 
 
 def test_existing_nonempty_run_dir_is_refused(tmp_path):
@@ -232,3 +269,33 @@ def test_existing_nonempty_run_dir_is_refused(tmp_path):
     with pytest.raises(Exception, match="exists"):
         run.run()
     assert svc.calls == []
+
+
+def test_run_2_settings_are_recorded(tmp_path):
+    """Item 9: unembed off, and every train_* flag in the manifest."""
+    run, svc, *_ = make(tmp_path)
+    result = run.run()
+    create = next(c for c in svc.calls if c[0] == "create")[1]
+    assert (create["train_mlp"], create["train_attn"], create["train_unembed"]) == (True, True, False)
+    assert {k: result["config"][k] for k in ("train_mlp", "train_attn", "train_unembed")} == {"train_mlp": True, "train_attn": True, "train_unembed": False}
+    assert Config(run_id="x").every == 25  # still a checkpoint every 25 steps by default
+
+
+def test_selection_is_name_blind_with_the_outside_catalog_rate(tmp_path):
+    """Item 9: subset ranking and the winner use the name-blind score; the manifest keeps both,
+    plus the outside-the-catalog rate."""
+    run, *_ = make(tmp_path)
+    result = run.run()
+    assert result["selection_key"] == "selection_blind"
+    assert result["finalists"] == ["s000", "s004", "s005"] and result["winner"] == "s005"
+    s4 = result["subset_scores"]["s004"]
+    assert s4 == {"selection_blind": 0.7, "selection": pytest.approx(0.3), "outside_catalog": pytest.approx(1 / 5)}
+    assert result["full_scores"]["s005"]["selection_blind"] == 0.8
+
+
+def test_sampled_tokens_are_recorded_per_row(tmp_path):
+    """Item 9: every prediction row carries how many tokens were sampled."""
+    run, *_ = make(tmp_path)
+    run.run()
+    preds = [json.loads(line) for line in (tmp_path / "t1" / "predictions" / "s002.jsonl").read_text().splitlines()]
+    assert all(p["tokens"] == len(f"<a2ui>acct/run-abc/s002</a2ui>") for p in preds)

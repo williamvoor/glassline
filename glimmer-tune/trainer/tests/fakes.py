@@ -142,3 +142,6 @@ class Service:
 
     def delete_training_session(self):
         self.calls.append(("delete",))
+
+    def close(self):
+        self.calls.append(("close",))

@@ -231,4 +231,6 @@ Examples:
   - Description: Checks that the value is not null, undefined, or empty.
   - value: The value to check.
 
+Express has no conditionals or operators. Values that vary per item belong in the data model.
+
 Reasoning strength: low.

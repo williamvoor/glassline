@@ -19,6 +19,7 @@ BASE_MODEL = "accounts/fireworks/models/muse-glimmer-30b"
 MAX_CKPT_NAME = 17  # Fireworks checkpoint ids must fit in 63 chars once wrapped
 RETRY_DELAYS = (2.0, 8.0)  # seconds before each retry of a failed sample
 ERROR_LIMIT = 0.25  # above this share of error rows a checkpoint's score is noise: stop the run
+SELECTION_KEY = "selection_blind"  # run 2 selects on the name-blind slot score (ADR 0021, amended)
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,10 @@ class Config:
     workers: int = 8
     top_k: int = 2
     base_model: str = BASE_MODEL
+    # LoRA targets (SPEC run 2, item 9): unembed off; asdict(cfg) records all three in the manifest.
+    train_mlp: bool = True
+    train_attn: bool = True
+    train_unembed: bool = False
 
     def model_id(self, ckpt: str) -> str:
         return f"glimmer-a2ui-{self.run_id}-{ckpt}"
@@ -109,10 +114,16 @@ def sample_one(api: Any, renderer: Any, sampler: Any, row: dict[str, Any], max_t
             res = sampler.sample(prompt=renderer.build_generation_prompt(row["messages"]), num_samples=1, sampling_params=params).result()
             seq = res.sequences[0]
             msg, _ = renderer.parse_response(list(seq.tokens))
-            return {"id": row["id"], "checkpoint": ckpt, "text": api.get_text_content(msg), "finish": "length" if seq.stop_reason == "length" else "stop"}
+            return {
+                "id": row["id"],
+                "checkpoint": ckpt,
+                "text": api.get_text_content(msg),
+                "finish": "length" if seq.stop_reason == "length" else "stop",
+                "tokens": len(seq.tokens),  # completion tokens sampled (item 9); retries that failed aren't counted
+            }
         except Exception as e:  # noqa: BLE001 - recorded per row, scored as a failure
             last = e
-    return {"id": row["id"], "checkpoint": ckpt, "text": None, "finish": "error", "error": redact(f"{type(last).__name__}: {last}")[:200]}
+    return {"id": row["id"], "checkpoint": ckpt, "text": None, "finish": "error", "tokens": 0, "error": redact(f"{type(last).__name__}: {last}")[:200]}
 
 
 def sample_rows(deps: Deps, path: str, rows: list[dict[str, Any]], ckpt: str, workers: int, max_tokens: int) -> list[dict[str, Any]]:
@@ -136,6 +147,17 @@ def pick_checkpoint(rows: list[dict[str, Any]], ckpt: str) -> dict[str, Any]:
     if not hits:
         raise RunError(f"no promotable checkpoint named {ckpt}")
     return max(hits, key=lambda r: str(r.get("createTime", "")))
+
+
+def summary(scores: dict[str, Any]) -> dict[str, Any]:
+    """What the manifest keeps of one score file: both selection scores and the share of rows
+    that reach outside the catalog (reported, not gated)."""
+    rows = scores.get("rows") or []
+    return {
+        "selection_blind": scores["selection_blind"],
+        "selection": scores["selection"],
+        "outside_catalog": sum(bool(r.get("outside_catalog")) for r in rows) / len(rows) if rows else 0.0,
+    }
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -210,7 +232,8 @@ class Run:
             raise RunError("checkpoint names too long")
         self.manifest.update(config=asdict(cfg), steps=len(steps), schedule=plan, stage="opening")
         tc = d.service.create_lora_training_client(
-            base_model=cfg.base_model, rank=cfg.rank, alpha=cfg.alpha, train_mlp=True, train_attn=True, train_unembed=True
+            base_model=cfg.base_model, rank=cfg.rank, alpha=cfg.alpha,
+            train_mlp=cfg.train_mlp, train_attn=cfg.train_attn, train_unembed=cfg.train_unembed,
         )
         self.tc = tc
         self.manifest.update(session_id=getattr(d.service, "training_session_id", None), session_name=getattr(d.service, "training_session_name", None), run_id=getattr(tc, "run_id", None), stage="training")
@@ -226,6 +249,12 @@ class Run:
         except Exception as e:  # noqa: BLE001 - the promotion already happened; say so and keep it
             self.manifest.update(stage="done", session_deleted=False, delete_error=redact(f"{type(e).__name__}: {e}")[:500])
             self.log(f"promoted, but deleting session {self.manifest.data.get('session_id')} failed; delete it by hand")
+        # Only here: after a failure the session is kept for promotion by hand, and close() also
+        # closes the SDK's managed handle.
+        try:
+            d.service.close()
+        except Exception as e:  # noqa: BLE001 - the run is done; record it
+            self.manifest.update(close_error=redact(f"{type(e).__name__}: {e}")[:500])
         return self.manifest.data
 
     def _run(self, tc: Any, steps: list[list[dict[str, Any]]], plan: list[int]) -> dict[str, Any]:
@@ -257,10 +286,10 @@ class Run:
         for name in subset_preds:
             self._check_errors(name, [p for p in map(json.loads, subset_preds[name].read_text(encoding="utf-8").splitlines()) if p], len(self.subset))
 
-        self.manifest.update(stage="scoring")
+        self.manifest.update(stage="scoring", selection_key=SELECTION_KEY)
         subset_scores = {name: self._score(name, p, full=False) for name, p in subset_preds.items()}
-        self.manifest.update(subset_scores={n: s["selection"] for n, s in subset_scores.items()})
-        ranked = sorted((n for n in subset_scores if n != ckpt_name(0)), key=lambda n: (-subset_scores[n]["selection"], n))
+        self.manifest.update(subset_scores={n: summary(s) for n, s in subset_scores.items()})
+        ranked = sorted((n for n in subset_scores if n != ckpt_name(0)), key=lambda n: (-subset_scores[n][SELECTION_KEY], n))
         finalists = [ckpt_name(0)] + ranked[: cfg.top_k]
 
         self.manifest.update(stage="full-dev", finalists=finalists)
@@ -273,11 +302,11 @@ class Run:
             write_jsonl(full, have + rest)
             self._check_errors(f"{name}.full", rest, len(self.rest))
             full_scores[name] = self._score(name, full, full=True)
-        self.manifest.update(full_scores={n: s["selection"] for n, s in full_scores.items()})
-        winner = max(finalists[1:], key=lambda n: (full_scores[n]["selection"], -int(n[1:])))
+        self.manifest.update(full_scores={n: summary(s) for n, s in full_scores.items()})
+        winner = max(finalists[1:], key=lambda n: (full_scores[n][SELECTION_KEY], -int(n[1:])))
 
         self.manifest.update(stage="promoting", winner=winner)
         model = d.promote(self.manifest.data.get("session_name") or "", winner, cfg.model_id(winner))
         self.manifest.update(promoted=model)
-        self.log(f"winner {winner}: full-dev selection {full_scores[winner]['selection']:.4f}, base {full_scores[ckpt_name(0)]['selection']:.4f}; promoted {model}")
+        self.log(f"winner {winner}: full-dev {SELECTION_KEY} {full_scores[winner][SELECTION_KEY]:.4f}, base {full_scores[ckpt_name(0)][SELECTION_KEY]:.4f}; promoted {model}")
         return self.manifest.data

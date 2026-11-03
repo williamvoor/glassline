@@ -16,7 +16,12 @@ def build_system_prompt(sdk: ExpressSDK, reasoning: str = REASONING) -> str:
     The Muse renderer adds its own default system prompt and `Reasoning strength: high`
     unless the system text already names a strength, so the line must be here.
     """
-    return f"{sdk.prompt_snippet}\n\nReasoning strength: {reasoning}."
+    return f"{sdk.prompt_snippet}\n\n{RUN_2_RULE}\n\nReasoning strength: {reasoning}."
+
+
+# Run 2 (SPEC "Run 2 decisions", item 8; ADR 0015): s250 invented conditionals and operators.
+# Appended after the upstream snippet, which stays byte-identical.
+RUN_2_RULE = "Express has no conditionals or operators. Values that vary per item belong in the data model."
 
 
 FROZEN_PROMPT = ROOT / "data" / "system_prompt.txt"

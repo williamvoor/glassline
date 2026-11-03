@@ -47,3 +47,11 @@ def test_export_refuses_unfrozen_prompt(sdk, tmp_path):
         checked_system_prompt(sdk, frozen)
     frozen.write_text(build_system_prompt(sdk), encoding="utf-8")
     assert checked_system_prompt(sdk, frozen) == build_system_prompt(sdk)
+
+
+def test_run_2_rule_follows_the_sdk_snippet(sdk):
+    """Item 8: one line after the upstream snippet, which itself stays byte-identical."""
+    from a2ui_eval.prompt import RUN_2_RULE
+
+    assert RUN_2_RULE == "Express has no conditionals or operators. Values that vary per item belong in the data model."
+    assert build_system_prompt(sdk) == f"{sdk.prompt_snippet}\n\n{RUN_2_RULE}\n\nReasoning strength: low."
