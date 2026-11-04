@@ -2749,3 +2749,53 @@ Same scenarios, same settings, 3 runs each, `SURFACE_MODEL=spark` vs `glimmer`:
 | S7 | Overlap: Glimmer's request starts at `</brief>`, before Spark's stream ends | `test_split.py` (stub stream) |
 | S8 | The Glimmer server never logs the key, and binds to localhost | `glimmer/tests/test_server.py` |
 | S9 | Glimmer's prompt prefix is byte-identical across requests | `test_glimmer_prompt.py` |
+
+## 20. Amendment: an Entity Board click asks which view (draft, 2026-11-04)
+
+Status: **draft, not approved. Nothing is built yet.** Decision: ADR 0037 (proposed). It amends
+§18's "Entity Boards (slice 3)" and §15's Ask table. ADR 0028 stands for what an Entity Board
+shows.
+
+**Why.** Manual check 3 of slice 4 Part B (the user, 2026-11-04): a supplier row on the Agency
+Board opened the whole Supplier Board, not that supplier's contracts with that agency. The user
+wants to choose on each click, without new Board files.
+
+### Behaviour
+
+- **The choice.** A click on a row in a source's `boards` no longer opens the Entity Board
+  directly. The client shows a confirmation next to what was clicked, like an Ask's:
+  - *"<label>: open its Board (all its data, not only this view's filters), or ask the agent
+    within this view's filters (takes a few seconds)."*
+  - Buttons **Open Board** (focused, so Enter opens it), **Ask within filters** and **Cancel**.
+    Escape cancels.
+  - It shows on **every** such click, in answers and on Boards, the Explorer at its defaults
+    included (the user, 2026-11-04).
+  - Rows not in `boards` behave as before: a Drill-down opens at once, an Ask confirms.
+- **Open Board** sends the `drill` action as today. Nothing changes on the server: prefetch,
+  cache, tab, log entry and speed targets as in §18 (the speed is measured from this click).
+- **Ask within filters** sends `ask` with the same `{source, row}`. The server already resolves it
+  to a row Ask. The change is its user text, for rows in `boards` only:
+  `Ask: the user clicked a row of a Visual in Turn <t> (Result <id>, row <row_index>). Show that
+  row's entity within the filters the Visual was shown with (on a Board: the Board's own entity
+  and its Controls), keeping the same period.` IDs only, as for every Ask text.
+  - On an Entity Board, or a Board with Controls off their defaults, the Board pair is queued as
+    today, so the model sees the Board's title (with its entity) and Controls.
+  - The text is in the user message, not the cached prefix: prompt snapshots don't change.
+- **Wire.** The client knows a row is a Board row from the component's `action.boards`. No new
+  metadata and no new action name. `context` stays `{source, row}`.
+
+### Unknowns
+
+- Whether Spark keeps the Board's entity reliably from the Board pair alone. Checked by hand on
+  the onward case (Agency Board → supplier row) before approval, one live run.
+
+### Criteria → tests (planned)
+
+| # | Criterion | Test |
+|---|---|---|
+| E1 | A click on a `boards` row shows the choice and sends nothing until a button is pressed | `client/test/app.test.ts` |
+| E2 | Open Board sends `drill`; Ask within filters sends `ask` with the same context; Cancel and Escape send nothing | `app.test.ts` |
+| E3 | Open Board is focused; Enter opens the Board | `app.test.ts` |
+| E4 | A click on a row outside `boards` behaves as before (Drill-down at once, Ask confirmed) | `app.test.ts` |
+| E5 | An `ask` on a `boards` row gets the Entity Board Ask text; other rows keep `ASK_ROW_TEXT` | `test_actions.py` |
+| E6 | An `ask` from an Entity Board row queues the Board pair, from a Board at defaults with no key it doesn't | `test_executor.py` (stub model) |
