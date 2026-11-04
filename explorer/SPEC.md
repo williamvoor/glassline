@@ -1457,7 +1457,7 @@ Built in order, tests first, each a commit of its own:
 | 2 | Controls: re-query in place; Control state to the model | none |
 | 3 | Entity Boards opened by a row click; `Timeline` | none |
 | 4 | The bootstrap tool drafts and previews Boards from the templates in `bootstrap/templates/`, for any database (a phase 3 in `bootstrap/SPEC.md`; specified in `bootstrap/SPEC.md` phase 3, approved 2026-11-04, ADR 0032). This is where austender gets its first Boards | Wonder, offline |
-| 5 | Runtime fill-in (an Ask that has Wonder draft an entity Board); the A/B run for the answer model | Wonder (ADR 0030 accepted 2026-11-04); built after slice 4 |
+| 5 | Runtime fill-in (an Ask that has Wonder draft an entity Board); the A/B run for the answer model. Detailed in §21 (approved 2026-11-04): the fill-in (5a) is deferred and the A/B (5b) goes first | Wonder (ADR 0030 accepted 2026-11-04); built after slice 4 |
 
 Slices 4 and 5 get their own detailed amendments. This section fixes their shape only.
 
@@ -2891,3 +2891,102 @@ Where a test file differs from the table above, these notes win.
   row still reads as instant. No server change to `drill`.
 
 **Test command.** `cd agent && uv run pytest`; `cd client && npm test && npm run build`.
+
+## 21. Amendment: slice 5, the answer model A/B, with runtime Board drafts deferred (2026-11-04)
+
+Status: **approved** (2026-11-04: the user asked for slice 5 to be built), revision 2 after a
+refuter FAIL on revision 1 (fixes in the harness amendment's "Review round 1"). It details §18's slice 5. The
+harness half is the amendment "scored Board scenarios and the model A/B" in
+`specs/scenarios/SPEC.md`. Decisions: ADR 0030 (accepted), with the dated note this amendment
+adds. Settled in a grilling session (2026-11-04), where the user asked for the recommendations
+to be taken.
+
+### 5a: runtime Board drafts are deferred
+
+ADR 0030 allows Muse Wonder to draft an Entity Board at runtime "for an entity type that has no
+reviewed Board". No Dataset needs that yet:
+- austender has two keyed entity types, agency and supplier, and both have reviewed Boards. Its
+  unkeyed candidates (UNSPSC category, contract, financial year, procurement method) would need a
+  new concept: an entity type the Dataset declares without a Board.
+- Since §20, any Board row offers "Ask within filters", which answers "tell me about this row"
+  with a model run.
+
+So 5a is **deferred, not dropped**. It starts when a Dataset has an entity type without a Board
+that users click. ADR 0030's permission stays. `BOARD_DRAFT_MODEL` is named in the docs only,
+and is added to `config.py` and `.env.example` when 5a is built. Nothing is built for 5a now.
+
+### 5b: the A/B for the default answer model
+
+**What it decides.** Whether `MODEL`'s default (in `.env.example` and §7) stays
+`meta/muse-spark-1.3` or becomes `meta/muse-wonder-1.0`. One model writes the SQL, the prose and
+the Express, so the A/B swaps that one model for the whole answer path. §19's split isn't built
+and is out of scope.
+
+**The scenarios.** Two sets, reported separately:
+- the **typed set**: austender's 10 existing reviewed scenarios, less the `smoke` one. Spark
+  passed 92–100% of them in every run on 2026-11-03, so this set can show a regression but not a
+  gain;
+- the **Board set**: 9 new scenarios, 3 of each kind (a question while viewing the Explorer Board
+  with a Control set; a question while viewing an Entity Board; "Ask within filters" on an onward
+  row). They are written as part of the harness amendment and signed off by the user before the
+  run. The gate is decided on this set.
+
+**The gate** (fixed before the run, applied by `scenarios.py compare`, defined exactly in the
+harness amendment). Wonder becomes the default only if all of these hold:
+1. Board-set pass rate ≥ Spark's + 10 points;
+2. typed-set runs that are not a pass ≤ Spark's + 1;
+3. median Turn wall time ≤ 1.15 × Spark's, in each set.
+
+`needs_review` is not a pass. Repairs and write attempts are reported, never gated. Any
+`setup_failed` or `blocked` run makes the compare invalid. Otherwise Spark stays. Cost isn't in
+the gate. ADR 0030 accepted it at about 3.5× (an estimated $0.023 against $0.0067 per answer).
+
+**What the gate can show.** With 27 Board-set runs, +10 points means at least 3 more passes, about
+one whole extra scenario. If Spark passes 25 or more of the 27, Wonder can't win, so the A/B can
+only confirm Spark. That is intended: speed comes first, and a slower, dearer model has to buy a
+visible gain. Gate 3 sits close to the probe's 1.11×, so time alone can decide a close call. The
+rerun check below catches that.
+
+**The run** (manual, billed, with the user's go-ahead):
+- the same agent build, database, prompt and `REASONING_EFFORT=minimal`, and only `MODEL`
+  changes:
+  ```bash
+  cd agent
+  MODEL=meta/muse-spark-1.3  uv run python scripts/scenarios.py run --runs 3 --level minimal
+  MODEL=meta/muse-wonder-1.0 uv run python scripts/scenarios.py run --runs 3 --level minimal
+  uv run python scripts/scenarios.py compare <spark runs> <wonder runs>
+  ```
+- Spark first, then Wonder straight after, so live data and load are as close as can be. Both
+  runs come from the same clean commit, and `compare` refuses otherwise.
+- 3 runs per scenario. If `compare` says `close: rerun at 5` (one flipped run would change the
+  verdict, or Wonder's median time ratio is between 1.10× and 1.20×), both models are rerun at 5,
+  and that compare is final, whatever its verdict.
+- 19 scenarios × 3 runs × 2 models = 114 answers, under $2 at the estimated prices. At 5 runs it
+  is 190 more.
+- The runs, reports and compare file are committed under `docs/scenarios/austender/` after the
+  secret scan.
+
+**After the run:**
+- the result (the compare table, the verdict, and the cost estimated from the logged tokens) goes
+  into ADR 0030 as a dated note;
+- if Wonder wins, `.env.example` and §7 change `MODEL`'s default, as a commit of its own. If Spark
+  stays, nothing else changes.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| S5-1 | The harness amendment's BS1–BS9 | `agent/tests/test_scenarios.py` (see that amendment) |
+| S5-2 | The 9 Board scenarios are signed off by the user | manual |
+| S5-3 | The A/B is run as above, and the compare file and verdict are recorded in ADR 0030 | manual |
+| S5-4 | `MODEL`'s default changes only on `B wins` | manual (review of the commit) |
+
+### Decisions
+
+- **5a is deferred, not built speculatively.** Building it now would mean making up an entity
+  type to test it on.
+- **Gate first, run second.** The thresholds are written before any number is seen.
+- **The Board set decides.** The typed set is near its ceiling for Spark, so it only guards
+  against a regression.
+- **No new ADR.** ADR 0030 already holds the decision that an A/B picks the default. This adds
+  its procedure and gate as a dated note.

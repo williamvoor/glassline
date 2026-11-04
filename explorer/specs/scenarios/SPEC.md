@@ -402,6 +402,278 @@ All in `agent/tests/test_scenarios.py`. No model, network or database.
 - **B-M's typed question after a Control change** (it uses the Board's state, and the Board pair
   adds prompt tokens) calls Spark. It is done by hand in the explorer, not in this script.
 
+## Amendment: scored Board scenarios and the model A/B (2026-11-04, `../../SPEC.md` §21)
+
+Status: **approved** (2026-11-04, with `../../SPEC.md` §21), revision 2. The refuter gave
+revision 1 a FAIL (2 blockers, 9 majors), and the fixes are worked in here (see "Review round 1"
+below).
+
+It is the harness half of slice 5b, which picks the default answer model. Today a scenario can
+only type questions into a new Conversation. ADR 0030 says the default is chosen "on the Board
+and Controls scenarios", and none exist. This lets a scored scenario start from a Board:
+- open the Explorer Board;
+- set its Controls;
+- click through to an Entity Board;
+- then type its questions while viewing that Board, or end with "Ask within filters" on a row
+  (`../../SPEC.md` §20).
+
+It also adds `compare`, which applies §21's gate to two runs files.
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/scripts/scenarios.py` | Board steps in `parse_scenario` and `run`; `read_board`, a superset of `read_open`. `read_open` stays as a thin wrapper over it, with the same output, so the `boards` subcommand and its tests don't change; new fields on each record; `setup_failed` in `score`, `summary` and `report`; a `compare` subcommand. No dataset names |
+| `agent/scripts/effort_check.py` | `ask()` and `act()`, through `action_body`, gain an optional `viewing`, sent as `explorerViewing` in the message metadata. Without it, nothing changes |
+| `agent/tests/test_scenarios.py` | the tests below. The `boards` fakes are extended: `act` takes `viewing` and returns Surfaces, tabs and components, and `controls` replies carry `updateComponents`. No model, network or database |
+| `datasets/austender/scenarios.toml` | 9 Board scenarios, `reviewed = false` until the user signs them off |
+| `docs/scenarios/<dataset>/compare-<A stem>-vs-<B stem>.md` | output of `compare`, written next to file A unless `--out` is given |
+
+### Scenario file
+
+A scenario may start from a Board. All the new keys are optional:
+
+```toml
+[[scenario]]
+id = "defence-thales-within"
+reviewed = false
+categories = ["board", "ask-within"]
+board = "explorer"                                # open this Board first (a Board without a key)
+controls = { "Procurement method" = "open" }      # Control label → option label, set in this order
+click = [{ visual = "breakdown", row = "Department of Defence" }]  # each opens an Entity Board
+ask_within = { visual = "top", row = "THALES AUSTRALIA" }          # instead of turns: the last step
+visual = ["metric", "table"]
+[scenario.reference]
+sql = """SELECT ..."""
+expect = ["total_value", "contract_count"]
+```
+
+- **`board`** names a Board file without a key in the Dataset's `boards/`. Today that is only the
+  Explorer Board.
+- **`controls`** maps a `choice` Control's label to one of its option labels, or `"All"`.
+  - Labels are compared after trimming and case-folding.
+  - A label that matches no Control or option, or more than one, is a set-up failure.
+  - Only `choice` Controls are supported, as in the `boards` subcommand.
+- **`click`** is a list of steps. Each step clicks a row that opens an Entity Board, in order,
+  starting from the Board on screen.
+- **`visual`** in a `click` or `ask_within` step is the Visual's **layout name**: the ID of the
+  clickable component up to its first `__`. Only two kinds are supported, a `DataGrid` and a
+  `Treemap` VegaChart.
+- **`row`** is the row's displayed text, compared after undoing markdown escaping (`unescape`),
+  trimming and case-folding:
+  - in a `DataGrid`, a row with any cell equal to it. The row index sent is the row's position,
+    which is its index in the Result;
+  - in a `Treemap`, a leaf whose `_name` is equal to it. The row index sent is the leaf's `_row`.
+- **`ask_within`** makes the last step an `ask` on that row. A scenario has `turns` or
+  `ask_within`, never both.
+- **Dependencies:** `controls`, `click` and `ask_within` need `board`.
+- **Sets:** a scenario with `board` is in the **Board set**. Every other scenario is in the
+  **typed set**.
+- **Kind**, which comes from the scenario's shape:
+  - (a) `controls` and no `click`;
+  - (b) `click`, then `turns`;
+  - (c) `ask_within`.
+
+### Behaviour
+
+1. **Load.** The existing checks apply, plus these. Each of the following is rejected before the
+   agent starts:
+   - an unknown key in a step;
+   - `controls`, `click` or `ask_within` without `board`;
+   - both `turns` and `ask_within`, or neither;
+   - a `board` that isn't a Board file without a key in the Dataset.
+2. **Set-up**, per run, before anything is scored. The harness keeps a **Board model**: the
+   current Surface ID, tab ID, the Controls with their labels and option labels, and the
+   components by ID (each clickable Visual's `action`, `DataGrid` rows and chart data).
+   `read_board` builds it from a reply.
+   1. **Open.** Send `open_board` with `{board}` in a new Conversation, and build the Board model
+      from the reply.
+   2. **Controls.** For each `controls` entry, in order, send `controls` with the full wire
+      `values` and the next `seq`. Wait for its reply. A superseded reply means the
+      run fails as `setup_failed`, since set-up sends one change at a time and no later reply can
+      come. Then **merge the reply's `updateComponents` into the Board model**,
+      replacing those components. A re-queried panel comes back with new source IDs and new rows,
+      and the old ones are no longer valid on the server (`TOO_OLD`).
+   3. **Clicks.** For each `click` step:
+      - wait for the prefetch to settle (`settle_prefetch`);
+      - find the Visual by layout name and the row in the current Board model;
+      - check the row is in the Visual's `action.boards`;
+      - send `drill` with `{source, row}` on the current Surface.
+
+      The reply's Surface, tab and components become the current Board model.
+   - **`setup_failed`.** Any of these makes the run's status `setup_failed`, with its reason, and
+     no model is called:
+     - the Board isn't found;
+     - a Control or option matches nothing or more than one;
+     - a layout name matches no clickable Visual, more than one, or an unsupported kind;
+     - the row matches nothing or more than one;
+     - the row isn't in `boards`;
+     - any reply in set-up fails.
+
+     The record still carries a `score` with `status: setup_failed`, the reason in `reasons`, and
+     empty `matched_wrong` and `flags`, so `summary` and `report` read it like any other record.
+3. **Turns.** Each typed turn goes in the Board's Conversation, with `viewing` set to the Board's
+   tab ID. That is the tab when set-up ended. A Turn's reply can open a new tab, and later turns
+   still name the Board's tab, since the scenario is about asking while the Board is in view.
+4. **Ask within filters.**
+   - Find the row as in a `click` step.
+   - Send `ask` with `{source, row}` on the current Surface, through `act` with `viewing` set to
+     the current tab.
+   - Its reply is the last Turn. Its log slice is read as for a typed Turn (model calls, tokens,
+     Repairs and SQL attempts), and it is scored as one, with wall time measured from the `ask`.
+5. **Scoring and Drill-down clicks are unchanged.** A typed scenario runs exactly as before. The
+   Drill-down clicks after scoring run for both sets, and they never change the score.
+6. **Records** gain:
+   - `set` (`board` or `typed`);
+   - `reviewed`, the scenario's flag when it ran;
+   - `model`, the configured `MODEL` the harness passed to the agent;
+   - `served_model`, the reply's `explorerModel`, or null when the reply has none;
+   - `level`;
+   - `commit`, the `git rev-parse HEAD` of the repo and whether `explorer/agent/` or the
+     Dataset's directory had uncommitted changes. Other paths don't run in the agent, and the tree
+     often carries unrelated work;
+   - for the Board set, `setup`: each step's wall time, plus the `setup_failed` reason.
+
+   **The report:**
+   - names the model and the level;
+   - shows each set's pass rate and median wall time separately, then the overall figures as
+     before;
+   - adds a `setup_failed` column per scenario.
+
+   `setup_failed` runs are left out of the pass rate, like `blocked`, and counted. A runs file
+   from before this amendment, without these fields, is reported as before, all in the typed set.
+7. **`compare A.jsonl B.jsonl [--out DIR]`**, where A is the incumbent and B the candidate. It
+   calls nothing. The steps are in this order:
+   1. **Validity.** These make the result `invalid`, with no verdict, and the report names the
+      reason:
+      - a record without `reviewed`, `model`, `level` or `commit`;
+      - more than one `model`, `level` or `commit` value within a file;
+      - A and B have the same `model`;
+      - A and B differ in `level` or `commit`;
+      - either file was run with uncommitted changes in `explorer/agent/` or the Dataset's
+        directory.
+   2. **Filter.** Keep only records with `reviewed: true` and leave out `smoke` scenarios. Then
+      each of these makes the result `invalid`:
+      - the two files have different scenario IDs, or a different number of runs per scenario;
+      - any kept run is `setup_failed` or `blocked`;
+      - either set is empty after the filter.
+
+      Unreviewed scenarios can't make it `invalid`.
+   3. **Figures**, per set and per file:
+      - passes and runs, and the pass rate (`pass` over runs; `needs_review` and `fail` are both
+        **not a pass**);
+      - median and p90 Turn wall time over all kept runs;
+      - mean model calls;
+      - total Repairs and `write_attempted` flags;
+      - mean prompt, cached and output tokens per answer.
+   4. **Verdict:**
+      - **`B wins`** when all of these hold:
+        1. Board-set pass rate of B ≥ A's + 10 points;
+        2. typed-set runs that are not a pass: B's ≤ A's + 1;
+        3. median Turn wall time of B ≤ 1.15 × A's, in each set.
+      - **`A stays`** otherwise, with the failed conditions listed.
+      - Repairs and `write_attempted` are reported, never gated.
+   5. **Rerun check.** The report says **`close: rerun at 5`** when either of these holds:
+      - flipping any single kept run's result (pass ↔ not a pass), recomputed once per run,
+        changes the verdict;
+      - B's actual median time ratio, in either set, lies between 1.10 and 1.20 × A's (inclusive).
+
+      Otherwise the verdict is clear. When it is close, §21 says to rerun both models at 5 runs,
+      and that compare is final, whatever its verdict.
+
+   The report prints both models' names next to the verdict.
+
+### Criteria → tests
+
+All in `agent/tests/test_scenarios.py` unless stated. No model, network or database.
+
+| # | Criterion | Test |
+|---|---|---|
+| BS1 | Board keys load, and kinds (a), (b) and (c) are read from the shape; each rejection in step 1 happens before the agent starts | `test_board_scenario_load`, `test_board_scenario_rejects[...]` |
+| BS2 | Set-up sends `open_board`, then `controls` with full wire `values` and `seq` 1, 2, … matched by label, then `drill` on the matched `boards` row of the current Surface; each `click` follows a prefetch settle; a click's reply becomes the current Board model | `test_board_setup_sequence` |
+| BS2a | A Control change that re-sends the clicked panel with new source IDs and rows is merged, so the click uses the new source and the new row index; a superseded reply gives `setup_failed` | `test_board_setup_merges_the_controls_reply` |
+| BS3 | Row matching: a `DataGrid` cell or a Treemap leaf's `_name`, unescaped, case-folded and trimmed; a Treemap sends `_row`, a `DataGrid` its position | `test_board_row_matching[...]` |
+| BS3a | Each `setup_failed` cause in step 2 (unknown Board, Control or option matching none or several, layout name matching none, several or an unsupported kind, row matching none or several, row not in `boards`, a failed `open_board`, `controls` or `drill` reply) gives `setup_failed` with its reason, no model call and a `score` stub | `test_board_setup_failed[...]` |
+| BS4 | Typed turns after set-up go in the Board's Conversation with `viewing` = the Board's tab, and keep naming it after a reply opens another | `test_board_turns_view_the_board`, `test_effort_check.py::test_ask_and_act_send_viewing` |
+| BS5 | `ask_within` sends `ask` with `{source, row}` and `viewing` in the message metadata; its reply's log slice is read and scored as the last Turn, with wall time from the `ask` | `test_ask_within_is_scored` |
+| BS6 | Records carry `set`, `reviewed`, `model`, `served_model`, `level`, `commit` and `setup`; `setup_failed` is left out of the pass rate and counted; the report shows both sets, the model and level; an old runs file is reported as before | `test_board_records_and_report`, `test_report_reads_old_records` |
+| BS7 | `compare` figures per set; `needs_review` counts as not a pass | `test_compare_figures` |
+| BS7a | `B wins` only when every condition holds: one test per condition, each failing alone at its edge, including exactly +10 points and exactly 1.15× | `test_compare_gate[...]` |
+| BS7b | Each `invalid` cause in step 7.1 and 7.2; unreviewed scenarios can't make it `invalid`, whether by ID, by a blocked run or by a `setup_failed` run | `test_compare_invalid[...]`, `test_compare_filters_before_matching_ids` |
+| BS7c | The rerun check: one flipped run that changes the verdict, or a ratio of 1.10–1.20 inclusive, says `close: rerun at 5`; a win at 1.05× with a margin of 2 runs on gates 1 and 2 doesn't | `test_compare_close_call` |
+| BS7d | `compare` writes `compare-<A stem>-vs-<B stem>.md` next to A, or in `--out`, with both models next to the verdict, and calls nothing (no agent, no runner) | `test_compare_output` |
+| BS8 | A typed scenario's run is unchanged; `ask()` and `act()` without `viewing` are unchanged | the existing tests still pass |
+| BS9 | austender's file loads with its 9 Board scenarios, 3 of each kind by shape | `test_austender_scenarios_load` |
+
+### The 9 Board scenarios (austender)
+
+Written during the build with reference SQL. They are `reviewed = false` until the user signs them
+off, and only reviewed ones count. Three of each kind:
+- **(a) Explorer, Control set.** A question while viewing the Explorer Board with Procurement
+  method set to `open` or `selective`, never `limited`: Meta's filter blocks "limited tenders"
+  questions (Decisions above), and the Board pair would carry it in every prompt. The reference
+  keeps the filter, and a wrong entry is the same query without it.
+- **(b) Entity Board.** A question while viewing an Agency or Supplier Board. The reference keeps
+  that entity, and a wrong entry is the whole Dataset.
+- **(c) Ask within filters.** An onward row on an Entity Board, such as Defence → THALES
+  AUSTRALIA (the displayed text on 2026-11-04, 3rd in the Agency Board's top 15). The reference
+  keeps both entities, and a wrong entry is the clicked entity alone.
+
+The wrong entries are the point of this set: they name the failure that a Board context invites,
+losing the filter. A run showing both the right and the wrong reading is `needs_review`, which is
+not a pass.
+
+Before sign-off, each scenario is run once with Spark (with the user's go-ahead) to check that its
+set-up works and Meta's filter doesn't block it.
+
+### Decisions
+
+- **Rows are named by displayed text, not key value.** Key columns are hidden from tables and
+  labels (`7067937`), so the harness can't see them. A label that matches nothing or several rows
+  stops the run instead of picking one. If live data renames an entity, the scenario fails loudly.
+- **Only `DataGrid` and `Treemap` rows.** Those are what austender's Boards click through. A
+  Treemap matches on `_name` alone, so `"root"` or a formatted value can't match. Other charts can
+  be added when a Board needs them.
+- **Entity Boards are reached by a click**, as a person reaches them. `open_board` opens only
+  Boards without a key.
+- **`setup_failed` and `blocked` make `compare` invalid.** Neither says anything about the model,
+  and leaving them out on one side only would change the denominators. A blocked scenario is
+  reworded and probed before the A/B.
+- **`needs_review` is not a pass, on both sides.** A hedge that shows the wrong reading next to
+  the right one is not a clean answer, so the verdict needs no person to compute.
+- **Repairs and write attempts are reported, never gated.** This is the harness's standing rule
+  (flags never fail a run). `write_attempted` also counts guard rejections that aren't writes,
+  and the typed set provokes one on purpose (`write-request`).
+- **The verdict is computed, and close calls are named mechanically.** The gate and the rerun
+  check are fixed before any number is seen, so they can't be fitted to the result.
+- **No cost in the verdict.** Prices aren't in the code. Tokens are reported, and §21 records the
+  cost by hand.
+
+### Review round 1 (2026-11-04)
+
+The refuter gave a FAIL. Fixed in revision 2:
+- **Blocker:** the `controls` reply is merged, because re-queried panels get new source IDs and
+  rows.
+- **Blocker:** `reviewed` is recorded. The filter comes before the ID check, and old files are
+  `invalid`.
+- `act()` sends `viewing`. Without it, no Board pair is sent for "Ask within filters".
+- `read_board` is a superset of `read_open`, with layout names, tab, labels and row data.
+  `read_open` stays as a wrapper.
+- `needs_review`, "fails", the denominators and empty sets are defined.
+- Gate 4 is report-only.
+- A mechanical rerun trigger.
+- Run identity: `model`, `level`, `commit`, and different models are required.
+- Every `setup_failed` cause is tested.
+- Re-review (PASS-WITH-NOTES, no new blocker), fixed in turn:
+  - the time rerun check uses B's actual ratio (1.10–1.20) instead of fixed times, which flipped
+    every win;
+  - `setup_failed` and `blocked` are checked after the reviewed filter;
+  - `read_open` is kept as a wrapper;
+  - a superseded set-up reply fails the run instead of waiting.
+- Kinds come from the shape, and the record shape and output name are defined.
+- The label-matching rules are stated, and chart matching is narrowed to the Treemap `_name`.
+- The example uses `open`, not `limited`.
+
 ## Test command
 
 ```bash

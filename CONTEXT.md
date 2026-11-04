@@ -78,7 +78,7 @@ An Action that opens the next level of detail below one row of a Visual by runni
 _Avoid_: Drill-through, zoom, filter
 
 **Ask**:
-An Action that consults the agent, always confirmed by the user first: about a row without a Drill query, about a Drill-down, or through a Follow-up.
+An Action that consults the agent, always confirmed by the user first: about a row without a Drill query, about a row that could open an Entity Board but is asked about within the filters of the view it was clicked in, about a Drill-down, or through a Follow-up.
 _Avoid_: Question (a question is typed), request, query
 
 **Follow-up**:
@@ -103,7 +103,7 @@ The Dataset's landing Board, which has no key and is shown as the first Tab, tit
 _Avoid_: Explorer (alone, it names the app), home, landing page, overview
 
 **Entity Board**:
-A Board keyed on one column, opened from a click on a row that carries that column, about that one entity across the whole Dataset.
+A Board keyed on one column, about that one entity across the whole Dataset. A click on a row that carries that column offers it, next to an Ask within the clicked view's filters.
 _Avoid_: Detail page, profile
 
 **Macro**:

@@ -39,3 +39,15 @@ Spark stays a supported model. Which model is the default for answers is decided
 - A Board drafted at runtime is marked unreviewed on screen, kept in memory only, and can be exported for review. It is never written into `datasets/` automatically.
 - Tests still never call a real model. The stub model stands in for Wonder as it does for Spark.
 - The serving model is already shown on every Level's status line (§16), so users can tell which model answered.
+
+## Note (2026-11-04): slice 5, with `explorer/SPEC.md` §21 (approved 2026-11-04)
+
+- **The runtime Board draft is deferred.** No Dataset has an entity type without a reviewed Board,
+  and §20's "Ask within filters" covers questions about a single row. The permission above stays.
+- **The A/B has a gate, fixed before the run.** Wonder becomes the default answer model only if:
+  its Board-set pass rate is at least Spark's + 10 points; its typed-set runs that are not a pass
+  are at most Spark's + 1 (a `needs_review` run is not a pass); and its median Turn wall time is
+  at most 1.15 × Spark's in each set. Otherwise Spark stays. Repairs and write attempts are
+  reported, not gated. 3 runs per scenario, from one clean commit, with only `MODEL` different;
+  5 runs if `scenarios.py compare` calls it close. The result is added here as a further dated
+  note.
