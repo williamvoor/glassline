@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .loop import Config, Run, RunError, redact, sample_rows
+from .loop import Config, Run, RunError, Spend, redact, sample_rows_direct
 from .prepare import PrepareError, check
 
 GLIMMER_TUNE = Path(__file__).resolve().parents[2]
@@ -47,7 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--out", type=Path, required=True, help="predictions JSONL; never overwritten")
     sm.add_argument("--limit", type=int, default=None, help="only the first N rows (a probe)")
     sm.add_argument("--max-tokens", type=int, default=None, help="default: the run's config.max_tokens")
-    sm.add_argument("--workers", type=int, default=8)
+    sm.add_argument("--workers", type=int, default=8, help="use 1 for latency: concurrent requests queue on the shared pool")
+    sm.add_argument("--grammar", type=Path, default=None, help="GBNF file sent as response_format (constrained decoding)")
+    sm.add_argument("--budget", type=float, default=None, help="US$: refuse rows once the job's token cost reaches this")
     return p
 
 
@@ -57,6 +59,10 @@ def sample(args: argparse.Namespace, remote) -> int:
         raise PrepareError(f"{args.out} exists; predictions are never overwritten")
     if args.limit is not None and args.limit < 1:
         raise PrepareError("--limit must be at least 1")
+    if args.grammar is not None and not args.grammar.is_file():
+        raise PrepareError(f"grammar {args.grammar} not found")
+    if args.budget is not None and args.budget <= 0:
+        raise PrepareError("--budget must be positive")
     manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
     paths = manifest.get("checkpoints", {})
     if args.ckpt not in paths:
@@ -67,7 +73,11 @@ def sample(args: argparse.Namespace, remote) -> int:
     max_tokens = args.max_tokens or manifest.get("config", {}).get("max_tokens") or Config.max_tokens
     if remote is None:
         from .real import deps as remote
-    preds = sample_rows(remote(args.cases), paths[args.ckpt], rows, args.ckpt, args.workers, max_tokens)
+    extra = {}
+    if args.grammar is not None:
+        extra["response_format"] = {"type": "grammar", "grammar": args.grammar.read_text(encoding="utf-8")}
+    spend = Spend(args.budget)
+    preds = sample_rows_direct(remote(args.cases), paths[args.ckpt], rows, args.ckpt, args.workers, max_tokens, extra, spend)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     try:
         with args.out.open("x", encoding="utf-8") as f:  # exclusive create: never overwrite
@@ -78,7 +88,10 @@ def sample(args: argparse.Namespace, remote) -> int:
     for p in preds:
         if p["finish"] == "error":
             print(f"{p['id']}: {p.get('error')}", file=sys.stderr)
-    print(json.dumps({"checkpoint": args.ckpt, "rows": len(preds), "errors": errors, "length": sum(p["finish"] == "length" for p in preds), "out": str(args.out)}))
+    print(json.dumps({
+        "checkpoint": args.ckpt, "rows": len(preds), "errors": errors, "length": sum(p["finish"] == "length" for p in preds), "out": str(args.out),
+        "grammar": str(args.grammar) if args.grammar else None, "usage": spend.usage, "cost_usd": round(spend.spent, 4),
+    }))
     return 1 if errors else 0
 
 

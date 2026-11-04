@@ -1377,6 +1377,82 @@ The conflicts are listed in `docs/tuning-report-20261102.md` section 4 ("Conflic
 | Memory notes vs ADR 0008 | The assistant's memory file was corrected: v0.9 basic catalog with no macros (ADR 0008), and ADR 0003 as amended. |
 | `selection_ci` missing from run 1 score files | Expected: those files predate the feature. The `runs/sft1/rescore-*` files carry it, and the originals stay untouched. |
 
+## Run 2 result and measurements (2026-11-04)
+
+Run 2 (`runs/sft2`, rank 16, lr 5e-5, batch 16, 325 steps) chose **s225**. It was promoted as `accounts/williamvoor/models/glimmer-a2ui-sft2-s225`. On full dev: selection blind 0.721, gallery 0.523, synthetic 0.919. The decision numbers are in `docs/run2-decision-memo-20261104.md`, and the worst-first gallery review in `docs/s225-gallery-review-20261104.md`.
+
+### Grammar decoding is available on the training sampler
+
+This corrects "Grammar baselines: dropped" (Run 2 preparation). `SamplingParams` has no grammar field, but the serverless sampler's `deployment_sampler.sample_with_prompt_tokens` forwards extra fields into the `/inference/v1/completions` payload. A probe on 2026-11-04 showed that the shared pool honours `response_format: {"type": "grammar"}`.
+
+- `a2ui_eval/grammar.py`: a GBNF that follows `Express.g4`. Call names are the catalog's components and functions plus the Express built-ins. Check names are its functions. Both come from the catalog JSON. Named-argument names and string contents stay free. The grammar must also produce Glimmer's channel framing (an optional ` to=self` reasoning segment, then ` to=user<|message|>`), because it constrains the whole completion. `data_cli grammar` writes `exports/express_chat.gbnf`.
+- `glimmer_trainer sample` gained `--grammar` (sent as `response_format`) and `--budget` (refuses rows once the job's cost, from the server's token counts, reaches it). Each prediction now records `latency_s`, the client wall-clock time of the successful request. Sampling goes through `Deps.direct`; the train loop is unchanged.
+- `compare_ci` takes a `key`, and reads the family from dev ids.
+
+### Measurements
+
+- **Grammar variants**, full dev: base + grammar, base + 3 + grammar, s225 + grammar (`runs/grammar-run2`).
+- **Latency**, one request at a time on the 64-row dev subset: base, base + 3, s250, s225 (`runs/latency-run2`).
+- **s250 rescored** on the gallery with today's scorer. Its outside-catalog rate is 0.25, where run 1's score file said 0.167, because of the newer finding kinds. Its predictions predate the six rewritten dev intents.
+- **Spend:** $6.66 measured at list prices, plus about $0.10 of probes. The prompt-cache hit rate was 94–97%.
+
+### Findings
+
+- On the gallery, s225, s250, base + 3 and base + 3 + grammar are level: every paired family-level interval includes 0. With 7 dev gallery families, gaps under about 0.1 can't be resolved.
+- The grammar helps the untuned model and not the tuned one. For base + 3, outside-catalog output falls from 0.155 to 0.036, and `33_financial-data-grid` rises from 0.273 to 0.664. s225 + grammar is −0.008 (−0.017 to −0.002). It moves the conditionals into made-up named arguments and `${…}` strings, and 3 rows run into the token cap with comment or whitespace loops.
+- **Tokens per row** (p50/p95) are the reliable speed measure: s225 332/591, base + 3 755/1,552, base 1,240/2,078. Latency on the shared pool includes queueing (two runs with equal tokens differed 2× at p50), so it is indicative only.
+- **The open serving question** is whether Fireworks serves Glimmer 30B base and LoRA adapters per token.
+
+| # | Criterion | Test |
+|---|---|---|
+| G1 | Every dev reference and every train gallery reference is accepted by the grammar | `test_grammar.py::test_every_dev_reference_is_accepted`, `::test_every_train_gallery_reference_is_accepted` |
+| G2 | Operators, ternaries, `if(…)`, components and checks outside the catalog are rejected | `test_grammar.py::test_rejects_language_outside_express_and_the_catalog` |
+| G3 | Call and check names come from the catalog | `test_grammar.py::test_call_names_come_from_the_catalog` |
+| G4 | The chat framing is required, and reasoning is optional | `test_grammar.py::test_chat_framing_with_and_without_reasoning` |
+| G5 | `sample --grammar` sends `response_format`; without it no extra fields are sent | `trainer/tests/test_sample.py::test_sample_sends_the_grammar_as_response_format`, `::test_sample_without_grammar_sends_no_extra_fields` |
+| G6 | `--budget` refuses rows once spend reaches it | `trainer/tests/test_sample.py::test_sample_stops_at_the_budget` |
+| G7 | Paired comparisons take a score key and dev ids | `test_checkpoints.py::test_compare_ci_takes_a_key_and_reads_the_family_from_dev_ids` |
+
+## Run 3: Brief → macro Surface, for the explorer split (draft, 2026-11-04)
+
+Status: **draft, not approved. Run 3 happens only if the explorer's Stage A2 asks for it**
+(explorer SPEC §19, ADR 0031 proposed). The explorer tries base Glimmer first.
+
+### Gates and dates
+
+- Run 3 starts only when Stage A2 shows that the split is promising on speed but short on quality.
+- SFT is free only for jobs started by **2026-11-30**. The data build takes days, so A2's result
+  is needed by about 2026-11-20.
+- **The test split stays unused until after run 3**, or until run 3 is ruled out
+  (`docs/run2-decision-memo-20261104.md`).
+
+### What changes (an outline, decided when the stage starts)
+
+- **A second track** (ADR 0008 note).
+  - The input is a Brief plus Result schemas (ADR 0014).
+  - The target is a Surface in the explorer's inference catalog: Macros plus passthrough
+    components, with no `drill_sql` and no `FollowUp`; code adds those (§19).
+  - The catalog is vendored as a generated, pinned file in `catalogs/`. The code stays
+    catalog-agnostic.
+- **Briefs come from templates** that imitate §19's Brief format (ADR 0014; ADR 0003 as amended).
+  Result schemas are synthetic: column names and types from the vocabularies, with no values.
+- **The mix.** The generic v0.9 rows stay in, so the adapter keeps its general Express skill.
+  The share is decided when the stage starts.
+- **Run 2's findings go into the data.**
+  - Signed and negative values are shown plainly: no conditional styling
+    (`docs/s225-gallery-review-20261104.md`).
+  - State icons come from a field.
+- **Eval.** A new dev set of Brief cases is split by Skeleton (ADR 0004). The final check is the
+  explorer's A2 measurement with the run 3 checkpoint, not a glimmer-tune score.
+- **The grammar** in eval matches the explorer's: named arguments per call, and Result IDs and
+  columns per case.
+
+### Open
+
+- The exact Brief format: fixed in explorer §19 before any row is built.
+- Whether synthetic Result schemas need a vocabulary of their own, or reuse the domain
+  vocabularies.
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.

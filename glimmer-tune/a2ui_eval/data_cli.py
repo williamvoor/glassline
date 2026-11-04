@@ -202,6 +202,16 @@ def cmd_export_test(args) -> None:
     print(json.dumps({"rows": len(rows), "families": len({r["family"] for r in rows}), "out": str(args.out or TEST_EXPORT)}))
 
 
+def cmd_grammar(args) -> None:
+    from .grammar import chat_gbnf
+
+    out = args.out or ROOT / "exports" / "express_chat.gbnf"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    text = chat_gbnf(CatalogCheck(ExpressSDK(CATALOG)))
+    out.write_text(text, encoding="utf-8")
+    print(json.dumps({"out": str(out), "rules": len(text.splitlines())}))
+
+
 def cmd_lint(args) -> None:
     from .synth.catalog_model import CatalogModel
     from .synth.lint import lint_gallery, lint_rows, load_gallery_allowlist, stale_allowlist
@@ -313,6 +323,9 @@ def build_parser() -> argparse.ArgumentParser:
     et = sub.add_parser("export-test", help="test prompts for the one-time final evaluation (gallery only, with families)")
     et.add_argument("--out", type=Path, default=None)
     et.set_defaults(fn=cmd_export_test)
+    gr = sub.add_parser("grammar", help="write the Express GBNF (with Glimmer's channel framing) for constrained sampling")
+    gr.add_argument("--out", type=Path, default=None, help="default: exports/express_chat.gbnf")
+    gr.set_defaults(fn=cmd_grammar)
     v = sub.add_parser("vocab", help="write domain vocabularies with meta/muse-spark-1.3")
     which = v.add_mutually_exclusive_group(required=True)
     which.add_argument("--domain")

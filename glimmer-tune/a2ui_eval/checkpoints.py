@@ -199,13 +199,20 @@ def family_ci(
 
 
 def compare_ci(
-    a: list[dict[str, Any]], b: list[dict[str, Any]], samples: int = BOOTSTRAP["samples"], level: float = BOOTSTRAP["level"], seed: int = BOOTSTRAP["seed"]
+    a: list[dict[str, Any]],
+    b: list[dict[str, Any]],
+    samples: int = BOOTSTRAP["samples"],
+    level: float = BOOTSTRAP["level"],
+    seed: int = BOOTSTRAP["seed"],
+    key: str = "slot_f1",
 ) -> dict[str, Any]:
-    """Paired comparison: per-row difference b - a, families resampled. Both must score the same rows."""
+    """Paired comparison: per-row difference b - a of `key`, families resampled. Both must score the
+    same rows. Rows without a `family` (dev score files) take it from the id (`dev/<family>/<n>`)."""
     fa, fb = {r["id"]: r for r in a}, {r["id"]: r for r in b}
     if set(fa) != set(fb):
         raise CheckpointError("the two score files must cover the same rows")
-    diffs = [{"id": i, "family": fa[i]["family"], "slot_f1": fb[i]["slot_f1"] - fa[i]["slot_f1"]} for i in sorted(fa)]
+    fam = lambda r: r.get("family") or r["id"].split("/")[1]  # noqa: E731
+    diffs = [{"id": i, "family": fam(fa[i]), "slot_f1": fb[i][key] - fa[i][key]} for i in sorted(fa)]
     return {"diff": _mean([d["slot_f1"] for d in diffs]), "diff_ci": family_ci(diffs, samples, level, seed)}
 
 

@@ -3,7 +3,7 @@ one-time test evaluation). Fakes only; no network."""
 
 import json
 
-from fakes import API, SECRET, Renderer, Service, Tokenizer
+from fakes import API, SECRET, Renderer, Service, Tokenizer, direct
 from test_loop import dev_rows
 
 from glimmer_trainer.__main__ import main
@@ -23,7 +23,7 @@ def setup(tmp_path, service=None):
         made.append(_cases)
         return Deps(api=API, renderer=Renderer(), tokenizer=Tokenizer(), service=service,
                     scorer=lambda *a: (_ for _ in ()).throw(AssertionError("sample must not score")),
-                    promote=lambda *a: (_ for _ in ()).throw(AssertionError("sample must not promote")))
+                    promote=lambda *a: (_ for _ in ()).throw(AssertionError("sample must not promote")), direct=direct)
 
     def local():
         raise AssertionError("sample must not run the local train checks")
@@ -45,10 +45,13 @@ def test_sample_reads_the_path_from_the_manifest_and_writes_predictions(tmp_path
     assert {p["checkpoint"] for p in preds} == {"s250"}
     assert {p["finish"] for p in preds} == {"stop"}
     assert preds[0]["text"] == "<a2ui>acct/run-abc/s250-x</a2ui>"
-    assert {c[1] for c in service.calls if c[0] == "sample"} == {"acct/run-abc/s250-x"}
+    assert {c[1] for c in service.calls if c[0] == "direct"} == {"acct/run-abc/s250-x"}
+    assert all(p["latency_s"] >= 0 for p in preds)
     assert ("close-sampler", "acct/run-abc/s250-x") in service.calls
     summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert summary == {"checkpoint": "s250", "rows": 10, "errors": 0, "length": 0, "out": str(out)}
+    assert {k: summary[k] for k in ("checkpoint", "rows", "errors", "length", "out", "grammar")} == {
+        "checkpoint": "s250", "rows": 10, "errors": 0, "length": 0, "out": str(out), "grammar": None}
+    assert summary["usage"]["prompt_tokens"] == 10_000 and summary["usage"]["cached_prompt_tokens"] == 4_000
 
 
 def test_sample_limit_takes_the_first_rows(tmp_path):
@@ -56,7 +59,7 @@ def test_sample_limit_takes_the_first_rows(tmp_path):
     out = tmp_path / "probe.jsonl"
     assert main(["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(out), "--limit", "1"], local=local, remote=remote) == 0
     assert [p["id"] for p in read(out)] == ["d0"]
-    assert sum(c[0] == "sample" for c in service.calls) == 1
+    assert sum(c[0] == "direct" for c in service.calls) == 1
 
 
 def test_sample_refuses_an_existing_output_and_an_unknown_checkpoint(tmp_path, capsys):
@@ -96,8 +99,8 @@ def test_sample_defaults_to_the_runs_max_tokens(tmp_path, monkeypatch):
     seen = []
     import glimmer_trainer.__main__ as cli
 
-    real = cli.sample_rows
-    monkeypatch.setattr(cli, "sample_rows", lambda *a: seen.append(a[-1]) or real(*a))
+    real = cli.sample_rows_direct
+    monkeypatch.setattr(cli, "sample_rows_direct", lambda *a: seen.append(a[5]) or real(*a))
     assert main(["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(tmp_path / "a.jsonl"), "--limit", "1"], local=local, remote=remote) == 0
     assert main(["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(tmp_path / "b.jsonl"), "--limit", "1", "--max-tokens", "99"], local=local, remote=remote) == 0
     assert seen == [1234, 99]
@@ -125,13 +128,13 @@ def test_sample_never_overwrites_a_file_created_while_sampling(tmp_path, monkeyp
     out = tmp_path / "s250.jsonl"
     import glimmer_trainer.__main__ as cli
 
-    real = cli.sample_rows
+    real = cli.sample_rows_direct
 
     def racing(*a):
         out.write_text("other\n")
         return real(*a)
 
-    monkeypatch.setattr(cli, "sample_rows", racing)
+    monkeypatch.setattr(cli, "sample_rows_direct", racing)
     assert main(["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(out), "--limit", "1"], local=local, remote=remote) == 1
     assert out.read_text() == "other\n"
     assert "exists" in capsys.readouterr().err
@@ -149,3 +152,58 @@ def test_sample_redacts_a_client_creation_failure(tmp_path, monkeypatch, capsys)
     captured = capsys.readouterr()
     assert SECRET not in captured.out + captured.err and "401" in captured.err
     assert not out.exists()
+
+
+def test_sample_sends_the_grammar_as_response_format(tmp_path, capsys):
+    run, cases, service, remote, local, _ = setup(tmp_path)
+    grammar = tmp_path / "g.gbnf"
+    grammar.write_text('root ::= "x"\n')
+    out = tmp_path / "g.jsonl"
+    argv = ["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(out), "--limit", "2", "--grammar", str(grammar)]
+    assert main(argv, local=local, remote=remote) == 0
+    sent = [c[2] for c in service.calls if c[0] == "direct"]
+    assert sent == [{"response_format": {"type": "grammar", "grammar": 'root ::= "x"\n'}}] * 2
+    assert read(out)[0]["text"] == "<a2ui>acct/run-abc/s250-x+g</a2ui>"
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["grammar"] == str(grammar)
+
+
+def test_sample_without_grammar_sends_no_extra_fields(tmp_path):
+    run, cases, service, remote, local, _ = setup(tmp_path)
+    assert main(["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(tmp_path / "p.jsonl"), "--limit", "1"], local=local, remote=remote) == 0
+    assert [c[2] for c in service.calls if c[0] == "direct"] == [{}]
+
+
+def test_sample_stops_at_the_budget(tmp_path, capsys):
+    """Each fake row costs (600 x 1.96 + 400 x 0.39 + ~31 x 4.88) / 1e6, about $0.0015. With one worker
+    and a budget of $0.002, the second row pushes the spend over, and the rest are refused."""
+    run, cases, service, remote, local, _ = setup(tmp_path)
+    out = tmp_path / "b.jsonl"
+    argv = ["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(out), "--workers", "1", "--budget", "0.002"]
+    assert main(argv, local=local, remote=remote) == 1
+    preds = read(out)
+    assert [p["finish"] for p in preds[:2]] == ["stop", "stop"]
+    assert {p.get("error") for p in preds[2:]} == {"budget reached"}
+    assert sum(c[0] == "direct" for c in service.calls) == 2
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert 0.002 <= summary["cost_usd"] < 0.004
+
+
+def test_sample_rejects_a_missing_grammar_and_a_bad_budget_before_any_client(tmp_path, capsys):
+    run, cases, _, _, local, _ = setup(tmp_path)
+
+    def never(_c):
+        raise AssertionError("a Fireworks client was created")
+
+    for extra in (["--grammar", str(tmp_path / "nope.gbnf")], ["--budget", "0"]):
+        out = tmp_path / "x.jsonl"
+        assert main(["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(out), *extra], local=local, remote=never) == 1
+        assert not out.exists()
+        err = capsys.readouterr().err
+        assert "AssertionError" not in err and ("grammar" in err or "budget" in err)
+
+
+def test_usage_cost_uses_the_listed_prices():
+    from glimmer_trainer.loop import usage_cost
+
+    assert usage_cost({"prompt_tokens": 1_000_000, "cached_prompt_tokens": 0, "completion_tokens": 0}) == 1.96
+    assert usage_cost({"prompt_tokens": 1_000_000, "cached_prompt_tokens": 1_000_000, "completion_tokens": 1_000_000}) == 0.39 + 4.88

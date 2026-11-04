@@ -102,6 +102,19 @@ class Sampler:
         self.service.calls.append(("close-sampler", self.path))
 
 
+def direct(sampler, ids, max_tokens, stop, extra):
+    """The fake completions path: same answer as `Sampler.sample`; usage is 1000 prompt tokens (400
+    cached) and the answer's length. A grammar shows up as a "+g" in the answer."""
+    svc = sampler.service
+    with svc.lock:
+        svc.calls.append(("direct", sampler.path, extra))
+    if svc.fail_sample and sampler.path.endswith(svc.fail_sample):
+        raise RuntimeError(f"boom {svc.api_key}")
+    text = f"<a2ui>{sampler.path}{'+g' if 'response_format' in extra else ''}</a2ui>"
+    tokens = [ord(c) for c in text]
+    return {"tokens": tokens, "finish": "stop", "usage": {"prompt_tokens": 1000, "cached_prompt_tokens": 400, "completion_tokens": len(tokens)}}
+
+
 class TrainingClient:
     def __init__(self, service):
         self.service, self.run_id, self.steps = service, "run-abc", 0

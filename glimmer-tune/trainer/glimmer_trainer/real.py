@@ -55,6 +55,25 @@ def scorer(dev: Path) -> Any:
     return score
 
 
+def direct(sampler: Any, ids: list[int], max_tokens: int, stop: list[int], extra: dict[str, Any]) -> dict[str, Any]:
+    """One greedy completion through the sampler's `DeploymentSampler`, which forwards extra fields
+    (here `response_format`) into the `/inference/v1/completions` payload. Runs on the sampler's own
+    event loop (`_submit`, private to the SDK's FiretitanSamplingClient). Probed 2026-11-04: the
+    serverless pool honours a GBNF `response_format`."""
+    ds = sampler.deployment_sampler
+
+    async def one():
+        out = await ds.sample_with_prompt_tokens(ids, n=1, max_tokens=max_tokens, temperature=0.0, stop=stop, logprobs=True, **extra)
+        return out[0]
+
+    c = sampler._submit(one()).result()
+    usage = {"prompt_tokens": 0, "cached_prompt_tokens": 0, "completion_tokens": 0}
+    for m in ds.drain_metrics():  # every request finished since the last drain, from any thread
+        for k in usage:
+            usage[k] += int(getattr(m, k, 0) or 0)
+    return {"tokens": list(c.full_tokens[c.prompt_len :]), "finish": c.finish_reason, "usage": usage}
+
+
 def deps(dev: Path) -> Deps:
     from fireworks.training.sdk import FireworksClient, FiretitanServiceClient
 
@@ -76,4 +95,4 @@ def deps(dev: Path) -> Deps:
         out = fw.promote_session_checkpoint(name=target["name"], output_model_id=model_id, base_model=BASE_MODEL)
         return str(out.get("name") or model_id)
 
-    return Deps(api=api, renderer=renderer, tokenizer=tokenizer, service=service, scorer=scorer(dev), promote=promote)
+    return Deps(api=api, renderer=renderer, tokenizer=tokenizer, service=service, scorer=scorer(dev), promote=promote, direct=direct)

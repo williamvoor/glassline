@@ -241,6 +241,17 @@ def test_compare_ci_is_paired_by_row_and_clustered_by_family():
         compare_ci(a, b[:-1])
 
 
+def test_compare_ci_takes_a_key_and_reads_the_family_from_dev_ids():
+    """Dev score rows have no `family`; the gallery comparisons use the name-blind score."""
+    from a2ui_eval.checkpoints import compare_ci
+
+    a = [{"id": f"dev/{f}/{i}", "slot_f1": 0.0, "slot_f1_blind": v} for f, vs in {"x": [0.2, 0.4], "y": [0.6]}.items() for i, v in enumerate(vs)]
+    b = [{**r, "slot_f1_blind": r["slot_f1_blind"] + (0.3 if "/x/" in r["id"] else 0.0)} for r in a]
+    out = compare_ci(a, b, key="slot_f1_blind")
+    assert out["diff"] == pytest.approx(0.2)
+    assert out["diff_ci"] == pytest.approx([0.0, 0.3])  # families x and y resampled: all-x, all-y, or a mix
+
+
 def test_score_and_compare_cli_on_test(test_rows, tmp_path, capsys):
     """`score --split test` needs every test row; `compare` reads two score files."""
     from a2ui_eval.checkpoints import main

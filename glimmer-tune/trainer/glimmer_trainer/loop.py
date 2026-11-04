@@ -58,6 +58,10 @@ class Deps:
     scorer: Callable[[Path, Path, bool], dict[str, Any]]
     promote: Callable[[str, str, str], str]
     clock: Callable[[], float] = time.monotonic
+    # `direct(sampler, prompt_ids, max_tokens, stop, extra) -> {"tokens", "finish", "usage"}`: one greedy
+    # completion through the completions API with extra request fields (e.g. `response_format`).
+    # `usage` sums the server's token counts for requests finished since the last call.
+    direct: Callable[..., dict[str, Any]] | None = None
 
 
 class RunError(Exception):
@@ -133,6 +137,80 @@ def sample_rows(deps: Deps, path: str, rows: list[dict[str, Any]], ckpt: str, wo
     try:
         with ThreadPoolExecutor(workers) as pool:
             return list(pool.map(lambda r: sample_one(deps.api, deps.renderer, sampler, r, max_tokens, ckpt), rows))
+    finally:
+        sampler.close()
+
+
+# Glimmer 30B sampling on the training SDK, US$ per 1M tokens (docs/tuning-report-20261102.md, "Sampling prices").
+PRICES = {"prefill": 1.96, "cached": 0.39, "sampled": 4.88}
+
+
+def usage_cost(usage: dict[str, int]) -> float:
+    cached = usage.get("cached_prompt_tokens", 0)
+    fresh = usage.get("prompt_tokens", 0) - cached
+    return (fresh * PRICES["prefill"] + cached * PRICES["cached"] + usage.get("completion_tokens", 0) * PRICES["sampled"]) / 1e6
+
+
+@dataclass
+class Spend:
+    """Running cost of a sampling job, from the server's token counts. Rows not yet started are
+    refused once `spent` reaches `budget`."""
+
+    budget: float | None
+    usage: dict[str, int] = field(default_factory=lambda: {"prompt_tokens": 0, "cached_prompt_tokens": 0, "completion_tokens": 0})
+    lock: Any = field(default_factory=lambda: __import__("threading").Lock())
+
+    def add(self, usage: dict[str, int]) -> None:
+        with self.lock:
+            for k in self.usage:
+                self.usage[k] += int(usage.get(k, 0) or 0)
+
+    @property
+    def spent(self) -> float:
+        return usage_cost(self.usage)
+
+    def over(self) -> bool:
+        return self.budget is not None and self.spent >= self.budget
+
+
+def sample_one_direct(deps: Deps, sampler: Any, row: dict[str, Any], max_tokens: int, ckpt: str, extra: dict[str, Any], spend: Spend) -> dict[str, Any]:
+    """Like `sample_one`, through `deps.direct`, with the wall-clock seconds of the successful request
+    (`latency_s`, client side, so it includes the network and the shared pool's queue)."""
+    if spend.over():
+        return {"id": row["id"], "checkpoint": ckpt, "text": None, "finish": "error", "tokens": 0, "error": "budget reached"}
+    ids = [int(t) for t in deps.renderer.build_generation_prompt(row["messages"]).to_ints()]
+    last: Exception | None = None
+    for attempt in range(1 + len(RETRY_DELAYS)):
+        if attempt:
+            time.sleep(RETRY_DELAYS[attempt - 1])
+        try:
+            t0 = time.perf_counter()
+            out = deps.direct(sampler, ids, max_tokens, deps.renderer.get_stop_sequences(), extra)
+            latency = time.perf_counter() - t0
+            spend.add(out.get("usage", {}))
+            msg, _ = deps.renderer.parse_response(list(out["tokens"]))
+            return {
+                "id": row["id"],
+                "checkpoint": ckpt,
+                "text": deps.api.get_text_content(msg),
+                "finish": "length" if out["finish"] == "length" else "stop",
+                "tokens": len(out["tokens"]),
+                "latency_s": round(latency, 3),
+            }
+        except Exception as e:  # noqa: BLE001 - recorded per row, scored as a failure
+            last = e
+    return {"id": row["id"], "checkpoint": ckpt, "text": None, "finish": "error", "tokens": 0, "error": redact(f"{type(last).__name__}: {last}")[:200]}
+
+
+def sample_rows_direct(
+    deps: Deps, path: str, rows: list[dict[str, Any]], ckpt: str, workers: int, max_tokens: int, extra: dict[str, Any], spend: Spend
+) -> list[dict[str, Any]]:
+    if deps.direct is None:
+        raise RunError("this sampler has no direct completions path")
+    sampler = deps.service.create_sampling_client(model_path=path, tokenizer=deps.tokenizer)
+    try:
+        with ThreadPoolExecutor(workers) as pool:
+            return list(pool.map(lambda r: sample_one_direct(deps, sampler, r, max_tokens, ckpt, extra, spend), rows))
     finally:
         sampler.close()
 
