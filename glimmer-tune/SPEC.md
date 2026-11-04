@@ -1541,6 +1541,308 @@ only because the repo has no remote.
 5. Run 3 (the explorer-split draft above) and v2-run1 both need SFT before the free cut-off
    (jobs started before 2026-12-01 Pacific).
 
+## Approach v2 Phase 2: intent set (spec draft, 2026-11-04)
+
+Status: **draft, not approved.** The user chose to continue past the Phase 1 gate (2026-11-04).
+
+### Decisions (user, 2026-11-04)
+
+- **D1. One track, generic v0.9.** Every intent is a generic Express ask in the R1–R6 register,
+  with its data values inline (R2). The content leans toward data explorers: dashboards, grids,
+  stat tiles, lists, detail views, filters and forms that write back. No Brief rows and no Macros.
+  Those belong to run 3 (ADR 0014, ADR 0008 note), and gallery dev can't see them.
+  ❗️ ADR 0033 says "weighted toward explorer-shaped asks (a Brief plus Result schemas)". It
+  needs a note that "explorer-shaped" now means the content of the asks, not the Brief input.
+- **D2. The gate changes now.** An explorer-shaped dev slice is built during Phase 2 (the
+  brief's Phase 6 slice, brought forward). The swap-in gate is gallery dev plus that slice. The
+  exact rule is fixed before Phase 5 (Q3).
+- **D3. Templates fix the content, Spark Open words it.** Code picks the kind, domain, columns,
+  values and labels. Spark Open turns that content into a user's request. Every text field
+  records its writer (ADR 0033).
+
+### Row shape (`data/intents/{train,tune}.jsonl`)
+
+| Field | Meaning |
+|---|---|
+| `id` | `intent/<kind>/<NNNNN>` |
+| `intent` | The request text |
+| `expect_ui` | `false` for text-only asks |
+| `kind` | `dashboard`, `grid`, `stats`, `list`, `detail`, `filter`, `form`, `state`, `update`, `text_only` |
+| `domain`, `entity` | From the schema bank |
+| `content` | The structured spec the script picked (headings, labels, columns, rows, actions). Phase 4 never sees it. It's used for the R2 check and for review |
+| `parent` | For `update` rows: the row whose accepted answer becomes `existing_surface` in Phase 4 |
+| `provenance` | `{intent, content, schema}`: each is `script:<module>@<commit>`, `model:<id>` or `person:<name>` |
+| `split` | `train` or `tune` |
+
+### Generation
+
+1. **Schema bank** (`data/intents/schema_bank.yaml`): domains → entities → columns, each with
+   a type, a unit or format, and a value generator. Writer: Q1.
+2. **Content** (`a2ui_eval/intents/content.py`, seeded, deterministic): kind × domain × entity →
+   the content spec. Inline data is 2–8 rows, so intents stay a length a user would type.
+   `state` rows carry a per-item state field, such as a loss or a completed step, which run 2
+   showed as a gap. Icons come from a field.
+3. **Wording** (Spark Open, effort low): content spec plus R1–R6 → one request. Phase 1 runs
+   used temperature 1.0. Each content spec gets one wording. The batch is varied by asking for a
+   length and a register per row: terse, chatty, a bullet list, or a pasted table.
+4. **Checks** (code). A failing row is dropped and logged, never re-asked silently:
+   - **R1/R3:** no catalog component, prop or enum word, no `/path`, event or icon name (a port
+     of the archived D1 check, with names read from the catalog JSON);
+   - **R2:** every label, heading and data value in `content` appears in the intent;
+   - **Near-duplicates:** char 5-gram Jaccard ≥ 0.35 against gallery dev, test and the explorer
+     slice, and within the set. Calibrated on the 220 gallery dev and test intents: pairs from
+     different families reach at most 0.167, and pairs from the same family have a median of 0.23
+     and a p90 of 0.61. Test intents are read only for this guard, as `cmd_export` already does;
+   - The structural fingerprint check stays at export, on the accepted targets.
+5. **Kind mix** (`content.KIND_MIX`): dashboard 12, grid 12, stats 10, list 12, detail 12,
+   filter 8, form 12, state 10, update 7 and text_only 5, in percent. Adjustable.
+6. **Splits:** `tune` has about 150 rows, stratified by kind. It is the only set teacher
+   prompts are tuned on. `train` is the rest.
+
+### Code (built 2026-11-04)
+
+`a2ui_eval/intents/`: `bank.py` (parse and validate, drafting prompts), `content.py` (kinds,
+mix, `required_strings`), `wording.py` (prompt, styles, parse), `checks.py` (register, R2,
+`NearDup`) and `pipeline.py`. The CLI is `python -m a2ui_eval.intents
+{bank,slice,content,word,assemble,sample}`. `bank` and `word` are paid and support `--dry-run`.
+Tests: `tests/test_intents.py`, with stubbed model calls.
+- Content uses only bank text. A test pins this, because provenance depends on it.
+- Checks run after wording, so changing a check needs no new model calls.
+- Update rows point at an earlier row. An update whose parent is dropped is dropped too.
+- `tune` holds no update rows and no parents of update rows.
+- The R1 jargon list is policy, intersected with the catalog's own vocabulary. It also flags
+  camelCase and digit-bearing props and enums (`h1`, `spaceBetween`) and icon names.
+- Gap: the brief's `gallery_like` kind (generic, non-data asks) is left out. Domain variety
+  covers the gallery dev kinds (calendar, sports, shipping). Revisit if the 30-intent sample
+  looks narrow.
+
+### First sample review (2026-11-04)
+
+The first 30-intent sample led to four fixes, each with a regression test in
+`tests/test_intents.py`:
+1. **Whole records.** The bank holds 8 consistent records per entity, and rows are records
+   projected onto the chosen columns. Per-column sampling had produced "The Great Gatsby |
+   J.R.R. Tolkien | 1813".
+2. **A create button.** Each entity has a `create_action`, and only it becomes a form's button.
+   Forms had been getting per-record actions such as "Cancel Booking".
+3. **The record name goes into the hint's prose.** The `entity` and `plural` keys are hidden from
+   the spec. The style is labelled as describing the message, not the screen.
+4. **A `layout` instruction.** Every `list` row has one, and other kinds get one 60% of the time.
+   It is never required text.
+
+The bank was redrafted: 45 of 48 domains passed. The slice domains are animal shelter, bakery
+production, board game collection, museum collections, photography bookings and warehouse
+inventory. Spend so far: $1.19 (bank $0.54 + $0.41, wording $0.12 + $0.12).
+
+### Second sample review and the 500-row run (2026-11-04)
+
+Three fixes from the second sample, each with a regression test:
+- **Layout copying.** The prompt says to put the layout in the person's own words. A new check,
+  `layout_copied`, rejects any 6-word run copied from the instruction.
+- **Domain context.** The hint now names the domain, so records aren't given an invented
+  setting (a fitness studio's members became a "book club").
+- **A `category` column type** for fixed kinds that aren't a state. Only `status` columns are
+  highlighted; filters can use either.
+
+The bank was redrafted with **16 records per entity**: 46 of 48 domains passed, all at 16, for
+$0.60. Slice domains: book-writing project, dental practice, museum collection, photography
+studio, university admissions, warehouse inventory.
+
+**The 500-row run:** 532 rows worded (465 + 35 updates + their parents) for $1.51. The first pass
+hit Baseten 429s with 12 workers; 4 workers is safe. After the checks:
+- 481 ok (90%);
+- 42 `layout_copied`, 4 `near_dup_set`, 3 `register` (backticks around a pasted table), 2
+  `r2_missing` (rows dropped from a table).
+
+Pass rate by kind: form 45/62 and list 56/71 (mostly `layout_copied`), every other kind ≥ 89%.
+A false positive ("where it fits" read as the prop `fit`) was fixed with a regression test.
+Spend so far: $3.30.
+
+### Explorer-shaped dev slice (`data/explorer_dev/cases.jsonl`)
+
+- 24–30 rows, the same case shape as `data/dev`. Its domains are held out of the schema bank's
+  train domains: domain plays the part of Family (ADR 0004).
+- `reviewed: true` on every row. References: Q2.
+
+### Cost and sizes
+
+- Wording costs about $0.003 per intent, at a guessed 700 tokens in and 450 out with reasoning:
+  roughly 3000 intents for $8. Drafting the bank costs about $0.55 (49 calls).
+- ❗️ **Phase 4 is the expensive step.** Phase 1 measured $0.083 per intent for Spark Open best-of-8
+  ($6.96 for 84 rows, Baseten list price, UNVERIFIED). 3000 intents at n=8 cost about $250, and
+  about $125 at n=4, before judge calls.
+
+### Stops
+
+- After the 30 random intents (the brief's stop), before more than 500 are generated.
+
+### Timeline (free SFT for jobs started by 2026-11-30 Pacific)
+
+Phase 2 by about 11-08. Judge calibration (your 50 labels) by about 11-12. Generation by about
+11-18. The SFT job starts by about 11-24, with margin.
+
+### Decisions on the open questions (user, 2026-11-04)
+
+- **Q1. Spark Open drafts the schema bank, and the user skims it.** Provenance is
+  `model:<spark-open id>`. Code validates the bank's structure. The slice's intents come from the
+  same pipeline, using the held-out domains, and the user reviews them (`reviewed: true`).
+  The explorer's dataset comments (`../explorer/datasets/*`) are never a source: the bootstrap
+  writes them with Muse Wonder, a hosted Model API model (ADR 0035).
+- **Q2. Glimmer base writes the slice's references, and the user picks and edits them.** For
+  each slice intent: Glimmer base + 3 + grammar, best-of-8, through validator layers 1–3. The user
+  picks a candidate and edits it. Provenance is `model:glimmer-base` plus `person:` when edited.
+  Using Spark Open here would favour a student distilled from it.
+- **Q3. The swap-in gate.** The v2 adapter is compared with base + 3 + grammar, paired, with
+  family-level intervals over gallery dev families plus slice domains. It swaps in if all hold:
+  - the point gain is at least +0.05;
+  - the lower bound is above −0.05;
+  - the output-token p95 is no worse.
+- **Q4. The kind overlap with dev families is accepted.** Reports list `21_shipping-status`,
+  `27_stats-card` and `33_financial-data-grid` separately, so gains inflated there are visible.
+
+## Approach v2 Phase 2 completion: openers, 3000 intents, explorer slice (spec, 2026-11-04)
+
+The user asked to scale to 3000 and to build the slice (ADR 0038).
+
+### Files
+
+- `a2ui_eval/intents/wording.py`: `OPENERS`, plus an opener directive in `messages`.
+- `a2ui_eval/intents/pipeline.py`: `word_rows` picks the opener with the style's seeded RNG.
+- `a2ui_eval/intents/slice.py` (new): slice content, the prompt export, the candidate page, and
+  `build_cases` from picks.
+- `a2ui_eval/intents/__main__.py`: the `slice-content`, `slice-word` (paid), `slice-select`
+  (checks, selection and the prompt export), `slice-page` and `slice-build` commands.
+- `a2ui_eval/data_cli.py`: `export_eval_cases` (pulled out of `cmd_export`) includes
+  `data/explorer_dev/cases.jsonl`.
+- `tests/test_intents.py` and `tests/test_intents_slice.py` (new).
+
+### Behavior
+
+1. **Openers.** Each row gets a seeded opener directive alongside its style: a greeting, straight
+   to what they want, a word of context, a question, or a plain noun phrase. The 532 rows already
+   worded keep their wording. Before the change, 253 of 532 (48%) opened with "Hey" or "Hi".
+2. **3000 intents.** `word` covers every content row with 4 workers (Baseten returned 429s at 12).
+   `assemble` writes `train.jsonl` and `tune.jsonl` (150 rows, stratified, with no update rows or
+   their parents).
+3. **Slice content.** 48 specs: one of each of the 8 data kinds (dashboard, grid, stats, list,
+   detail, filter, form, state) per held-out domain, in a seeded order per domain. *Amended
+   during the build: the spec said 8 kinds × 5 = 40, but that doesn't balance the domains.* No `update` rows, because they need an existing
+   surface, and no `text_only` rows. Each spec is worded and checked like train rows, and the
+   near-duplicate check also compares against the train intents. The first 5 passing rows per
+   domain become slice candidates: 30 in all.
+4. **Prompt export.** `exports/explorer_dev_fewshot3.jsonl` has `{id, messages}` rows: the frozen
+   student prompt plus the frozen 3 examples (`checked_system_prompt`, `fewshot_examples`,
+   `with_fewshot`), the same shape as the Phase 1 export.
+5. **Sampling (billed, about $1.10, run only on the user's OK).**
+   `glimmer_trainer sample --run runs/sft1 --ckpt s000 --cases exports/explorer_dev_fewshot3.jsonl
+   --n 8 --temperature 1.0 --top-p 0.95 --top-k 64 --grammar exports/express_chat.gbnf`.
+6. **Candidate page.** `slice-page` runs `Validator.check`, layers 1–3, on every candidate. It
+   saves screenshots and writes a static HTML page per case: the intent, each candidate's
+   screenshot, its Express and its pass/fail reasons. Picks go in
+   `data/explorer_dev/picks.yaml`, written by hand: `<id>: {pick: k}` or
+   `<id>: {express: "<edited Express>", from: k}`.
+7. **Cases.** `slice-build` turns picks into `data/explorer_dev/cases.jsonl`, with fields as in
+   `data/dev`:
+   - `id`: `explorer/<domain>/<NNNN>`; `family`: the domain slug;
+   - `reference` comes from `compile_express`, and `reference_express` from
+     `decompile(reference)`;
+   - `fingerprint`; `expect_ui: true`; `existing_surface: []`; `split: "dev"`;
+   - `source: "explorer"`, `reviewed: true`;
+   - `provenance`: `{intent: model:<spark>, reference: model:glimmer-base (+ person:<name> if edited)}`.
+
+   A picked candidate that fails validator layer 1 is refused. A case is refused if its
+   reference's fingerprint equals a gallery dev or test fingerprint.
+
+Added during the build: **crash-safe wording.** `word_rows` appends each reply to
+`<out>.partial` as it arrives, and the next run reads that file. A 2468-row run had been
+writing nothing until it finished.
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| E0 | A wording run that dies keeps its replies, and the next run asks only for the rest | `test_intents.py::test_word_rows_keeps_replies_when_the_run_dies` |
+| E1 | Every prompt has an opener directive, seeded per row, and the batch uses more than one | `test_intents.py::test_openers_are_seeded_and_varied` |
+| E2 | Slice content comes only from the held-out domains, one spec per kind per domain, and no update or text_only rows | `test_intents_slice.py::test_slice_content_kinds_and_domains` |
+| E3 | Slice selection keeps the first 5 ok rows per domain, in content order | `test_intents_slice.py::test_select_five_per_domain` |
+| E4 | The prompt export is the frozen prompt + 3 examples + the intent, and its prefix is byte-identical to the dev export's | `test_intents_slice.py::test_export_matches_dev_prefix` |
+| E5 | `build_cases`: case shape and provenance; an edit adds `person:`; a pick failing layer 1 raises; a gallery fingerprint collision raises; a missing pick raises | `test_intents_slice.py::test_build_cases_*` |
+| E6 | `cmd_export`'s eval cases include the slice cases (a train row with a slice intent is dropped) | `test_intents_slice.py::test_export_guard_reads_slice` |
+| E7 | Slice cases score with `score_response`, and the family CI code accepts the domain slug as a family | `test_intents_slice.py::test_slice_case_scores` |
+
+### Refuter round 1 (2026-11-04): PASS-WITH-NOTES, one fix round
+
+The fixes, each with a regression test that failed first:
+
+| # | Finding | Fix | Test |
+|---|---|---|---|
+| E8 | MAJOR: wording reused when the content behind an id changed (ids are index-based) | Worded records carry `content_hash`, covering the content keys that reach the prompt; a mismatch is reworded | `test_intents.py::test_word_rows_rewords_a_row_whose_content_changed` |
+| E9 | MAJOR: the slice/train near-duplicate guard depended on run order | `slice-select` refuses until every train row is worded and no partial file is left (`slice.require_complete`). The check is symmetric, so this one guard covers both directions | `test_intents_slice.py::test_slice_select_needs_every_train_row_worded` |
+| E6 | MAJOR: E6's test didn't go through `cmd_export` | A test runs `cmd_export` with `export_sft` stubbed | `test_intents_slice.py::test_cmd_export_guards_against_slice_cases` |
+| E10 | MINOR: required strings masked as substrings hid `h1` and `/patients` | Masked only as whole words | `test_register_masks_required_strings_only_as_whole_words` |
+| E11 | MINOR: R2 found "No" in "know" and "5" in "15" | Short and numeric values must match whole words | `test_missing_matches_short_values_as_whole_words` |
+| E12 | MINOR: a truncated partial line crashed every resume | `read_lenient` | `test_word_rows_survives_a_truncated_partial_line` |
+| E13 | MINOR: provenance hard-coded | Schema provenance from `Domain.provenance` (content `bank_provenance`, hidden from the model), intent provenance from the worded record's `model` | `test_assemble_records_bank_and_wording_provenance` |
+| E14 | MINOR: removing parents shrank tune | Parents are excluded before sampling | `test_tune_is_filled_without_update_parents` |
+| E15 | MINOR: rerunning slice-select after slice-build rejected every row as a near-duplicate of itself | `references_for_slice` leaves out the slice's own cases | `test_slice_references_exclude_the_slices_own_cases` |
+| E16 | MINOR: a pick that isn't a mapping raised a TypeError | `SliceError` | `test_build_cases_refuses_a_pick_that_is_not_a_mapping` |
+
+Spec changes from the review:
+- AGENTS.md now says the leakage guards may read test intents and fingerprints.
+- ADR 0038 notes that held-out domains have near neighbours in train.
+
+Deferred:
+- `length` rows are kept as done, so raising `max_tokens` needs those rows deleted.
+- `generate` can raise `IndexError` at tiny totals.
+- The CLI paths (`slice-page`, `slice-build`) have no tests. They are thin wrappers over tested
+  functions, and are exercised when the slice is built.
+
+**Run order:** `word` (all) → `slice-content` → `slice-word` → `slice-select` → `assemble` →
+`glimmer_trainer sample` (billed) → `slice-page` → the user's picks → `slice-build`. Rerun
+`slice-select` whenever train wording changes.
+
+**Backfill (one-off):** the 532 rows worded before E8, and the 3000-row run started under the
+previous code, have no `content_hash`. Content is regenerated deterministically (unchanged except
+for the hidden `bank_provenance`), and those records get the hash of their row's current content.
+They were worded on exactly that content.
+
+### Results (2026-11-04)
+
+- **Wording:** all 3000 rows worded. The last 2468 cost $6.54, plus about $0.50 for 185 rows from a
+  4-worker start that was stopped to add crash safety. 8 workers caused no 429s.
+- **Backfill:** content was regenerated and equals the previous file apart from
+  `bank_provenance`. All 3000 records got their `content_hash`. Copies of the pre-backfill files
+  are in `runs/intents/` (ignored).
+- **Checks:**
+  - 2537 ok (85%);
+  - 312 `layout_copied`, 127 `near_dup_set`, 21 `register`, 3 `r2_missing`.
+- **Assemble:** 2349 train and 149 tune. Update rows whose parent failed were dropped. Every
+  intent's provenance is `model:muse-spark-open-1026`.
+- **Openers:** in the rows worded with an opener directive, 22% start with "Hey" or "Hi",
+  against 48% before. The most common openers are "Can you" (274), "I need" (138), "I want" (129)
+  and "Hi there" (124).
+- **Slice:** 48 specs worded for $0.14. 43 ok and 5 `layout_copied`. 30 selected, 5 per domain.
+  The export is `exports/explorer_dev_fewshot3.jsonl`.
+- **Phase 2 spend:** about $10.50 in total.
+- **Next (billed, about $1.10, waiting for the user's OK):** Glimmer base best-of-8 on the slice
+  export, then `slice-page` and the user's picks.
+
+### Decisions
+
+- Picks are made in a hand-edited YAML file beside a static page. No new review UI mode: the
+  page is used once, for 30 cases.
+- Wiring the slice into `checkpoints score` (a new split, a source other than `"gallery"` so the
+  gallery mean stays pure, and a combined gallery + slice CI) is left to Phase 6, when the gate
+  is first computed. Slice cases are kept out of `dev_cases()` until then.
+- The slice intents are hand-reviewed when the user picks: a row whose intent is bad is dropped
+  from `picks.yaml` (`<id>: {drop: "<reason>"}`) and replaced from the next passing row of the
+  same domain.
+- The near-duplicate threshold stays at 0.35.
+
+### Test command
+
+`uv run pytest tests/test_intents.py tests/test_intents_slice.py`, then `uv run pytest`.
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.

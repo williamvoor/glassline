@@ -63,7 +63,10 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
   unless the user asks. Eval sampling is billed. SFT is free only for jobs started before
   2026-12-01 Pacific. State the cost before a paid step.
 - **The test split is frozen.** Nothing reads `data/test` except the one-time final evaluation
-  (`export-test`). The exporter and trainer read only train and dev.
+  (`export-test`) and the leakage guards. The guards read only test intents and fingerprints, to
+  keep training and the explorer slice away from them: `data_cli.export_eval_cases`, the intent
+  near-duplicate check (`intents.__main__.gallery_references`) and `slice-build`'s fingerprint
+  check. Nothing trains, tunes or selects on test. The trainer reads only train and dev.
 - **No leakage across splits.** Splits are by Family, ADR 0004.
   Export refuses train rows whose Family or Fingerprint appears in dev or test. Keep those guards.
 - **The prompt is frozen.** `export` refuses when `build_system_prompt` differs from

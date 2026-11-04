@@ -51,15 +51,21 @@ def eval_seed_fingerprints(index: RefIndex, data: Path = DATA) -> set[str]:
     return {fingerprint(s.messages, index) for f, s in seeds.items() if splits[f] in ("dev", "test")}
 
 
+def export_eval_cases(data: Path) -> list[dict]:
+    """Every eval case the export leakage guards check train rows against: the intent draft,
+    gallery dev and test, synthetic dev and the explorer slice (ADR 0038)."""
+    return (
+        read_jsonl(data / DRAFT.name)
+        + read_jsonl(data / "dev" / "cases.jsonl")
+        + read_jsonl(data / "test" / "cases.jsonl")
+        + read_jsonl(data / "synth" / "dev" / "cases.jsonl")
+        + read_jsonl(data / "explorer_dev" / "cases.jsonl")
+    )
+
+
 def cmd_export(args) -> None:
     sdk, index, splits = _setup(args.data)
-    synth = args.data / "synth"
-    eval_cases = (
-        read_jsonl(args.data / DRAFT.name)
-        + read_jsonl(args.data / "dev" / "cases.jsonl")
-        + read_jsonl(args.data / "test" / "cases.jsonl")
-        + (read_jsonl(synth / "dev" / "cases.jsonl") if (synth / "dev" / "cases.jsonl").exists() else [])
-    )
+    eval_cases = export_eval_cases(args.data)
     if not args.train.exists():
         raise DataError(f"no train cases at {args.train}")
     rows, report = export_sft(

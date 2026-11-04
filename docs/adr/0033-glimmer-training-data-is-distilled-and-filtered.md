@@ -38,3 +38,7 @@ The teacher is Glimmer itself (best-of-n), Muse Spark Open (ADR 0034), or both. 
 - Intents become the bottleneck. Each row records which person, script or model wrote each text field.
 - The judge must agree with 50 hand labels on at least 85% of pass/fail before it is used for filtering.
 - Free Fireworks SFT ends for jobs started after 2026-11-30 Pacific. The first v2 run has to start before then, or the track costs money.
+
+## Note (2026-11-04)
+
+Phase 2 (user decision): "explorer-shaped asks" means the **content** of the asks (dashboards, grids, stat tiles, lists, detail views, filters, forms that write back), not the Brief + Result schemas input. Every intent is generic v0.9 Express in the R1–R6 register with inline values. Brief rows belong to run 3 (ADR 0014, ADR 0008 note). The swap-in gate becomes gallery dev plus an explorer-shaped dev slice. glimmer-tune SPEC "Approach v2 Phase 2".
