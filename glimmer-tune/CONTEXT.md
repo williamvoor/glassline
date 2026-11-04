@@ -14,31 +14,31 @@ _Avoid_: Example, sample
 One gallery design and all the cases made from its Seed. It applies to gallery designs only.
 _Avoid_: Skeleton (for synthetic rows), template
 
-**Template**:
+**Template**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A hand-written slot file that varies one Family's text and data to produce many Gallery rows.
 _Avoid_: Skeleton
 
-**Skeleton**:
+**Skeleton**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A layout archetype for synthetic surfaces: fixed containers plus Blocks and Open slots, filled from one Topic. It is the synthetic counterpart of a Family for splits.
 _Avoid_: Family, template, archetype (except in Banned archetype)
 
-**Block**:
+**Block**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A named unit that a Skeleton places, such as a field, a key/value row or a list, which becomes a small subtree of components.
 _Avoid_: Widget, component (a Block is usually several components)
 
-**Open slot**:
+**Open slot**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A place in a Skeleton that is filled with a number of Blocks of allowed kinds, chosen by coverage.
 _Avoid_: Hole, placeholder
 
-**Vocabulary**:
+**Vocabulary**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 The committed, LLM-written words for one Domain: titles, sentences, fields, actions, entities and choice groups.
 _Avoid_: Dictionary, word list
 
-**Domain**:
+**Domain**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A subject area for Vocabulary, such as travel or banking.
 _Avoid_: Dataset, category
 
-**Topic**:
+**Topic**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A coherent group of words within one Domain's Vocabulary. One surface draws all its words from one Topic.
 _Avoid_: Theme, subject
 
@@ -56,11 +56,11 @@ _Avoid_: Prompt, query, instruction
 The v0.9 messages a Case expects, and their canonical Express decompile, which is the training target.
 _Avoid_: Gold, answer, label
 
-**Detail level**:
+**Detail level**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 How much of a Synthetic row's Intent spells out, in the user's words: terse (purpose and content), medium (adds where each piece goes) or specific (adds styling). Whatever the Intent leaves unsaid follows the House style.
 _Avoid_: Verbosity, difficulty
 
-**House style**:
+**House style**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 The fixed look a Synthetic row's Reference takes wherever its Intent says nothing about styling. A specific Intent states only the departures from it.
 _Avoid_: Defaults, theme
 
@@ -68,7 +68,7 @@ _Avoid_: Defaults, theme
 A Case made from a Family's Template.
 _Avoid_: Hand row, real row
 
-**Synthetic row**:
+**Synthetic row**: _(since 2026-11-04 only the 200 synthetic dev rows, a regression guard)_
 A Case grown from a Skeleton by the generator.
 _Avoid_: Generated row, fake row
 
@@ -78,7 +78,7 @@ _Avoid_: Generated row, fake row
 Where a Family or a Skeleton belongs: train, dev or test for Families, and train, dev or held out for Skeletons. Test is gallery-only.
 _Avoid_: Partition, fold
 
-**Held out**:
+**Held out**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A reserve split for Skeletons. Its rows are never trained on and never used for dev, and are generated only to probe generalisation later.
 _Avoid_: Test (for Skeletons), excluded
 
@@ -90,11 +90,11 @@ _Avoid_: Held out
 The layout of one test Family that no Skeleton may mirror, as checked by a matcher.
 _Avoid_: Blocked design
 
-**Eval literal**:
+**Eval literal**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 A distinctive string from dev or test data that never appears in train data. Vocabulary and Synthetic rows must not contain one.
 _Avoid_: Leak string
 
-**Coverage key**:
+**Coverage key**: _(retired 2026-11-04 with the run 2 generators; see `archive/`)_
 One catalog feature that synthetic data must exercise a target number of times, such as a component, a prop, a slot pattern, a binding kind, a check kind or an action kind.
 _Avoid_: Feature, pattern (a slot pattern is one kind of Coverage key)
 

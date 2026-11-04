@@ -1,8 +1,9 @@
 import pytest
 
 from a2ui_eval.export import TEMPLATE_OVERHEAD, ExportError, export_sft
-from a2ui_eval.generate import generate_family, load_templates
+from a2ui_eval.io import read_jsonl
 from a2ui_eval.prompt import build_system_prompt
+from a2ui_eval.seeds import ROOT
 
 SPLITS = {"09_login-form": "train", "34_child-list-template": "train", "27_stats-card": "dev"}
 
@@ -11,17 +12,19 @@ def words(text: str) -> int:
     return len(text.split())
 
 
-@pytest.fixture(scope="module")
-def train(sdk, index):
-    t = load_templates()
-    return generate_family(sdk, index, t["09_login-form"], "train", 4) + generate_family(
-        sdk, index, t["34_child-list-template"], "train", 3
-    )
+FIXTURES = ROOT / "tests" / "fixtures"
 
 
 @pytest.fixture(scope="module")
-def dev(sdk, index):
-    return generate_family(sdk, index, load_templates()["27_stats-card"], "dev", 2)
+def train():
+    """4 login-form + 3 child-list train cases, frozen from the archived template generator."""
+    return read_jsonl(FIXTURES / "export_train.jsonl")
+
+
+@pytest.fixture(scope="module")
+def dev():
+    """2 stats-card dev cases, frozen the same way."""
+    return read_jsonl(FIXTURES / "export_dev.jsonl")
 
 
 def run(sdk, train, dev, splits=SPLITS, max_seq_len=100_000):
@@ -92,7 +95,7 @@ def test_overhead_and_default_pinned():
     from a2ui_eval import data_cli
 
     assert TEMPLATE_OVERHEAD == 64
-    args = data_cli.build_parser().parse_args(["export"])
+    args = data_cli.build_parser().parse_args(["export", "--train", "t.jsonl"])
     assert args.max_seq_len == 8192
 
 
@@ -106,18 +109,18 @@ def test_cli_export_guards_against_drafts_and_seeds(sdk, index, train, tmp_path,
 
     from a2ui_eval import data_cli
     from a2ui_eval.fingerprint import fingerprint
-    from a2ui_eval.generate import SPLITS_PATH, read_jsonl, write_jsonl
+    from a2ui_eval.io import SPLITS_PATH, read_jsonl, write_jsonl
     from a2ui_eval.seeds import load_seeds
 
     shutil.copy(SPLITS_PATH, tmp_path / "splits.yaml")
     login = [c for c in train if c["family"] == "09_login-form"]
     lists = [c for c in train if c["family"] == "34_child-list-template"]
-    write_jsonl(tmp_path / "train" / "cases.jsonl", train)
+    write_jsonl(tmp_path / "train.jsonl", train)
     # A draft row shares the login fingerprint; nothing in dev/test files does.
     write_jsonl(tmp_path / "intents_draft.jsonl", [{"id": "d", "split": "dev", "intent": "z", "fingerprint": login[0]["fingerprint"], "reviewed": False}])
     monkeypatch.setattr(data_cli, "load_tokenizer_counter", lambda: words)
     out = tmp_path / "out.jsonl"
-    assert data_cli.main(["--data", str(tmp_path), "export", "--out", str(out)]) == 0
+    assert data_cli.main(["--data", str(tmp_path), "export", "--train", str(tmp_path / "train.jsonl"), "--out", str(out)]) == 0
     rows = read_jsonl(out)
     kept = {r["messages"][1]["content"] for r in rows}
     assert not kept & {c["intent"] for c in login if c["fingerprint"] == login[0]["fingerprint"]}

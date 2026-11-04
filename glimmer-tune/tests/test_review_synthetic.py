@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from a2ui_eval.generate import write_jsonl
+from a2ui_eval.io import write_jsonl
 from a2ui_eval.review import (
     ReviewError,
     SyntheticReview,
@@ -18,15 +18,14 @@ from a2ui_eval.review import (
     sample_rows,
     synthetic_views,
 )
-from a2ui_eval.synth import pipeline as P
+from a2ui_eval.io import read_jsonl
+from a2ui_eval.seeds import ROOT
 
 
 @pytest.fixture(scope="module")
-def generated(sdk_v0_9):
-    env = P.load_env(sdk=sdk_v0_9)
-    rows, report = P.synthesize(env, 14, 0, "train")
-    assert report.rows == 14
-    return rows
+def generated():
+    """14 frozen synthetic dev rows (the generator is archived)."""
+    return read_jsonl(ROOT / "data" / "synth" / "dev" / "cases.jsonl")[:14]
 
 
 @pytest.fixture

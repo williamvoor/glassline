@@ -8,7 +8,8 @@ import pytest
 from a2ui_eval.convert import V0_9_BASIC_CATALOG_ID, ConversionError, v1_to_v0_9
 from a2ui_eval.data_cli import DATA
 from a2ui_eval.fingerprint import fingerprint
-from a2ui_eval.generate import GenerationError, Template, generate_family, load_splits, read_jsonl, wrap
+from a2ui_eval.io import load_splits, read_jsonl, wrap
+from a2ui_eval.sdk import CompileError
 from a2ui_eval.prompt import build_system_prompt
 from a2ui_eval.sdk import ExpressSDK
 from a2ui_eval.seeds import load_seeds
@@ -83,11 +84,13 @@ def test_convert_rejects_v1_only_prop(component, prop):
     'root = Video("https://example.com/v.mp4", posterUrl="https://example.com/p.png")',
     'root = Slider($/v, 0, 10, steps=5)',
 ])
-def test_v1_only_props_rejected(sdk, index, line):
-    template = Template(family="tiny", slots={"x": [1]}, seed_values={}, intents=["A thing."],
-                        express='surface("s")\n' + line + '\n$/name = "a"\n$/v = 1\n')
-    with pytest.raises(GenerationError, match="tiny"):
-        generate_family(sdk, index, template, "train", 1)
+def test_v1_only_props_rejected(sdk, line):
+    express = 'surface("s")\n' + line + '\n$/name = "a"\n$/v = 1\n'
+    try:
+        sdk.compile_express(express)
+    except CompileError:
+        return
+    assert sdk.sdk_check(wrap(express), None), "a v1-only prop passed the v0.9 compiler and SDK check"
 
 
 def test_prompt_is_v0_9(sdk):
@@ -100,12 +103,12 @@ def test_prompt_is_v0_9(sdk):
 def test_real_data_is_v0_9(sdk):
     draft = read_jsonl(DATA / "intents_draft.jsonl")
     dev = read_jsonl(DATA / "dev" / "cases.jsonl")
-    train = read_jsonl(DATA / "train" / "cases.jsonl")
+    fewshot = read_jsonl(DATA / "fewshot3.jsonl")
     # 2d: 7 dev families x 12 + 8 test families x 17, all approved by the model review.
     assert len(draft) == 220 and all(r["reviewed"] for r in draft)
-    assert len(train) == 26 * 60
+    assert len(fewshot) == 3
     assert [r["id"] for r in dev] == [r["id"] for r in draft if r["split"] == "dev" and r["reviewed"]] and len(dev) == 84
-    for row in draft + dev + train:
+    for row in draft + dev + fewshot:
         assert all(m["version"] == "v0.9" for m in row["reference"]), row["id"]
         assert row["reference"][0]["createSurface"]["catalogId"] == V0_9_BASIC_CATALOG_ID, row["id"]
         assert sdk.compile_express(row["reference_express"]) == row["reference"], row["id"]

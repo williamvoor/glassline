@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 from a2ui_eval.checkpoints import CheckpointError, export_dev, score_predictions
-from a2ui_eval.generate import read_jsonl, wrap
+from a2ui_eval.io import read_jsonl, wrap
 from a2ui_eval.seeds import ROOT
 
 DATA = ROOT / "data"
@@ -512,23 +512,27 @@ def test_a_rootless_surface_is_unreachable(dev_rows):
 # Run 2 baselines (SPEC "Run 2 baselines"): base plus 3 few-shot examples.
 
 
-def test_fewshot_examples_are_train_gallery_from_distinct_families():
-    from a2ui_eval.checkpoints import fewshot_examples
+def test_fewshot_examples_are_the_frozen_run2_rows():
+    """The launch default (base + 3) must keep showing the exact run 2 examples: drawn by
+    `random.Random(0)` from the train families, then frozen when the train cases were archived."""
+    import hashlib
 
-    ex = fewshot_examples(DATA, k=3, seed=0)
-    train = {c["id"]: c for c in read_jsonl(DATA / "train" / "cases.jsonl")}
-    assert len(ex) == 3 and len({c["family"] for c in ex}) == 3
+    from a2ui_eval.checkpoints import FEWSHOT, fewshot_examples
+    from a2ui_eval.io import load_splits
+    from a2ui_eval.seeds import load_seeds
+
+    ex = fewshot_examples(DATA)
+    assert [c["id"] for c in ex] == ["train/11_purchase-complete/0000", "train/34_child-list-template/0000", "train/13_coffee-order/0000"]
+    assert hashlib.sha256(FEWSHOT.read_bytes()).hexdigest()[:16] == "7e24f4243af9bf0f"
+    splits = load_splits(load_seeds())
     for c in ex:
-        assert c["id"] in train and train[c["id"]]["split"] == "train"
-        assert not c.get("existing_surface") and c.get("expect_ui", True)
-    assert [c["id"] for c in ex] == [c["id"] for c in fewshot_examples(DATA, k=3, seed=0)]  # deterministic
-    assert [c["id"] for c in ex] != [c["id"] for c in fewshot_examples(DATA, k=3, seed=1)]
+        assert splits[c["family"]] == "train" and not c.get("existing_surface") and c.get("expect_ui", True)
 
 
 def test_fewshot_dev_export_puts_examples_between_system_and_question(dev_rows):
     from a2ui_eval.checkpoints import fewshot_examples, with_fewshot
 
-    ex = fewshot_examples(DATA, k=3, seed=0)
+    ex = fewshot_examples(DATA)
     rows = with_fewshot(dev_rows, ex)
     assert [(r["id"], r["source"], r["subset"]) for r in rows] == [(r["id"], r["source"], r["subset"]) for r in dev_rows]
     shots = []

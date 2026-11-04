@@ -11,7 +11,7 @@ from lark import Lark
 from lark.exceptions import LarkError
 
 from a2ui_eval.catalog_check import BUILTINS, CatalogCheck
-from a2ui_eval.generate import wrap
+from a2ui_eval.io import wrap
 from a2ui_eval.grammar import ANSWER_OPEN, REASONING_CLOSE, REASONING_OPEN, chat_gbnf, express_gbnf, to_lark
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,8 +50,8 @@ def test_every_dev_reference_is_accepted(express):
     assert rejected == []
 
 
-def test_every_train_gallery_reference_is_accepted(express):
-    cases = _cases("data/train/cases.jsonl")
+def test_every_fewshot_reference_is_accepted(express):
+    cases = _cases("data/fewshot3.jsonl")
     rejected = [c["id"] for c in cases if c.get("reference_express") and not accepts(express, wrap(c["reference_express"]))]
     assert rejected == []
 

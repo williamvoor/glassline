@@ -19,14 +19,14 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .generate import write_jsonl
+from .io import write_jsonl
 from .sdk import ExpressSDK
 from .seeds import ROOT
 
 DRAFT = ROOT / "data" / "intents_draft.jsonl"
 CATALOG = ROOT / "catalogs" / "basic_v0_9.json"
 DIST = ROOT / "review" / "dist"
-VERDICTS = ROOT / "data" / "synth" / "review.jsonl"
+VERDICTS = ROOT / "data" / "review.jsonl"  # run 2 verdicts: archive/data/synth/review.jsonl
 VERDICT_KINDS = ("approve", "reject")
 
 # Component props whose literal string values a reader would expect in the intent.
@@ -178,18 +178,16 @@ def record_verdict(review: SyntheticReview, row_id: Any, verdict: Any, reason: A
 
 
 @cache
-def _lint_context():
-    from .synth.catalog_model import CatalogModel
-    from .synth.skeleton import load_skeletons
+def _lint_model():
+    from .catalog_model import CatalogModel
 
-    model = CatalogModel(v09_sdk())
-    return model, {k: s.tags for k, s in load_skeletons(model).items()}
+    return CatalogModel(v09_sdk())
 
 
 def synthetic_views(review: SyntheticReview) -> list[dict[str, Any]]:
-    from .synth.lint import lint_surface
+    from .lint import lint_surface
 
-    sdk, (model, tags) = v09_sdk(), _lint_context()
+    sdk, model = v09_sdk(), _lint_model()
     verdicts = read_verdicts(review.verdicts)
     out = []
     for row in sample_rows(read_rows(review.cases), review.sample, review.seed):
@@ -201,7 +199,7 @@ def synthetic_views(review: SyntheticReview) -> list[dict[str, Any]]:
             reviewed=verdict is not None,
             verdict=verdict["verdict"] if verdict else None,
             reason=verdict["reason"] if verdict else "",
-            lint=lint_surface(row["reference"], model, tags.get(row.get("skeleton"), ())),
+            lint=lint_surface(row["reference"], model),
             expected=expected_values(row["reference"]),
         )
         try:

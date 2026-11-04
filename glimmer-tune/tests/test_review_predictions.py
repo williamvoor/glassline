@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from a2ui_eval.checkpoints import dev_cases
-from a2ui_eval.generate import read_jsonl, wrap, write_jsonl
+from a2ui_eval.io import read_jsonl, wrap, write_jsonl
 from a2ui_eval.review import PREDICTION_VERDICTS, PredictionReview, ReviewError, make_handler, prediction_views, record_prediction_verdict
 
 

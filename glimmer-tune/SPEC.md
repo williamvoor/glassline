@@ -1453,6 +1453,71 @@ Status: **draft, not approved. Run 3 happens only if the explorer's Stage A2 ask
 - Whether synthetic Result schemas need a vocabulary of their own, or reuse the domain
   vocabularies.
 
+## Approach v2: distill and filter (2026-11-04)
+
+The brief is `docs/distill_restart_prompt.md`. Runs 1 and 2 plateaued on gallery dev:
+- s225 scores 0.523 name-blind slot F1, level with base + 3 at about 0.47, and every
+  family-level interval includes 0;
+- the template and skeleton data taught a house style that doesn't transfer to realistic asks.
+
+v2 has a teacher write several candidates per realistic intent, puts every candidate through a
+layered validator, and keeps only the best valid one per intent. The measurement stack stays.
+The data strategy is replaced.
+
+### Decisions (2026-11-04)
+
+- **s225 and s250 are clean** (user decision). They may be candidates and test-split
+  comparisons, even though their training rows contain `muse-spark-1.3` vocabulary.
+- **Hosted Model API output** (`muse-spark-1.x`, `muse-wonder-*`) never enters new training data.
+  It may be used for evaluation. The synthetic dev set, which holds that vocabulary, stays a
+  regression guard only.
+- **Spark Open as a teacher** is accepted by the brief. The ADR with the license clauses
+  quoted, and the matching AGENTS.md rule change, are still to write. Until then ADR 0025 applies.
+- **Gallery dev is the primary metric.** Synthetic dev is a regression guard. The test split stays
+  unopened until the final candidates.
+- **The explorer launch (2026-11-25) doesn't depend on v2.** Its default is base + 3 + grammar,
+  using `data/fewshot3.jsonl`.
+
+### Phase 0 cleanup (done)
+
+The plan is `docs/cleanup-plan.md`. The recovery point is tag `pre-distill-v1` (`48e061e`), local
+only because the repo has no remote.
+- **Archived** (`archive/`, not importable, its tests not collected):
+  - the Jinja Family Templates and `generate.py`;
+  - the skeleton generator, skeletons, house style and `muse-spark-1.3` vocabulary;
+  - the gallery train cases (1560) and synthetic train cases (3640), with their coverage
+    report and review verdicts;
+  - `coverage.py`. Contrary to the plan, it is not data-agnostic: `report` reads the generator's
+    `patterns` field, and `SynthConfig` holds house-style rules.
+- **Moved up out of `synth/`:** `catalog_model.py`, `lint.py` (validator layer 3),
+  `structhash.py` (layer 5) and `llm_call.py`. `io.py` now holds the JSONL, split and `wrap`
+  helpers that used to live in `generate.py`.
+- **Sources of truth:**
+  - `data/dev/cases.jsonl` (84) and `data/test/cases.jsonl` (136) are frozen. They can't be
+    regenerated from the working tree.
+  - `data/fewshot3.jsonl` freezes the 3 run 2 few-shot rows, which a test pins by id and hash.
+- **CLI:** `data_cli` keeps `export` (now `--train PATH`, no `--mix`), `freeze-prompt`,
+  `export-dev` (`--fewshot` is now a flag), `export-test`, `grammar` and `lint`.
+- **Tests:** 389 harness tests and 40 trainer tests pass. The retired tests live in
+  `archive/tests/`. The export tests read frozen fixtures (`tests/fixtures/export_*.jsonl`),
+  generated once by the archived generator.
+
+### Next
+
+1. Checkpoint selection on gallery dev: the full 84 rows, or a gallery subset of ≥ 42 rows.
+   Synthetic dev is reported as a guard and not averaged into `selection`. This is a separate
+   commit, with its test first.
+2. The ADRs:
+   - Spark Open as a teacher and judge, quoting its license and the host's terms;
+   - Model API output out of training data, superseding the ADR 0009 vocabulary;
+   - ADR 0009, 0011 and 0025 marked "Superseded by".
+3. Phase 1, the teacher ceiling on gallery dev. This stops for a decision. ❗️ The 2026-11-03
+   Spark Open baseline scored 0.290 on gallery, so Glimmer best-of-8 is the likelier teacher.
+   Best-of-8 must be reported twice: chosen by the validator only, and the oracle (chosen against
+   the reference).
+4. Run 3 (the explorer-split draft above) and v2-run1 both need SFT before the free cut-off
+   (jobs started before 2026-12-01 Pacific).
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.
@@ -1461,15 +1526,15 @@ Status: **draft, not approved. Run 3 happens only if the explorer's Stage A2 ask
 ## Test command
 
 ```bash
-cd glimmer-tune && uv run pytest -n auto --dist loadgroup -m "not slow"   # while iterating: 648 tests, ~11 s
-cd glimmer-tune && uv run pytest -n auto --dist loadgroup                 # before "done", a commit or a review: 790 tests, ~1:50
-cd glimmer-tune && uv run pytest                                          # the same suite serially, ~6:30
+cd glimmer-tune && uv run pytest -n auto --dist loadgroup -m "not slow"   # while iterating: 383 tests, ~3 s (2026-11-04, Approach v2)
+cd glimmer-tune && uv run pytest -n auto --dist loadgroup                 # before "done", a commit or a review: 389 tests, ~16 s
+cd glimmer-tune && uv run pytest                                          # the same suite serially
 ```
 
 ### Test tiers (2026-11-03)
 
 - **`slow`** marks tests that generate many rows or every gallery family. `tests/conftest.py` sets it from the fixtures a test uses (`SLOW_FIXTURES`) or from its name (`SLOW_TESTS`, which lists the tests measured at 2 s or more without such a fixture). A new test on a heavy fixture is marked automatically.
 - **The fast tier is for iteration only.** Generation regressions (the A1 sample-size breakage, coverage reach) show up only in the slow tier, so "done" always means the whole suite.
-- **`pytest-xdist`** is a dev dependency. Each test file stays on one worker (`xdist_group` by file), so its module fixtures are built once. `test_generate.py` spreads across workers. The floor is now `test_synth_pipeline.py`, at about 100 s on one worker.
+- **`pytest-xdist`** is a dev dependency. Each test file stays on one worker (`xdist_group` by file), so its module fixtures are built once. `test_generate.py` spreads across workers. The floor is now `test_synth_pipeline.py`, at about 100 s on one worker. (Since Approach v2 both files are in `archive/tests/`; see the Test command numbers.)
 - The trainer's suite (`cd trainer && uv run pytest`) takes seconds and is unchanged.
 - AGENTS.md's command list should point here. That edit waits until the other session's AGENTS.md changes are committed.

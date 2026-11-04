@@ -1,7 +1,7 @@
 # glimmer-tune
 
 glimmer-tune builds training/evaluation data and measures Muse Glimmer 30B's ability to write
-**A2UI Express**. It includes a compiler-aware scorer, deterministic data generation, human
+**A2UI Express**. It includes a compiler-aware scorer, frozen gallery eval sets, human
 review pages, checkpoint comparisons, constrained-decoding grammar generation, and a separate
 Fireworks supervised fine-tuning (SFT) trainer.
 
@@ -9,7 +9,13 @@ The implemented training target is the **generic A2UI v0.9 basic catalog**, rath
 Explorer's Result-backed Macros. This project does not ingest a database or write SQL for
 Explorer. Muse Glimmer is used only to generate A2UI.
 
-Read [CONTEXT.md](CONTEXT.md) for Seed, Family, Template, Skeleton, Case, and Fingerprint;
+**Approach v2 (2026-11-04).** Runs 1 and 2 trained on template and skeleton data, and that
+plateaued on gallery dev. The restart distills candidates from a teacher and filters them
+through a layered validator ([brief](docs/distill_restart_prompt.md), SPEC "Approach v2").
+The template and synthetic generators are in `archive/` ([cleanup plan](docs/cleanup-plan.md));
+tag `pre-distill-v1` is the last commit before that.
+
+Read [CONTEXT.md](CONTEXT.md) for Seed, Family, Case, and Fingerprint;
 [AGENTS.md](AGENTS.md) for change rules; and [SPEC.md](SPEC.md) for the behavioral contract.
 The spec is a chronological record: later amendments supersede its opening milestone-2a
 draft. Its proposed run 3, Brief → Macro Surface track is not approved or implemented as the
@@ -20,27 +26,21 @@ Explorer serving path. Current run-2 evidence and open decisions are in the
 
 ```mermaid
 flowchart TD
-    S[Vendored gallery Seeds] --> T[Family Templates + slot values]
-    T --> G[Deterministic gallery Cases]
-    CAT[Vendored v0.9 catalog] --> SK[Skeletons + vocabularies + house style]
-    SK --> SYN[Synthetic Cases + coverage/lint]
-    G --> REVIEW[Human intent/reference review]
-    SYN --> REVIEW
-    REVIEW --> EX[Export guards: splits, fingerprints, catalog, frozen prompt, length]
+    S[Vendored gallery Seeds] --> DEV[Frozen gallery dev/test Cases]
+    SYN[Frozen synthetic dev rows: regression guard] --> DEVP
+    DEV --> DEVP[Dev prompts and references]
+    DIST[Distilled train Cases, Approach v2: not built yet] --> EX[Export guards: splits, fingerprints, catalog, frozen prompt, length]
     EX --> TRAIN[Fireworks-format SFT rows]
-    EX --> DEV[Dev prompts and references]
     TRAIN --> TR[Separate trainer environment]
     TR --> P[Checkpoint predictions]
-    DEV --> SCORE[Compiler-aware scoring]
+    DEVP --> SCORE[Compiler-aware scoring]
     P --> SCORE
     SCORE --> REV[Rendered review + run reports]
 ```
 
-Gallery Families belong to a single train/dev/test split. Handwritten Templates vary a
-Family's slots deterministically. Synthetic Skeletons supply additional layouts and are
-also split as units; a catalog-driven generator fills them with reviewed vocabularies,
-data bindings, validation checks, and actions. These are generated UI examples, not live
-database Results.
+Gallery Families belong to a single train/dev/test split. The dev (84) and test (136) Cases
+were generated from Family Templates that are now archived. The frozen case files are the
+source of truth. The 200 synthetic dev rows are kept as a regression guard only.
 
 Exports reject split/fingerprint leakage, invalid catalog use, a changed frozen system
 prompt, and excessive sequence length. SFT rows train the answer only; reasoning strength
@@ -52,20 +52,22 @@ the harness environment instead of importing its dependencies.
 | Path | Responsibility |
 |---|---|
 | `a2ui_eval/sdk.py`, `convert.py`, `refs.py` | Pinned A2UI SDK adapter, v1-to-v0.9 conversion, catalog/component references |
-| `a2ui_eval/seeds.py`, `generate.py`, `fingerprint.py` | Seeds, Family Templates, deterministic gallery Cases, structural fingerprints |
-| `a2ui_eval/synth/` | Catalog model, Skeletons, vocabularies, bindings, intents, coverage, house style, plausibility lint |
+| `a2ui_eval/seeds.py`, `fingerprint.py`, `io.py` | Seeds, structural fingerprints, JSONL/split helpers |
+| `a2ui_eval/catalog_model.py`, `lint.py`, `structhash.py` | Catalog model, S8 plausibility lint, near-duplicate hash |
 | `a2ui_eval/export.py`, `prompt.py`, `data_cli.py` | SFT export guards, frozen prompt, data commands |
 | `a2ui_eval/score.py`, `structure.py`, `surfaces.py`, `align.py`, `catalog_check.py` | Compilation, stateful Surface checks, bindings, component alignment, catalog checks |
 | `a2ui_eval/checkpoints.py` | Dev/test prompt exports, checkpoint scoring, paired test comparison |
 | `a2ui_eval/grammar.py` | Catalog-derived Express grammar with Glimmer channel framing |
 | `a2ui_eval/review.py`, `review/` | Python review server and Vite + Lit UI |
-| `a2ui_eval/teacher.py` | Scoped Spark Open baseline for data work (ADR 0025); never an SFT target |
+| `a2ui_eval/teacher.py`, `llm_call.py` | Spark Open runner (ADR 0025 baseline; Phase 1 teacher measurement) |
 | `catalogs/`, `seeds/gallery/` | Vendored catalogs and 43 verbatim upstream gallery Seeds |
-| `families/` | Handwritten YAML Templates |
-| `data/splits.yaml` | Family and Skeleton split assignments |
+| `data/splits.yaml` | Family split assignments (and the run 2 Skeleton splits, history) |
 | `data/system_prompt.txt` | Frozen prompt used by training and inference |
-| `data/train/`, `data/dev/`, `data/test/` | Gallery Cases; the test split is held for final evaluation |
-| `data/synth/` | Synthetic Cases, coverage reports, review verdicts |
+| `data/dev/`, `data/test/` | Frozen gallery Cases; the test split is held for final evaluation |
+| `data/fewshot3.jsonl` | The 3 frozen few-shot examples of base + 3 (the launch default) |
+| `data/synth/dev/` | Synthetic regression guard (200 rows) |
+| `data/intents_draft.jsonl` | History: how the dev/test intents were reviewed |
+| `archive/` | Retired template and synthetic generators, their data and tests; not imported |
 | `trainer/` | Independent Python project for prepare/train/sample |
 | `exports/`, `runs/` | Ignored generated exports, checkpoints' metadata, predictions, scores, and logs |
 | `docs/` | Run plans, reviews, reports, and decisions based on measurements |
@@ -107,43 +109,18 @@ Run from `glimmer-tune/`. These commands make no live model calls:
 
 ```bash
 uv run python -m a2ui_eval.data_cli --help
-uv run python -m a2ui_eval.data_cli vocab --all --check
 uv run python -m a2ui_eval.data_cli lint --gallery
-uv run python -m a2ui_eval.data_cli lint --synthetic data/synth/train/cases.jsonl
-uv run python -m a2ui_eval.data_cli coverage
+uv run python -m a2ui_eval.data_cli lint --synthetic data/synth/dev/cases.jsonl
 uv run python -m a2ui_eval.data_cli export-dev
 uv run python -m a2ui_eval.data_cli grammar
 ```
 
-`coverage` rewrites the generated coverage JSON/README under `data/synth/`. `export-dev`
-writes `exports/sft_dev.jsonl`; `grammar` writes `exports/express_chat.gbnf`.
+`export-dev` writes `exports/sft_dev.jsonl`; `grammar` writes `exports/express_chat.gbnf`.
 
-Build the trainer's default mixed training export from the committed Cases:
-
-```bash
-uv run python -m a2ui_eval.data_cli export --mix 0.7 --out exports/sft_mix.jsonl
-```
-
-This combines synthetic and gallery training rows, using real tokenizer counts. For an
-offline inspection of the export path, `--approx-tokens` uses an estimate instead; it is not
-a substitute for the trainer's actual token-length checks. `--mix` controls the synthetic
-share. Without it, the exporter writes gallery-only rows to `exports/sft_train.jsonl` by
-default. Neither export launches training.
-
-## Change or regenerate data deliberately
-
-The following are authoring operations, not installation steps: they write committed Cases
-or review artifacts. Inspect diffs and preserve reviewed intent text.
-
-| Command prefix: `uv run python -m a2ui_eval.data_cli` | Purpose |
-|---|---|
-| `generate --count N --seed 0` | Regenerate training Cases per gallery Family |
-| `draft --keep-reviews` | Regenerate candidate eval intents while preserving compatible human reviews |
-| `build-eval --split dev` | Build dev Cases from rows marked `reviewed: true` |
-| `synth --split train --count N --seed 0` | Generate training synthetic Cases without model calls |
-| `synth --split dev --count N --seed 0` | Generate synthetic dev Cases without model calls |
-| `vocab --all` | Call Muse Spark to draft vocabularies; review before use |
-| `freeze-prompt` | Freeze the prompt; refuses an incompatible existing file unless explicitly forced |
+`export --train PATH` turns train Cases into SFT rows (`exports/sft_train.jsonl` by default),
+using real tokenizer counts; `--approx-tokens` is an offline estimate. There is no train set
+until Approach v2 builds the distilled one. `freeze-prompt` freezes the prompt and refuses an
+incompatible existing file unless forced.
 
 Do not regenerate the frozen test split or use it for iteration. Test prompt export and
 sampling are reserved for the decided final evaluation. Export guards may inspect held-out
@@ -171,8 +148,8 @@ Open **http://127.0.0.1:8767**. The chosen port avoids the bootstrap server's de
 and wrapper's 8766. The review server's own default is 8765 if `--port` is omitted.
 Default mode edits intent text and review flags in `data/intents_draft.jsonl`.
 
-For synthetic review, use
-`uv run python -m a2ui_eval.review --synthetic data/synth/train/cases.jsonl --sample 50 --port 8767`.
+To review rows from any cases file, use
+`uv run python -m a2ui_eval.review --synthetic data/synth/dev/cases.jsonl --sample 50 --port 8767`.
 For checkpoint gallery review, pass `--predictions PATH --scores PATH`; verdicts are written
 alongside scores unless overridden. Build `review/dist` again after UI changes.
 
@@ -193,7 +170,8 @@ uv run python -m glimmer_trainer train
 `prepare` checks rendered data/token lengths and reports it without opening a remote training
 session. `train` without `--launch` also validates and reports, then exits without launching.
 Both expect `../exports/sft_mix.jsonl`, `../exports/sft_dev.jsonl`, and the frozen prompt by
-default; flags can select other files. Tokenizer loading can require network access.
+default; flags can select other files. The run 2 `sft_mix.jsonl` is retired (`archive/exports/`,
+ignored), so pass the v2 export explicitly. Tokenizer loading can require network access.
 
 Live `train --launch --run-id NAME` and `sample` require explicit authorization under this
 project's instructions. Sampling is billed; confirm the current service terms and cost
@@ -222,13 +200,14 @@ rendered review; results also report failure modes and uncertainty.
 ## Model and experiment boundaries
 
 - Muse Glimmer 30B, base or tuned adapters, generates A2UI only.
-- Muse Spark may draft vocabulary as specified. Spark Open via Baseten is restricted to the
-  scoped teacher baseline/data work; its Express is never an SFT target.
+- Hosted Model API models (`muse-spark-1.x`, `muse-wonder-*`) stay out of training data;
+  evaluation only. Spark Open's role as a teacher is decided by a new ADR (pending; ADR
+  0025 still applies until then).
 - Reasoning strength is `low` in training rows and normal inference. The spec names one
   dev-only high-reasoning base-model experiment; do not silently mix its results.
 - The prompt is frozen. Forcing a new prompt invalidates compatibility with existing adapters
   and requires a deliberate new run rather than an onboarding “fix”.
-- Keep Family/Skeleton splits and fingerprint guards intact. Select checkpoints on dev, then
+- Keep Family splits and fingerprint guards intact. Select checkpoints on dev, then
   conduct the final test evaluation only when decided.
 
 If exports fail, inspect the reported prompt, catalog, leakage, or length violation rather

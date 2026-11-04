@@ -2,7 +2,7 @@ from collections import Counter
 
 import pytest
 
-from a2ui_eval.generate import GenerationError, load_splits
+from a2ui_eval.io import SplitError, load_splits
 from a2ui_eval.seeds import load_seeds
 
 MULTI_TURN = {"00_incremental", "31_incremental-dashboard"}
@@ -22,19 +22,19 @@ def test_partition_complete():
 def test_unknown_family_rejected(tmp_path):
     path = tmp_path / "splits.yaml"
     path.write_text("train: [a, nope]\ndev: [b]\n")
-    with pytest.raises(GenerationError, match="unknown families"):
+    with pytest.raises(SplitError, match="unknown families"):
         load_splits({"a", "b"}, path)
 
 
 def test_family_in_two_splits_rejected(tmp_path):
     path = tmp_path / "splits.yaml"
     path.write_text("train: [a]\ntest: [a]\n")
-    with pytest.raises(GenerationError, match="both"):
+    with pytest.raises(SplitError, match="both"):
         load_splits({"a"}, path)
 
 
 def test_family_without_split_rejected(tmp_path):
     path = tmp_path / "splits.yaml"
     path.write_text("train: [a]\n")
-    with pytest.raises(GenerationError, match="without a split"):
+    with pytest.raises(SplitError, match="without a split"):
         load_splits({"a", "b"}, path)

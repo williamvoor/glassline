@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .checkpoints import DATA, DEV_EXPORT, dev_cases
-from .generate import read_jsonl
+from .io import read_jsonl
 from .seeds import ROOT
 
 # LiteLLM model string. The dated snapshot (from Baseten's /v1/models, 2026-11-03), so runs repeat.
@@ -140,7 +140,7 @@ async def run_baseline(
 async def litellm_complete(request: dict[str, Any]) -> dict[str, Any]:
     """Runs llm_call.py in a throwaway env with the explorer's LiteLLM pin. Keys stay in .env."""
     cmd = ["uv", "run", "--no-project", "--python", "3.13", *(a for p in LLM_ENV for a in ("--with", p)),
-           "python", str(Path(__file__).parent / "synth" / "llm_call.py")]
+           "python", str(Path(__file__).parent / "llm_call.py")]
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )

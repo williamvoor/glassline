@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from a2ui.core.expressions.expression_parser import A2uiExpressionError, ExpressionParser
 
 from .sdk import ExpressSDK
-from .synth.catalog_model import CatalogModel
+from .catalog_model import CatalogModel
 
 BUILTINS = {
     "surface": {"sendDataModel"},
