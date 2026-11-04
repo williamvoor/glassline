@@ -3,7 +3,7 @@
 Guidance for coding agents working in `glimmer-tune/`. Read `SPEC.md` first. It is a dated log of
 milestones and runs, so the latest sections win. The glossary is `CONTEXT.md` (Seed, Family,
 Case, Fingerprint, …), and the decisions are `../docs/adr/`
-(0003–0005, 0008, 0009, 0011, 0014, 0015, 0021, 0022). Run results and reports are in `docs/`.
+(0003–0005, 0008, 0014, 0015, 0021, 0022, 0033–0035; 0009, 0011 and 0025 are superseded). Run results and reports are in `docs/`.
 
 ## What this is
 
@@ -44,14 +44,19 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
 
 ## Hard rules
 
-- **Models.** Muse Glimmer 30B (base or our adapters) only generates A2UI. `meta/muse-spark-1.3` wrote
-  the run 2 vocabulary (now archived; hosted Model API output stays out of training data), plus Muse Spark Open via Baseten, scoped by ADR 0025
-  (`python -m a2ui_eval.teacher baseline`; its Express is never an SFT target). No Gemini, no
-  Wonder, no other baselines. The Approach v2 ADRs (pending) will change this rule: Spark Open as
-  a teacher and judge.
+- **Models.**
+  - Muse Glimmer 30B (base or our adapters) generates A2UI, including as a best-of-n teacher.
+    It judges only if Phase 3 picks it as the judge (ADR 0034).
+  - Muse Spark Open via Baseten may write targets, write or vary intents, and judge (ADR 0034).
+    Any adapter whose training data holds its output is a Muse Model License Derivative: record
+    that in the run manifest, because shipping it means showing "Built with Muse Spark Open".
+  - Hosted Model API models (`muse-spark-1.x`, `muse-wonder-*`) are for evaluation only. Their
+    output never enters training data in any role (ADR 0035).
+  - No Gemini, and no other models.
 - **Reasoning strength is `low` everywhere:** every eval setup, model and training row. The chat
-  template defaults to `high`, so a row without it mismatches inference. The one exception is a
-  dev-only base-model setup at `high`.
+  template defaults to `high`, so a row without it mismatches inference. The exceptions are a
+  dev-only base-model setup at `high` and the Phase 1 teacher measurement (Spark Open at `low`
+  and `medium`). Training rows are always `low`.
 - **Tests never call a model or the network.** Stub the model. Fireworks is touched only by
   `glimmer_trainer train --launch` and `sample`.
 - **Don't spend money unasked.** Don't run `train --launch`, `sample`, `teacher baseline` or any eval sampling
@@ -70,8 +75,9 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
   references, because canonical references can change.
 - **Catalog-agnostic code.** Catalog facts come from the catalog JSON, not hard-coded component
   names or prop rules.
-- **Dataset text is ours, not a model's,** except where a spec says otherwise (vocab, 2c-3
-  rewording). Intents for dev and test are hand-reviewed (`reviewed: true`).
+- **Every text field records who wrote it** (ADR 0033): a person, a script or a model. Model-written
+  text comes only from the models allowed above. Intents for dev and test are hand-reviewed
+  (`reviewed: true`).
 - **Secrets.** `FIREWORKS_API_KEY`, `META_API_KEY` and `BASETEN_API_KEY` live in the repo root's `.env`. Code reads env
   vars only. Never print or log them.
 - **Don't modify `../a2ui/`** or depend on paths inside it at runtime. `../explorer/` belongs to its

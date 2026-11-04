@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0033 and ADR-0035 (2026-11-04)
 ---
 
 # Synthetic training surfaces come from the catalog schema, shaped by skeletons
@@ -27,3 +27,7 @@ Splits follow ADR 0004 with skeletons in place of families: each skeleton is tra
 ## Note (2026-11-03)
 
 Spark writing the vocabulary is an exception to ADR 0003's "no model-written dataset text". ADR 0003's amendment of 2026-11-03 records it and its limits: words only, never Express targets.
+
+## Superseded (2026-11-04)
+
+ADR 0033 replaces skeleton-built training data with teacher candidates filtered by a layered validator. ADR 0035 keeps the vocabulary step's hosted Model API output out of training data. The generator, skeletons and vocabulary are in `glimmer-tune/archive/`. The 200 synthetic dev rows stay as a regression guard.

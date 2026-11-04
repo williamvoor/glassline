@@ -23,3 +23,7 @@ The rule above, "dataset text must not be written by a model", was meant for wha
 - **Allowed:** model-written *words* that a spec section approves, with structure, paths and data still built by code. Today that means the synthetic vocabulary (titles, labels, sentences, records, icons), written once by `meta/muse-spark-1.3`, then validated, reviewed and committed (ADR 0009). It also covers the optional 2c-3 intent rewording, with the model logged per row.
 - **Not allowed:** a model-written Express target or reasoning trace in any SFT row. ADR 0025 keeps the same line for Muse Spark Open.
 - Dev and test intents stay hand-reviewed.
+
+## Note (2026-11-04)
+
+Under ADR 0033, targets are written by a teacher model (Glimmer or Spark Open, ADR 0034), so "dataset text must not be written by a model" no longer holds for targets. The decision stands: targets are answer-only, any teacher reasoning is stripped, and rows are at reasoning strength low.

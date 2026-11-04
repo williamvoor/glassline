@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0033 (2026-11-04)
 ---
 
 # Synthetic references follow a house style, and their intents never name the catalog
@@ -19,3 +19,7 @@ Synthetic intents also follow 2d: no component, prop or enum names, no paths, ev
 - Style variety (non-house values) comes only from `specific` rows. The detail mix is steered by coverage with a 50% cap on specific, and the row count grows until coverage is met.
 - Engineering-only distinctions with no everyday phrase (`spaceAround` vs `spaceEvenly`, `h4` vs `h5`, `fit: none`) are never generated.
 - The house style is a design opinion. It is judged by eye at checkpoint (b), not only by coverage.
+
+## Superseded (2026-11-04)
+
+The house style taught a look that didn't transfer to realistic asks (ADR 0033). Distilled targets keep whatever style the teacher's best valid candidate has. The style rules are in `glimmer-tune/archive/`.

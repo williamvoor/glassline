@@ -1471,8 +1471,7 @@ The data strategy is replaced.
 - **Hosted Model API output** (`muse-spark-1.x`, `muse-wonder-*`) never enters new training data.
   It may be used for evaluation. The synthetic dev set, which holds that vocabulary, stays a
   regression guard only.
-- **Spark Open as a teacher** is accepted by the brief. The ADR with the license clauses
-  quoted, and the matching AGENTS.md rule change, are still to write. Until then ADR 0025 applies.
+- **Spark Open as a teacher** is accepted (ADR 0034). The AGENTS.md model rules are updated.
 - **Gallery dev is the primary metric.** Synthetic dev is a regression guard. The test split stays
   unopened until the final candidates.
 - **The explorer launch (2026-11-25) doesn't depend on v2.** Its default is base + 3 + grammar,
@@ -1514,10 +1513,15 @@ only because the repo has no remote.
      Compare their `sources.gallery` numbers, not their `selection`, or rescore their predictions.
    - `selection_ci` (the per-source bootstrap) is no longer used by scoring.
    - `exports/sft_dev.jsonl` and `sft_dev_fewshot3.jsonl` were rebuilt with the new subset. Their prompts are byte-identical to run 2; the run 2 copies are in `archive/exports/*.run2.jsonl` (ignored). Rebuild them with `export-dev` after any dev change.
-2. The ADRs:
-   - Spark Open as a teacher and judge, quoting its license and the host's terms;
-   - Model API output out of training data, superseding the ADR 0009 vocabulary;
-   - ADR 0009, 0011 and 0025 marked "Superseded by".
+2. ~~The ADRs~~ **Done (2026-11-04).**
+   - **ADR 0033:** distill and filter. It supersedes 0009 and 0011.
+   - **ADR 0034:** Spark Open may teach, write intents and judge. It supersedes 0025.
+     - It quotes the Muse Model License and Baseten's terms. Baseten adds no restriction of its
+       own and defers to the model license.
+     - An adapter is a Derivative if any Spark Open output (targets, intents or judge selection)
+       reached its training data. Shipping such an adapter needs "Built with Muse Spark Open".
+   - **ADR 0035:** hosted Model API output stays out of training data. It is stricter than
+     clause (ix), which bars only models that compete with Meta's.
 3. Phase 1, the teacher ceiling on gallery dev. This stops for a decision. ❗️ The 2026-11-03
    Spark Open baseline scored 0.290 on gallery, so Glimmer best-of-8 is the likelier teacher.
    Best-of-8 must be reported twice: chosen by the validator only, and the oracle (chosen against

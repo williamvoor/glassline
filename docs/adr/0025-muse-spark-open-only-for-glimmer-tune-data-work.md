@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: superseded by ADR-0034 (2026-11-04)
 ---
 
 # Muse Spark Open is used only for glimmer-tune data work, never in the explorer's request path
@@ -38,3 +38,7 @@ Spark Open writes Express about as well as untuned Glimmer: named arguments (`fo
 - Words it writes pass the same validators and eval-literal rule as Spark 1.3's vocabulary. Anything it writes is checked against dev and test fingerprints and wording, because it may know the public A2UI gallery.
 - The LiteLLM model string and Baseten prices in `a2ui_eval/teacher.py` are unverified as of 2026-11-03.
 - Tests stub the model, as for every other model call.
+
+## Superseded (2026-11-04)
+
+ADR 0034 allows Spark Open's output as targets, intents and judge verdicts, quotes the license, and accepts its attribution term. The explorer exclusion stays. The baseline result above is still the reference for Phase 1.

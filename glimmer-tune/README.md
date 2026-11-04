@@ -59,7 +59,7 @@ the harness environment instead of importing its dependencies.
 | `a2ui_eval/checkpoints.py` | Dev/test prompt exports, checkpoint scoring, paired test comparison |
 | `a2ui_eval/grammar.py` | Catalog-derived Express grammar with Glimmer channel framing |
 | `a2ui_eval/review.py`, `review/` | Python review server and Vite + Lit UI |
-| `a2ui_eval/teacher.py`, `llm_call.py` | Spark Open runner (ADR 0025 baseline; Phase 1 teacher measurement) |
+| `a2ui_eval/teacher.py`, `llm_call.py` | Spark Open runner (ADR 0025 baseline; Phase 1 teacher measurement, ADR 0034) |
 | `catalogs/`, `seeds/gallery/` | Vendored catalogs and 43 verbatim upstream gallery Seeds |
 | `data/splits.yaml` | Family split assignments (and the run 2 Skeleton splits, history) |
 | `data/system_prompt.txt` | Frozen prompt used by training and inference |
@@ -201,8 +201,10 @@ rendered review; results also report failure modes and uncertainty.
 
 - Muse Glimmer 30B, base or tuned adapters, generates A2UI only.
 - Hosted Model API models (`muse-spark-1.x`, `muse-wonder-*`) stay out of training data;
-  evaluation only. Spark Open's role as a teacher is decided by a new ADR (pending; ADR
-  0025 still applies until then).
+  evaluation only (ADR 0035).
+- Spark Open may teach, write intents and judge (ADR 0034). An adapter trained on any of its
+  output is a Muse Model License Derivative: a product using it must show "Built with Muse
+  Spark Open".
 - Reasoning strength is `low` in training rows and normal inference. The spec names one
   dev-only high-reasoning base-model experiment; do not silently mix its results.
 - The prompt is frozen. Forcing a new prompt invalidates compatibility with existing adapters

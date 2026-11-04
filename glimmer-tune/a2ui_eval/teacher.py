@@ -8,9 +8,10 @@ same scorer as Glimmer's checkpoints:
     uv run python -m a2ui_eval.checkpoints score runs/teacher-spark-open/predictions.jsonl \\
         --full --out runs/teacher-spark-open/score.full.json
 
-Only dev rows are sent (the test split stays frozen). The output is a baseline, never training
-data: ADR 0025 does not allow Spark Open's answers into SFT targets. LiteLLM runs in llm_call.py's
-throwaway environment, as for the vocabulary writer, so importing this module never imports it.
+Only dev rows are sent (the test split stays frozen). This `baseline` output is a
+measurement, not training data. ADR 0034 (superseding 0025) allows Spark Open targets only through
+the Approach v2 validator. LiteLLM runs in llm_call.py's throwaway environment, so importing this
+module never imports it.
 """
 
 from __future__ import annotations
