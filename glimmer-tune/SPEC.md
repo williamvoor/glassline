@@ -1504,9 +1504,15 @@ only because the repo has no remote.
 
 ### Next
 
-1. Checkpoint selection on gallery dev: the full 84 rows, or a gallery subset of ≥ 42 rows.
-   Synthetic dev is reported as a guard and not averaged into `selection`. This is a separate
-   commit, with its test first.
+1. ~~Checkpoint selection on gallery dev~~ **Done.**
+   - `selection` and `selection_blind` are the gallery dev mean, with a family-level interval
+     (as on test).
+   - The trainer's subset is 6 rows from each of the 7 gallery dev families (42). Synthetic dev
+     rows are never in it: they are scored with `--full` and reported under `sources` as the guard.
+   - Score files carry `selection_rule: "gallery"`.
+   - ❗️ Run 1 and run 2 score files (`runs/sft1`, `runs/sft2`) used the gallery + synthetic mean.
+     Compare their `sources.gallery` numbers, not their `selection`, or rescore their predictions.
+   - `selection_ci` (the per-source bootstrap) is no longer used by scoring.
 2. The ADRs:
    - Spark Open as a teacher and judge, quoting its license and the host's terms;
    - Model API output out of training data, superseding the ADR 0009 vocabulary;

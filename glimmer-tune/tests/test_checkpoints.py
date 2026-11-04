@@ -18,15 +18,21 @@ def dev_rows():
 
 
 def test_export_dev_rows_and_subset(dev_rows):
-    """T3: every dev case once, a fixed 32+32 subset, the frozen system text, no answer turn."""
+    """T3, Approach v2: every dev case once; the subset is 6 gallery rows per family (42) and no
+    synthetic rows; the frozen system text; no answer turn."""
     gallery = read_jsonl(DATA / "dev" / "cases.jsonl")
     synth = read_jsonl(DATA / "synth" / "dev" / "cases.jsonl")
     assert len(dev_rows) == len(gallery) + len(synth) == 284
     assert sorted(r["id"] for r in dev_rows) == sorted(c["id"] for c in gallery + synth)
     by_source = {s: [r for r in dev_rows if r["source"] == s] for s in ("gallery", "synthetic")}
     assert len(by_source["gallery"]) == 84 and len(by_source["synthetic"]) == 200
-    for s in by_source.values():
-        assert sum(r["subset"] for r in s) == 32
+    assert not any(r["subset"] for r in by_source["synthetic"])
+    picked = [r["id"] for r in by_source["gallery"] if r["subset"]]
+    assert len(picked) == 42
+    per_family = {}
+    for i in picked:
+        per_family[i.split("/")[1]] = per_family.get(i.split("/")[1], 0) + 1
+    assert len(per_family) == 7 and set(per_family.values()) == {6}
     intents = {c["id"]: c["intent"] for c in gallery + synth}
     for r in dev_rows:
         assert r["messages"] == [{"role": "system", "content": PROMPT}, {"role": "user", "content": intents[r["id"]]}]
@@ -57,7 +63,8 @@ def test_score_summary_per_source(dev_rows):
     assert gal["rows"] == syn["rows"] == 2
     assert gal["slot_f1"] == pytest.approx(0.5) and gal["compiles"] == 0.5 and gal["exact_match"] == 0.5
     assert syn["truncated"] == 0.5 and 0.5 <= syn["slot_f1"] < 1.0
-    assert out["selection"] == pytest.approx((gal["slot_f1"] + syn["slot_f1"]) / 2)
+    assert out["selection"] == pytest.approx(gal["slot_f1"])  # gallery only; synthetic is a guard
+    assert out["selection_rule"] == "gallery"
     assert {r["id"] for r in out["rows"]} == set(g + s)
     json.dumps(out)  # serialisable
 
@@ -88,7 +95,7 @@ def test_score_cli_subset_and_full(dev_rows, tmp_path, capsys):
     assert main(["score", str(preds), "--out", str(out), "--dev", str(dev)]) == 0
     assert json.loads(out.read_text())["selection"] == 0.0
     assert main(["score", str(preds), "--out", str(out), "--dev", str(dev), "--full"]) == 1
-    assert "missing predictions for 220" in capsys.readouterr().err
+    assert "missing predictions for 242" in capsys.readouterr().err
 
 
 def _rows(gallery: list[float], synthetic: list[float]) -> list[dict]:
@@ -137,16 +144,18 @@ def test_score_output_carries_selection_ci(dev_rows, tmp_path, capsys):
 
     cases = _cases()
     picked = [r for r in dev_rows if r["subset"]]
+    families = sorted({r["id"].split("/")[1] for r in picked})
+    # Whole families right or wrong, so the family-level interval has spread to show.
     preds = [
         {"id": r["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])}
-        if i % 2
+        if families.index(r["id"].split("/")[1]) % 2
         else {"id": r["id"], "checkpoint": "s025", "finish": "error", "text": None}
-        for i, r in enumerate(picked)
+        for r in picked
     ]
     out = score_predictions(preds, dev_rows, DATA)
     lo, hi = out["selection_ci"]
     assert lo < out["selection"] < hi
-    assert out["bootstrap"] == {"samples": 2000, "level": 0.95, "seed": 0, "stratified_by": ["gallery", "synthetic"]}
+    assert out["bootstrap"] == {"samples": 2000, "level": 0.95, "seed": 0, "clustered_by": "family", "rows": "gallery"}
 
     dev = tmp_path / "dev.jsonl"
     dev.write_text("".join(json.dumps(r) + "\n" for r in dev_rows))
@@ -360,9 +369,9 @@ def test_score_reports_blind_next_to_literal(dev_rows):
     assert out["selection"] == pytest.approx(0.5)
 
 
-def test_blind_selection_is_wired_from_slot_blind_as_a_macro_mean(dev_rows):
-    """Refuter (N7): a renamed path makes blind > literal on a row, and unequal source counts
-    make the macro mean differ from the row mean."""
+def test_blind_selection_is_wired_from_slot_blind_on_gallery_only(dev_rows):
+    """Refuter (N7): a renamed path makes blind > literal on a row. Approach v2: synthetic rows
+    don't move either selection score."""
     import re
 
     cases = _cases()
@@ -379,9 +388,10 @@ def test_blind_selection_is_wired_from_slot_blind_as_a_macro_mean(dev_rows):
     row = next(r for r in out["rows"] if r["id"] == gal)
     assert row["slot_f1"] < 1.0 and row["slot_f1_blind"] == 1.0
     assert out["sources"]["gallery"]["slot_f1_blind"] == 1.0
-    assert out["selection_blind"] == pytest.approx((1.0 + 0.5) / 2)  # macro mean, not the row mean 2/3
-    assert out["selection"] == pytest.approx((row["slot_f1"] + 0.5) / 2)
+    assert out["selection_blind"] == pytest.approx(1.0)
+    assert out["selection"] == pytest.approx(row["slot_f1"])
     assert out["selection"] < out["selection_blind"]
+    assert out["sources"]["synthetic"]["slot_f1_blind"] == pytest.approx(0.5)  # still reported as the guard
 
 
 # --- blind interval and scorer version (run 2 prep, item 1) -----------------------------------
@@ -402,11 +412,13 @@ def test_score_output_carries_blind_ci_and_scorer_version(dev_rows):
 
     cases = _cases()
     picked = [r for r in dev_rows if r["subset"]]
+    families = sorted({r["id"].split("/")[1] for r in picked})
+    # Whole families right or wrong, so the family-level interval has spread to show.
     preds = [
         {"id": r["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])}
-        if i % 2
+        if families.index(r["id"].split("/")[1]) % 2
         else {"id": r["id"], "checkpoint": "s025", "finish": "error", "text": None}
-        for i, r in enumerate(picked)
+        for r in picked
     ]
     out = score_predictions(preds, dev_rows, DATA)
     lo, hi = out["selection_blind_ci"]
@@ -541,3 +553,34 @@ def test_fewshot_dev_export_puts_examples_between_system_and_question(dev_rows):
     for r, d in zip(rows, dev_rows):
         assert r["messages"] == [d["messages"][0], *shots, d["messages"][1]]
     assert dev_rows[0]["messages"][1]["role"] == "user" and len(dev_rows[0]["messages"]) == 2  # input not mutated
+
+
+def test_selection_interval_resamples_gallery_families(dev_rows):
+    """Approach v2: the dev interval is family-level over gallery rows, like the test split. A
+    family scoring all-or-nothing must widen it; synthetic rows must not narrow it."""
+    from a2ui_eval.checkpoints import family_ci
+
+    cases = _cases()
+    gallery = [r for r in dev_rows if r["source"] == "gallery" and r["subset"]]
+    first = gallery[0]["id"].split("/")[1]
+    preds = [
+        {"id": r["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])}
+        if r["id"].split("/")[1] == first
+        else {"id": r["id"], "checkpoint": "s025", "finish": "error", "text": None}
+        for r in gallery
+    ]
+    synth = [r for r in dev_rows if r["source"] == "synthetic"][:50]
+    preds += [{"id": r["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])} for r in synth]
+    out = score_predictions(preds, dev_rows, DATA)
+    gal_rows = [r for r in out["rows"] if r["source"] == "gallery"]
+    assert all(r["family"] == r["id"].split("/")[1] for r in gal_rows)
+    assert out["selection"] == pytest.approx(1 / 7)
+    assert out["selection_ci"] == pytest.approx(family_ci(gal_rows))
+
+
+def test_selection_needs_gallery_rows(dev_rows):
+    """A dev score with no gallery rows has no selection score: refuse instead of reporting 0."""
+    cases = _cases()
+    s = next(r["id"] for r in dev_rows if r["source"] == "synthetic")
+    with pytest.raises(CheckpointError, match="gallery"):
+        score_predictions([{"id": s, "checkpoint": "s025", "finish": "stop", "text": wrap(cases[s]["reference_express"])}], dev_rows, DATA)

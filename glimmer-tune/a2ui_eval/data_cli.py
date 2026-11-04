@@ -149,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     fz = sub.add_parser("freeze-prompt", help="write data/system_prompt.txt (ADR 0015)")
     fz.add_argument("--force", action="store_true", help="overwrite a different frozen prompt; invalidates trained adapters")
     fz.set_defaults(fn=cmd_freeze_prompt)
-    ed = sub.add_parser("export-dev", help="dev prompts for checkpoint scoring (gallery + synthetic, with a fixed subset)")
+    ed = sub.add_parser("export-dev", help="dev prompts for checkpoint scoring (gallery + synthetic; the subset is 6 gallery rows per family)")
     ed.add_argument("--out", type=Path, default=None)
     ed.add_argument("--seed", type=int, default=0)
     ed.add_argument("--fewshot", action="store_true", help="put the 3 frozen examples (data/fewshot3.jsonl) before each question (needs --out)")

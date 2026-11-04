@@ -31,7 +31,8 @@ DATA = ROOT / "data"
 CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
 DEV_EXPORT = ROOT / "exports" / "sft_dev.jsonl"
 TEST_EXPORT = ROOT / "exports" / "sft_test.jsonl"
-SUBSET_PER_SOURCE = 32
+SUBSET_PER_FAMILY = 6  # Approach v2: 6 x 7 gallery dev families = 42 rows (brief: >= 42)
+SELECTION_RULE = "gallery"  # runs 1/2 used the mean of gallery and synthetic; don't mix the two
 SOURCES = ("gallery", "synthetic")
 FINISH = ("stop", "length", "error")
 BOOTSTRAP = {"samples": 2000, "level": 0.95, "seed": 0}
@@ -56,16 +57,22 @@ def _source(case: dict[str, Any]) -> str:
     return "synthetic" if is_synthetic(case) else "gallery"
 
 
-def export_dev(system_prompt: str, data: Path = DATA, seed: int = 0, per_source: int = SUBSET_PER_SOURCE) -> list[dict[str, Any]]:
+def export_dev(system_prompt: str, data: Path = DATA, seed: int = 0, per_family: int = SUBSET_PER_FAMILY) -> list[dict[str, Any]]:
     """One prompt row per dev case (gallery, then synthetic, each id-sorted). `subset` marks a
-    fixed `per_source` rows of each source, drawn by `random.Random(seed)` from id-sorted ids."""
+    fixed `per_family` gallery rows of each gallery family, drawn by `random.Random(seed)` from
+    id-sorted ids (Approach v2). Synthetic rows are never in the subset: they are a regression
+    guard, scored with `--full`."""
     cases = dev_cases(data)
+    by_family: dict[str, list[str]] = {}
+    for c in cases:
+        if _source(c) == "gallery":
+            by_family.setdefault(c["family"], []).append(c["id"])
     subset: set[str] = set()
-    for source in SOURCES:
-        ids = sorted(c["id"] for c in cases if _source(c) == source)
-        if len(ids) < per_source:
-            raise CheckpointError(f"{source} dev has {len(ids)} rows, fewer than the subset of {per_source}")
-        subset |= set(random.Random(seed).sample(ids, per_source))
+    for family in sorted(by_family):
+        ids = sorted(by_family[family])
+        if len(ids) < per_family:
+            raise CheckpointError(f"gallery dev family {family} has {len(ids)} rows, fewer than the subset of {per_family}")
+        subset |= set(random.Random(f"{seed}:{family}").sample(ids, per_family))
     ordered = sorted(cases, key=lambda c: (SOURCES.index(_source(c)), c["id"]))
     return [
         {
@@ -225,8 +232,9 @@ def score_predictions(
     """Scores one checkpoint's predictions. `expect`: ids that must all be present.
     `split="test"` scores against test references, with a family-level interval.
 
-    `selection` is the mean of the gallery and synthetic mean row slot F1, so the larger
-    synthetic dev set doesn't outweigh the gallery one (ADR 0009)."""
+    `selection` is the gallery mean row slot F1 (Approach v2, `SELECTION_RULE`), with a
+    family-level interval on dev as on test. Synthetic rows are scored and reported under
+    `sources` as a regression guard, but don't move `selection`."""
     checkpoints = {p.get("checkpoint") for p in predictions}
     if len(checkpoints) != 1:
         raise CheckpointError(f"predictions must be for one checkpoint, got {sorted(map(str, checkpoints))}")
@@ -266,7 +274,7 @@ def score_predictions(
                 "outside_catalog": bool(outside),
                 "outside_catalog_kinds": outside,
                 "unreachable": unreachable,
-                **({"family": cases[p["id"]]["family"]} if split == "test" else {}),
+                "family": cases[p["id"]]["family"],
             }
         )
     sources = {}
@@ -278,17 +286,19 @@ def score_predictions(
                 **{k: _mean([float(r[k]) for r in own]) for k in ("compiles", "exact_match", "truncated", "slot_f1", "slot_f1_blind", "outside_catalog")},
                 "unreachable": _mean([float(bool(r["unreachable"])) for r in own]),
             }
-    if split == "test":
-        ci, ci_blind, how = family_ci(rows), family_ci(rows, key="slot_f1_blind"), {"clustered_by": "family"}
-    else:
-        ci, ci_blind, how = selection_ci(rows), selection_ci(rows, key="slot_f1_blind"), {"stratified_by": list(SOURCES)}
+    if "gallery" not in sources:
+        raise CheckpointError("no gallery rows: the selection score is gallery dev slot F1 (Approach v2)")
+    gallery = [r for r in rows if r["source"] == "gallery"]
+    ci, ci_blind = family_ci(gallery), family_ci(gallery, key="slot_f1_blind")
+    how = {"clustered_by": "family"} if split == "test" else {"clustered_by": "family", "rows": "gallery"}
     return {
         "checkpoint": checkpoints.pop(),
         "split": split,
         "rows": rows,
         "sources": sources,
-        "selection": _mean([s["slot_f1"] for s in sources.values()]),
-        "selection_blind": _mean([s["slot_f1_blind"] for s in sources.values()]),
+        "selection_rule": SELECTION_RULE,
+        "selection": sources["gallery"]["slot_f1"],
+        "selection_blind": sources["gallery"]["slot_f1_blind"],
         "selection_ci": ci,
         "selection_blind_ci": ci_blind,
         "bootstrap": {**BOOTSTRAP, **how},
