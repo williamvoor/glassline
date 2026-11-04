@@ -7,8 +7,12 @@ A data explorer that answers plain-English questions about a Postgres database w
 ### Data
 
 **Dataset**:
-One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, notes, glossary). One running agent serves one Dataset.
+One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, notes, glossary). Each Workspace has exactly one Dataset.
 _Avoid_: Database (for the whole bundle), source, domain
+
+**Workspace**:
+One Dataset together with its saved Conversations: what the user switches between. A Workspace can be unavailable (its database can't be reached, or its login can write); its Conversations are kept but can't be opened until it is available again.
+_Avoid_: Project, database, connection, Dataset (for the pair)
 
 **Data dictionary**:
 The descriptions of every table and column in the Allowed schemas, from the database's own comments, with any Comment overlay taking precedence. The agent's only description of the data.
@@ -32,7 +36,7 @@ _Avoid_: Query result, dataset, data frame
 ### Conversation
 
 **Conversation**:
-The sequence of Turns sharing one context, together with its Results. It lives only as long as the running agent.
+The sequence of Turns sharing one context, together with its Results. It is saved in its Workspace and can be resumed; a saved Result keeps its SQL, not its rows, which are fetched again when needed.
 _Avoid_: Session, chat, thread
 
 **Turn**:

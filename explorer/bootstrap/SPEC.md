@@ -2,7 +2,8 @@
 
 Status: phase 1, 2a, 2b and 2c **approved** (2026-11-02); phase 3 (Boards) **approved** (2026-11-04). Still open from the brief: the live
 run against `vicprop/`. Related ADRs: 0019 (Comment overlay), 0020 (Muse
-Wonder only here), 0010 (tests build their database with the austender package). Terms follow
+Wonder only here), 0010 (tests build their database with the austender package). Its UI moves into
+the explorer's Settings (`../specs/workspaces/SPEC.md` phase 2, ADR 0041, approved 2026-11-04). Terms follow
 `CONTEXT.md` (Dataset, Data dictionary, Comment overlay, Allowed schema, Dataset context).
 
 ## Phase 1: the report

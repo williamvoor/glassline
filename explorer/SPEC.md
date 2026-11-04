@@ -21,7 +21,8 @@ the dataset is a directory of configuration and notes (section 7) plus the descr
 in the database itself (`COMMENT ON`), optionally overridden by a Comment overlay file in the
 dataset directory (section 13).
 
-Out of scope for v1: authentication, persistent conversations (memory is in-process), UI
+Out of scope for v1 (several Datasets and saved Conversations are now specified in
+`specs/workspaces/SPEC.md`, approved 2026-11-04, ADRs 0039–0041): authentication, persistent conversations (memory is in-process), UI
 actions (buttons and inputs that call back to the agent), streaming partial UI, more than
 one dataset per running agent, deployment.
 
