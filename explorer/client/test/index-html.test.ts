@@ -1,4 +1,4 @@
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {describe, expect, it} from 'vitest';
 
@@ -107,5 +107,16 @@ describe('Settings tab strips', () => {
     const strip = getComputedStyle(document.querySelector('[role=tablist]')!);
     expect(strip.display).toBe('flex');
     expect(strip.flexDirection === '' || strip.flexDirection === 'row').toBe(true);
+  });
+});
+
+describe('branding', () => {
+  it('names the page Glassline and uses the mark as its icon', () => {
+    expect(indexHtml).toMatch(/<title>Glassline<\/title>/);
+    for (const file of ['favicon-32.png', 'favicon-64.png', 'apple-touch-icon.png', 'glassline-mark.png']) {
+      expect(existsSync(resolve(process.cwd(), 'public', file)), file).toBe(true);
+    }
+    expect(indexHtml).toContain('<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />');
+    expect(indexHtml).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />');
   });
 });

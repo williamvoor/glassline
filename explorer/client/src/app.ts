@@ -140,6 +140,8 @@ export class ExplorerApp extends LitElement {
             undefined, () => this.viewState());
 
   @state() private workspaces: WorkspaceInfo[] = [];
+  /** The Workspace list has loaded (so an empty one means there are none yet, not "loading"). */
+  @state() private workspacesLoaded = false;
   @state() private workspace?: WorkspaceInfo;
   @state() private listOpen = false;
   @state() private saved: SavedSummary[] = [];
@@ -186,12 +188,18 @@ export class ExplorerApp extends LitElement {
   private async startWorkspaces() {
     try {
       this.workspaces = await this.workspaceApi.list();
+      this.workspacesLoaded = true;
       this.connectError = undefined;
     } catch (e) {
       this.connectError = e instanceof Error ? e.message : String(e);
       return;
     }
     await this.followRoute();
+  }
+
+  /** Workspace mode with a loaded list that offers nothing to open: Settings is the next step. */
+  private get noWorkspace(): boolean {
+    return this.workspaceMode && this.workspacesLoaded && !this.workspace;
   }
 
   /** Opens what the hash names: a Workspace, or a saved Conversation in it. */
@@ -830,7 +838,7 @@ export class ExplorerApp extends LitElement {
   private renderHeader() {
     return html`<header class="topbar">
       <div class="title">
-        <h1>Explorer</h1>
+        <span class="brand"><img src="/glassline-mark.png" alt="" width="28" height="28" /><h1>Glassline</h1></span>
         ${this.info?.description ? html`<span class="dataset">${this.info.description}</span>` : nothing}
       </div>
       ${this.renderPicker()}
@@ -854,6 +862,14 @@ export class ExplorerApp extends LitElement {
   }
 
   private renderEmpty() {
+    if (this.noWorkspace) {
+      return html`<div class="empty no-workspaces">
+        <h2>No Workspaces yet</h2>
+        <p>A Workspace is one database with its description, notes and Boards. Add one in Settings: pick a
+          read-only login, draft the Dataset and its Boards, and export.</p>
+        <p><button type="button" class="primary open-settings" @click=${() => this.openSettings()}>Open Settings</button></p>
+      </div>`;
+    }
     const examples = this.info?.examples ?? [];
     return html`<div class="empty">
       <h2>Ask a question in plain English.</h2>
@@ -928,10 +944,11 @@ export class ExplorerApp extends LitElement {
         <textarea
           id="composer-box"
           rows="3"
-          placeholder="Ask a question about the data (Enter to send, Shift+Enter for a new line)"
+          placeholder=${this.noWorkspace ? 'Add a Workspace in Settings first' : 'Ask a question about the data (Enter to send, Shift+Enter for a new line)'}
+          ?disabled=${this.noWorkspace}
           @keydown=${this.onKeydown}
         ></textarea>
-        <button type="submit" ?disabled=${this.busy}>${this.busy ? 'Working…' : 'Ask'}</button>
+        <button type="submit" ?disabled=${this.busy || this.noWorkspace}>${this.busy ? 'Working…' : 'Ask'}</button>
       </form>
     </aside>`;
   }

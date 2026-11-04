@@ -62,6 +62,14 @@ describe('explorer-app', () => {
     expect(texts(app, '.examples button')).toEqual(['Top suppliers?', 'Spend by year?']);
   });
 
+  it('shows the Glassline mark and name in the header', async () => {
+    const app = await mount(fakeAgent(() => answer('x')).connector);
+    const mark = q(app, 'header .brand img') as HTMLImageElement;
+    expect(mark.getAttribute('src')).toBe('/glassline-mark.png');
+    expect(mark.getAttribute('alt')).toBe(''); // decorative: the name beside it is the text
+    expect(q(app, 'header h1')!.textContent!.trim()).toBe('Glassline');
+  });
+
   it('asks an example question when it is clicked, and hides the examples', async () => {
     const agent = fakeAgent(() => answer('**Supplier A** received the most.'));
     const app = await mount(agent.connector);

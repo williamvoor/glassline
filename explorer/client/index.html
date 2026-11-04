@@ -3,8 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Explorer</title>
-    <link rel="icon" href="data:," />
+    <title>Glassline</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- The basic catalog's Icon renders Material Symbols ligatures; without the font they show as words. -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <style>
@@ -66,6 +68,8 @@
         padding: 12px 24px; background: var(--ink); color: var(--on-ink); border-bottom: 1px solid var(--line);
       }
       explorer-app .topbar .title { display: flex; align-items: center; gap: 16px; min-width: 0; }
+      explorer-app .topbar .brand { display: flex; align-items: center; gap: 10px; flex: none; }
+      explorer-app .topbar .brand img { display: block; width: 28px; height: 28px; }
       explorer-app .topbar h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
       explorer-app .topbar .dataset {
         padding-left: 16px; border-left: 1px solid color-mix(in srgb, var(--on-ink) 25%, transparent);
@@ -178,6 +182,7 @@
         padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); color: var(--fg); text-align: left;
       }
       explorer-app .examples button:hover { border-color: var(--fg); }
+      explorer-app .no-workspaces .open-settings { padding: 8px 16px; border: 0; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-weight: 600; }
 
       /* Tabs (SPEC §18): one strip for the investigation; the selected tab below it ------------- */
       explorer-app .tab-strip {

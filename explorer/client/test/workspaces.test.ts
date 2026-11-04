@@ -273,3 +273,20 @@ describe('C2: reopening a saved Conversation', () => {
     expect(window.location.hash).toBe('#/w/aus/c/c1');
   });
 });
+
+// A from-scratch start (2026-11-05): with no Workspace yet, the canvas said "Ask a question" and
+// the Ask box was live, though there was nothing to ask.
+describe('no Workspaces yet', () => {
+  it('points to Settings and keeps Ask disabled', async () => {
+    const api = new FakeApi();
+    api.list_ = [];
+    const {app} = await mount(api);
+    expect(text(q(app, '.canvas .no-workspaces h2'))).toBe('No Workspaces yet');
+    expect(q(app, '.canvas .examples')).toBeNull();
+    expect((q(app, '.composer textarea') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((q(app, '.composer button') as HTMLButtonElement).disabled).toBe(true);
+    (q(app, '.canvas .no-workspaces button.open-settings') as HTMLButtonElement).click();
+    await settle(app);
+    expect(window.location.hash).toBe('#/settings');
+  });
+});
