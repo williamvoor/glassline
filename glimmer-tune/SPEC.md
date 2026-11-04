@@ -1498,7 +1498,7 @@ only because the repo has no remote.
   - `data/fewshot3.jsonl` freezes the 3 run 2 few-shot rows, which a test pins by id and hash.
 - **CLI:** `data_cli` keeps `export` (now `--train PATH`, no `--mix`), `freeze-prompt`,
   `export-dev` (`--fewshot` is now a flag), `export-test`, `grammar` and `lint`.
-- **Tests:** 389 harness tests and 40 trainer tests pass. The retired tests live in
+- **Tests:** 406 harness tests and 40 trainer tests pass (after the Phase 0 refuter round). The retired tests live in
   `archive/tests/`. The export tests read frozen fixtures (`tests/fixtures/export_*.jsonl`),
   generated once by the archived generator.
 
@@ -1513,6 +1513,7 @@ only because the repo has no remote.
    - ❗️ Run 1 and run 2 score files (`runs/sft1`, `runs/sft2`) used the gallery + synthetic mean.
      Compare their `sources.gallery` numbers, not their `selection`, or rescore their predictions.
    - `selection_ci` (the per-source bootstrap) is no longer used by scoring.
+   - `exports/sft_dev.jsonl` and `sft_dev_fewshot3.jsonl` were rebuilt with the new subset. Their prompts are byte-identical to run 2; the run 2 copies are in `archive/exports/*.run2.jsonl` (ignored). Rebuild them with `export-dev` after any dev change.
 2. The ADRs:
    - Spark Open as a teacher and judge, quoting its license and the host's terms;
    - Model API output out of training data, superseding the ADR 0009 vocabulary;
@@ -1532,8 +1533,8 @@ only because the repo has no remote.
 ## Test command
 
 ```bash
-cd glimmer-tune && uv run pytest -n auto --dist loadgroup -m "not slow"   # while iterating: 383 tests, ~3 s (2026-11-04, Approach v2)
-cd glimmer-tune && uv run pytest -n auto --dist loadgroup                 # before "done", a commit or a review: 389 tests, ~16 s
+cd glimmer-tune && uv run pytest -n auto --dist loadgroup -m "not slow"   # while iterating: 400 tests, ~6 s (2026-11-04, Approach v2)
+cd glimmer-tune && uv run pytest -n auto --dist loadgroup                 # before "done", a commit or a review: 406 tests, ~16 s
 cd glimmer-tune && uv run pytest                                          # the same suite serially
 ```
 

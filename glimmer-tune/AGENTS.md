@@ -80,7 +80,7 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
 ## Changing data or the scorer
 
 Bugs found in data get a regression test first (for example `archive/tests/test_synth_plausibility.py`). The
-linter allowlist (`data/synth_lint_allowlist.yaml`) are part of the spec, so don't
+linter allowlist (`data/synth_lint_allowlist.yaml`) is part of the spec, so don't
 loosen them to make a run pass. When a change would alter existing references or scores, say so and
 rescore rather than silently mixing old and new numbers.
 

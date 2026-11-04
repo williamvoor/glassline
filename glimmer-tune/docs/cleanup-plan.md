@@ -140,7 +140,12 @@ Also done:
 - **Frozen fixtures.** Before archiving, the export tests' fixtures were frozen from the template
   generator (`tests/fixtures/export_{train,dev}.jsonl`). The few-shot rows were frozen into
   `data/fewshot3.jsonl` and checked against the run 2 `sft_dev_fewshot3.jsonl` export.
-- **Fewer tests.** 389 harness tests pass (before: 824, of which 435 were in retired files),
+- **Fewer tests.** 406 harness tests pass (before: 824; most of the rest were in retired files),
   and 40 trainer tests.
+- **Refuter round.** The round passed with notes. Behaviour the plan keeps had lost its tests when
+  their files were archived: the banned-archetype matchers, the CLI's synthetic-dev overlap guard,
+  `approx_tokens`, `near_limit` and atomic `write_jsonl`. Those tests are back, each checked
+  against a mutation. A pin test for the frozen dev and test files was added (counts, splits,
+  hash).
 - **Review verdicts.** The default verdicts file moved to `data/review.jsonl`. The run 2 verdicts
   are in `archive/data/synth/review.jsonl`.

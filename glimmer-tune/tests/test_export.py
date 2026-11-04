@@ -1,6 +1,6 @@
 import pytest
 
-from a2ui_eval.export import TEMPLATE_OVERHEAD, ExportError, export_sft
+from a2ui_eval.export import NEAR_LIMIT, TEMPLATE_OVERHEAD, ExportError, approx_tokens, export_sft
 from a2ui_eval.io import read_jsonl
 from a2ui_eval.prompt import build_system_prompt
 from a2ui_eval.seeds import ROOT
@@ -185,3 +185,42 @@ def test_rejects_unreachable_components(sdk, train, dev):
     next(c for c in comps if c["id"] == "root")["id"] = "rootx"
     with pytest.raises(ExportError, match=r"unreachable.*train/09_login-form/0000 \(\(no root\)\)"):
         export_sft([rootless] + train[1:], dev, SPLITS, build_system_prompt(sdk), words, 100_000, catalog_check=CatalogCheck(sdk))
+
+
+def test_approx_counter():
+    assert approx_tokens("") == 0 and approx_tokens("abc") == 1 and approx_tokens("abcd") == 2
+
+
+def test_near_limit_per_source(sdk, train, dev):
+    """`by_source` counts rows above NEAR_LIMIT of max_seq_len: only the longest row here."""
+    _, report = run(sdk, train, dev)
+    gal = report.by_source["gallery"]
+    assert gal["rows"] == len(train) and gal["near_limit"] == 0
+    longest = gal["max"]
+    second = sorted(words(build_system_prompt(sdk)) + words(c["intent"]) + words(f"<a2ui>\n{c['reference_express'].strip()}\n</a2ui>") + TEMPLATE_OVERHEAD for c in train)[-2]
+    limit = int(longest / NEAR_LIMIT) - 1
+    assert second <= NEAR_LIMIT * limit  # the test needs a gap between the two longest rows
+    _, report = run(sdk, train, dev, max_seq_len=limit)
+    assert report.by_source["gallery"]["near_limit"] == 1
+
+
+def test_cli_export_guards_against_synthetic_dev(train, tmp_path, monkeypatch):
+    """The synthetic regression set is an eval set: a train row sharing its fingerprint or intent
+    is dropped (the CLI must pass data/synth/dev to the guard)."""
+    import shutil
+
+    from a2ui_eval import data_cli
+    from a2ui_eval.io import SPLITS_PATH, write_jsonl
+
+    shutil.copy(SPLITS_PATH, tmp_path / "splits.yaml")
+    lists = [c for c in train if c["family"] == "34_child-list-template"]
+    clash_print = {"id": "synth/dev/x/00000", "split": "dev", "intent": "unrelated", "fingerprint": lists[0]["fingerprint"]}
+    clash_intent = {"id": "synth/dev/x/00001", "split": "dev", "intent": lists[1]["intent"], "fingerprint": "none"}
+    write_jsonl(tmp_path / "synth" / "dev" / "cases.jsonl", [clash_print, clash_intent])
+    write_jsonl(tmp_path / "train.jsonl", lists)
+    monkeypatch.setattr(data_cli, "load_tokenizer_counter", lambda: words)
+    out = tmp_path / "out.jsonl"
+    assert data_cli.main(["--data", str(tmp_path), "export", "--train", str(tmp_path / "train.jsonl"), "--out", str(out)]) == 0
+    kept = {r["messages"][1]["content"] for r in read_jsonl(out)}
+    dropped_by_print = {c["intent"] for c in lists if c["fingerprint"] == lists[0]["fingerprint"]}
+    assert not kept & dropped_by_print and lists[1]["intent"] not in kept

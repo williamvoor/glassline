@@ -25,11 +25,11 @@ CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
 DATA = ROOT / "data"
 DRAFT = DATA / "intents_draft.jsonl"
 EXPORT = ROOT / "exports" / "sft_train.jsonl"
+TOKENIZER = "meta-models/Muse-Glimmer-30B"
 
 
 class DataError(Exception):
     pass
-TOKENIZER = "meta-models/Muse-Glimmer-30B"
 
 
 def _setup(data: Path) -> tuple[ExpressSDK, RefIndex, dict[str, str]]:

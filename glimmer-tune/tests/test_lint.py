@@ -226,3 +226,41 @@ def test_repeated_value_ignores_list_cells_and_template_items(model):
     # A label echoing a value elsewhere still fires, even inside a row.
     echo = surface([{"id": "root", "component": "Column", "children": ["r1", "v"]}, *row(1, "Housing"), text("v", "Housing", variant="caption")])
     assert lint_surface(echo, model) == ["repeated_value"]
+
+
+# --- banned archetypes: the leakage guard against designs shaped like test families ------------
+# (moved from the archived test_synth_splits.py; the matchers are kept for distilled rows)
+
+
+def _banned():
+    import yaml
+
+    return (yaml.safe_load((ROOT / "data" / "splits.yaml").read_text()) or {})["banned_archetypes"]
+
+
+def test_every_test_family_has_a_banned_archetype():
+    from a2ui_eval.io import load_splits
+    from a2ui_eval.lint import MATCHERS
+
+    tests = {f for f, s in load_splits(load_seeds()).items() if s == "test"}
+    banned = _banned()
+    assert set(banned) == tests
+    assert {b["matcher"] for b in banned.values()} <= set(MATCHERS)
+
+
+@pytest.mark.parametrize("family", sorted(_banned()))
+def test_banned_archetype_fires_on_its_test_seed(index, family):
+    from a2ui_eval.lint import banned_matches
+
+    assert family in banned_matches(load_seeds()[family].messages, index, {family: _banned()[family]})
+
+
+def test_banned_archetypes_spare_train_and_dev_seeds(index):
+    from a2ui_eval.io import load_splits
+    from a2ui_eval.lint import banned_matches
+
+    seeds = load_seeds()
+    splits = load_splits(seeds)
+    for f, s in seeds.items():
+        if splits[f] in ("train", "dev"):
+            assert banned_matches(s.messages, index, _banned()) == [], f
