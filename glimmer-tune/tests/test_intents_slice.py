@@ -242,3 +242,75 @@ def test_slice_references_exclude_the_slices_own_cases():
     near-duplicate of its own case."""
     refs = S.references_for_slice(["gallery intent"], [{"intent": "own case", "source": "explorer"}], ["train intent"])
     assert refs == ["gallery intent", "train intent"]
+
+
+# ---------------------------------------------------------------- export of distilled intent rows
+
+def _export_data(tmp_path, bank, held):
+    import json
+    import shutil
+
+    from a2ui_eval.intents.bank import domain_to_json
+    from a2ui_eval.seeds import ROOT
+
+    data = tmp_path / "data"
+    shutil.copytree(ROOT / "data", data, ignore=shutil.ignore_patterns("intents", "explorer_dev", "synth"))
+    (data / "intents").mkdir()
+    (data / "intents" / "schema_bank.json").write_text(json.dumps({"domains": [domain_to_json(d) for d in bank]}))
+    (data / "intents" / "slice_domains.json").write_text(json.dumps({"domains": held}))
+    return data
+
+
+def _cmd_export_splits(data, tmp_path, monkeypatch):
+    import argparse
+
+    from a2ui_eval import data_cli
+
+    write_jsonl(tmp_path / "train.jsonl", [])
+    seen = {}
+
+    def fake_export(train, eval_cases, splits, *a, **k):
+        seen["splits"] = splits
+        return [], type("R", (), {"to_dict": lambda self: {}})()
+
+    monkeypatch.setattr(data_cli, "export_sft", fake_export)
+    data_cli.cmd_export(argparse.Namespace(data=data, train=tmp_path / "train.jsonl", out=tmp_path / "o.jsonl",
+                                           approx_tokens=True, max_seq_len=8192))
+    return seen["splits"]
+
+
+def test_cmd_export_gives_bank_domains_a_split(bank, tmp_path, monkeypatch):
+    """Distilled rows have family = their bank domain (as slice cases do). Before the fix,
+    export_sft refused every one as 'not in the train split'; held-out domains must stay out."""
+    splits = _cmd_export_splits(_export_data(tmp_path, bank, ["bakery", "zoo"]), tmp_path, monkeypatch)
+    assert splits["bike-shop"] == "train"
+    assert splits["bakery"] == "dev" and splits["zoo"] == "dev"
+    assert splits["hospital-ward"] == "train"
+
+
+def test_export_sft_refuses_a_held_out_domain_and_keeps_a_train_domain(bank, tmp_path, monkeypatch):
+    from a2ui_eval.data_cli import domain_splits
+    from a2ui_eval.export import ExportError, export_sft
+
+    data = _export_data(tmp_path, bank, ["bakery"])
+    splits = domain_splits(data, gallery_families=set())
+    with pytest.raises(ExportError, match="bakery"):
+        export_sft([{"id": "x", "family": "bakery"}], [], splits, "sys", len, 8192)
+    rows, _ = export_sft([], [], splits, "sys", len, 8192)
+    assert rows == []
+
+
+def test_domain_splits_refuses_a_domain_named_like_a_gallery_family(bank, tmp_path):
+    from a2ui_eval.data_cli import DataError, domain_splits
+
+    data = _export_data(tmp_path, bank, ["bakery"])
+    with pytest.raises(DataError, match="bike-shop"):
+        domain_splits(data, gallery_families={"bike-shop"})
+
+
+def test_domain_splits_refuses_a_held_out_domain_missing_from_the_bank(bank, tmp_path):
+    from a2ui_eval.data_cli import DataError, domain_splits
+
+    data = _export_data(tmp_path, bank, ["atlantis"])
+    with pytest.raises(DataError, match="atlantis"):
+        domain_splits(data, gallery_families=set())

@@ -51,6 +51,24 @@ def eval_seed_fingerprints(index: RefIndex, data: Path = DATA) -> set[str]:
     return {fingerprint(s.messages, index) for f, s in seeds.items() if splits[f] in ("dev", "test")}
 
 
+def domain_splits(data: Path, gallery_families: set[str]) -> dict[str, str]:
+    """`domain -> split` for distilled intent rows, whose family is their bank domain (ADR 0038:
+    domain plays the part of Family). The slice's held-out domains are `dev`; every other bank
+    domain is `train`. Empty when there is no bank."""
+    from .intents.bank import load_bank
+
+    bank_path, held_path = data / "intents" / "schema_bank.json", data / "intents" / "slice_domains.json"
+    if not bank_path.exists():
+        return {}
+    slugs = {d.slug for d in load_bank(bank_path)}
+    held = set(json.loads(held_path.read_text())["domains"]) if held_path.exists() else set()
+    if held - slugs:
+        raise DataError(f"held-out domains not in the bank: {sorted(held - slugs)}")
+    if clash := slugs & gallery_families:
+        raise DataError(f"bank domains named like gallery families: {sorted(clash)}")
+    return {s: "dev" if s in held else "train" for s in slugs}
+
+
 def export_eval_cases(data: Path) -> list[dict]:
     """Every eval case the export leakage guards check train rows against: the intent draft,
     gallery dev and test, synthetic dev and the explorer slice (ADR 0038)."""
@@ -65,6 +83,7 @@ def export_eval_cases(data: Path) -> list[dict]:
 
 def cmd_export(args) -> None:
     sdk, index, splits = _setup(args.data)
+    splits = splits | domain_splits(args.data, set(splits))
     eval_cases = export_eval_cases(args.data)
     if not args.train.exists():
         raise DataError(f"no train cases at {args.train}")
