@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A2UI render check</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: white; color: #202124; font-family: system-ui, sans-serif; font-size: 14px; }
+      #canvas { display: block; padding: 16px; }
+      /* No icon font offline: clip the ligature word to the icon box so screenshots stay readable. */
+      .a2ui-icon { display: inline-block; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <render-root id="canvas"></render-root>
+    <script type="module" src="/src/render.ts"></script>
+  </body>
+</html>

@@ -207,3 +207,52 @@ def test_usage_cost_uses_the_listed_prices():
 
     assert usage_cost({"prompt_tokens": 1_000_000, "cached_prompt_tokens": 0, "completion_tokens": 0}) == 1.96
     assert usage_cost({"prompt_tokens": 1_000_000, "cached_prompt_tokens": 1_000_000, "completion_tokens": 1_000_000}) == 0.39 + 4.88
+
+
+def test_sample_n_draws_n_samples_per_row_with_the_sampling_params(tmp_path, capsys):
+    """Best-of-n (distill Phase 1): each row is sampled `n` times, rows stay adjacent, each
+    prediction carries its sample index, and the sampling params reach the request."""
+    run, cases, service, remote, local, _ = setup(tmp_path)
+    out = tmp_path / "n.jsonl"
+    argv = ["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(out), "--limit", "2",
+            "--n", "3", "--temperature", "1.0", "--top-p", "0.95", "--top-k", "64"]
+    assert main(argv, local=local, remote=remote) == 0
+    preds = read(out)
+    ids = [r["id"] for r in dev_rows()[:2]]
+    assert [(p["id"], p["sample"]) for p in preds] == [(i, k) for i in ids for k in range(3)]
+    sent = [c[2] for c in service.calls if c[0] == "direct"]
+    assert sent == [{"temperature": 1.0, "top_p": 0.95, "top_k": 64}] * 6
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["rows"] == 6
+
+
+def test_sample_n_needs_a_positive_temperature(tmp_path, capsys):
+    run, cases, service, remote, local, _ = setup(tmp_path)
+    for extra in ([], ["--temperature", "0"]):
+        argv = ["sample", "--run", str(run), "--ckpt", "s250", "--cases", str(cases), "--out", str(tmp_path / "x.jsonl"), "--n", "2", *extra]
+        assert main(argv, local=local, remote=remote) == 1
+        assert "temperature" in capsys.readouterr().err
+    assert not service.calls
+
+
+def test_real_direct_defaults_to_greedy_and_forwards_sampling_params():
+    """`real.direct` keeps temperature 0.0 unless the extra fields set it."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from glimmer_trainer import real
+
+    seen = []
+
+    class DS:
+        async def sample_with_prompt_tokens(self, ids, **kw):
+            seen.append(kw)
+            return [SimpleNamespace(full_tokens=[*ids, 5], prompt_len=len(ids), finish_reason="stop")]
+
+        def drain_metrics(self):
+            return []
+
+    sampler = SimpleNamespace(deployment_sampler=DS(), _submit=lambda c: SimpleNamespace(result=lambda: asyncio.run(c)))
+    real.direct(sampler, [1, 2], 10, [0], {})
+    real.direct(sampler, [1, 2], 10, [0], {"temperature": 1.0, "top_k": 64})
+    assert seen[0]["temperature"] == 0.0 and "top_k" not in seen[0]
+    assert seen[1]["temperature"] == 1.0 and seen[1]["top_k"] == 64 and seen[1]["n"] == 1

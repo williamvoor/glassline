@@ -50,6 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--workers", type=int, default=8, help="use 1 for latency: concurrent requests queue on the shared pool")
     sm.add_argument("--grammar", type=Path, default=None, help="GBNF file sent as response_format (constrained decoding)")
     sm.add_argument("--budget", type=float, default=None, help="US$: refuse rows once the job's token cost reaches this")
+    sm.add_argument("--n", type=int, default=1, help="samples per row (best-of-n); each prediction gets a `sample` index")
+    sm.add_argument("--temperature", type=float, default=None, help="default greedy (0.0); required above 0 when --n > 1")
+    sm.add_argument("--top-p", type=float, default=None)
+    sm.add_argument("--top-k", type=int, default=None)
     return p
 
 
@@ -63,6 +67,10 @@ def sample(args: argparse.Namespace, remote) -> int:
         raise PrepareError(f"grammar {args.grammar} not found")
     if args.budget is not None and args.budget <= 0:
         raise PrepareError("--budget must be positive")
+    if args.n < 1:
+        raise PrepareError("--n must be at least 1")
+    if args.n > 1 and not (args.temperature and args.temperature > 0):
+        raise PrepareError("--n > 1 needs --temperature above 0, or every sample is the same greedy answer")
     manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
     paths = manifest.get("checkpoints", {})
     if args.ckpt not in paths:
@@ -76,8 +84,14 @@ def sample(args: argparse.Namespace, remote) -> int:
     extra = {}
     if args.grammar is not None:
         extra["response_format"] = {"type": "grammar", "grammar": args.grammar.read_text(encoding="utf-8")}
+    for key, value in (("temperature", args.temperature), ("top_p", args.top_p), ("top_k", args.top_k)):
+        if value is not None:
+            extra[key] = value
     spend = Spend(args.budget)
-    preds = sample_rows_direct(remote(args.cases), paths[args.ckpt], rows, args.ckpt, args.workers, max_tokens, extra, spend)
+    todo = [r for r in rows for _ in range(args.n)]  # a row's samples stay adjacent
+    preds = sample_rows_direct(remote(args.cases), paths[args.ckpt], todo, args.ckpt, args.workers, max_tokens, extra, spend)
+    if args.n > 1:
+        preds = [{**p, "sample": i % args.n} for i, p in enumerate(preds)]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     try:
         with args.out.open("x", encoding="utf-8") as f:  # exclusive create: never overwrite

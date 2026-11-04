@@ -68,14 +68,20 @@ def actual_usd(preds: list[dict[str, Any]]) -> float:
     return tin * PRICE_IN / 1e6 + tout * PRICE_OUT / 1e6
 
 
-def _request(row: dict[str, Any], model: str, reasoning_effort: str | None) -> dict[str, Any]:
+def only_source(rows: list[dict[str, Any]], source: str | None) -> list[dict[str, Any]]:
+    """The rows of one dev source (`gallery` for the Phase 1 teacher ceiling), or all of them."""
+    return rows if source is None else [r for r in rows if r.get("source") == source]
+
+
+def _request(row: dict[str, Any], model: str, reasoning_effort: str | None, temperature: float = 0.0, top_p: float | None = None, max_tokens: int = MAX_TOKENS) -> dict[str, Any]:
     return {
         "model": model,
         "messages": row["messages"],
         "reasoning_effort": reasoning_effort,
         "cache_key": CACHE_KEY,
-        "temperature": 0.0,
-        "max_tokens": MAX_TOKENS,
+        "temperature": temperature,
+        **({"top_p": top_p} if top_p is not None else {}),
+        "max_tokens": max_tokens,
         # LiteLLM's baseten provider drops these as unsupported unless allowed explicitly
         "allowed_openai_params": ["reasoning_effort", "prompt_cache_key"],
         "env_file": str(ROOT.parent / ".env"),
@@ -91,42 +97,53 @@ async def run_baseline(
     reasoning_effort: str | None = "low",
     workers: int = 8,
     limit: int | None = None,
+    n: int = 1,
+    temperature: float = 0.0,
+    top_p: float | None = None,
+    max_tokens: int = MAX_TOKENS,
 ) -> dict[str, Any]:
-    """Answers every row not already answered in `out` (error rows are retried). Resumable."""
+    """Answers every (row, sample) not already answered in `out` (error rows are retried).
+    Resumable. With `n` > 1 each row is sampled `n` times and predictions carry a `sample` index."""
     if bad := sorted(r["id"] for r in rows if r["id"] not in allowed_ids):
         raise TeacherError(f"rows outside the dev cases: {bad[:5]}")
+    if n > 1 and not temperature > 0:
+        raise TeacherError("n > 1 needs a temperature above 0, or every sample is the same answer")
     rows = rows[:limit] if limit is not None else rows
-    done: dict[str, dict[str, Any]] = {}
+    key = (lambda p: (p["id"], p.get("sample", 0))) if n > 1 else (lambda p: (p["id"], 0))
+    done: dict[tuple[str, int], dict[str, Any]] = {}
     if out.exists():
         for p in read_jsonl(out):
             if p.get("finish") != "error":
-                done[p["id"]] = p
-    todo = [r for r in rows if r["id"] not in done]
+                done[key(p)] = p
+    todo = [(r, k) for r in rows for k in range(n) if (r["id"], k) not in done]
     sem = asyncio.Semaphore(workers)
 
-    async def one(row: dict[str, Any]) -> dict[str, Any]:
+    async def one(row: dict[str, Any], k: int) -> dict[str, Any]:
+        tag = {"sample": k} if n > 1 else {}
         async with sem:
             t0 = time.monotonic()
             try:
-                reply = await complete(_request(row, model, reasoning_effort))
+                reply = await complete(_request(row, model, reasoning_effort, temperature, top_p, max_tokens))
             except Exception as e:  # noqa: BLE001 - one failed row must not stop the run
-                return {"id": row["id"], "checkpoint": CHECKPOINT, "text": None, "finish": "error",
+                return {"id": row["id"], **tag, "checkpoint": CHECKPOINT, "text": None, "finish": "error",
                         "error": str(e)[-500:], "seconds": round(time.monotonic() - t0, 2)}
             return {
                 "id": row["id"],
+                **tag,
                 "checkpoint": CHECKPOINT,
                 "text": reply["content"],
                 "finish": "length" if reply.get("finish_reason") == "length" else "stop",
                 "prompt_tokens": reply.get("prompt_tokens"),
                 "cached_tokens": reply.get("cached_tokens"),
                 "completion_tokens": reply.get("completion_tokens"),
+                "reasoning_tokens": reply.get("reasoning_tokens"),
                 "seconds": round(time.monotonic() - t0, 2),
             }
 
-    new = await asyncio.gather(*(one(r) for r in todo))
+    new = await asyncio.gather(*(one(r, k) for r, k in todo))
     order = {r["id"]: i for i, r in enumerate(rows)}
-    merged = {**done, **{p["id"]: p for p in new}}
-    preds = sorted(merged.values(), key=lambda p: order.get(p["id"], len(order)))
+    merged = {**done, **{key(p): p for p in new}}
+    preds = sorted(merged.values(), key=lambda p: (order.get(p["id"], len(order)), p.get("sample", 0)))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("".join(json.dumps(p) + "\n" for p in preds), encoding="utf-8")
     return {
@@ -163,12 +180,19 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--workers", type=int, default=8)
     b.add_argument("--limit", type=int, default=None, help="only the first N rows (a smoke test)")
     b.add_argument("--dry-run", action="store_true", help="print the cost estimate and stop")
+    b.add_argument("--source", choices=("gallery", "synthetic"), default=None, help="only this dev source")
+    b.add_argument("--n", type=int, default=1, help="samples per row (best-of-n)")
+    b.add_argument("--temperature", type=float, default=0.0)
+    b.add_argument("--top-p", type=float, default=None)
+    b.add_argument("--max-tokens", type=int, default=MAX_TOKENS, help="reasoning counts against it")
     args = p.parse_args(argv)
 
-    rows = read_jsonl(args.dev)
+    rows = only_source(read_jsonl(args.dev), args.source)
     if args.limit is not None:
         rows = rows[: args.limit]
-    print(json.dumps({"estimate": estimate(rows), "model": args.model}))
+    est = estimate(rows)
+    est = {**est, "samples": len(rows) * args.n, "usd": est["usd"] * args.n}
+    print(json.dumps({"estimate": est, "model": args.model}))
     if args.dry_run:
         return 0
     effort = None if args.reasoning_effort == "none" else args.reasoning_effort
@@ -176,6 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = asyncio.run(run_baseline(
             rows, args.out, litellm_complete, {c["id"] for c in dev_cases(DATA)},
             model=args.model, reasoning_effort=effort, workers=args.workers,
+            n=args.n, temperature=args.temperature, top_p=args.top_p, max_tokens=args.max_tokens,
         ))
     except TeacherError as e:
         print(f"error: {e}", file=sys.stderr)

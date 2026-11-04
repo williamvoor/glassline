@@ -146,3 +146,80 @@ def test_no_llm_import_at_module_load():
     code = "import sys, a2ui_eval.teacher; assert 'litellm' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
     assert importlib.util.find_spec("litellm") is None
+
+
+# --- best-of-n for the distill Phase 1 teacher ceiling (ADR 0034) ------------------------------
+
+
+def test_n_samples_per_row_with_sampling_params_and_sample_index(tmp_path):
+    out = tmp_path / "p.jsonl"
+    seen = []
+
+    async def complete(req):
+        seen.append(req)
+        return _reply()
+
+    s = _run(ROWS[:2], out, complete, n=3, temperature=1.0, top_p=1.0)
+    preds = _lines(out)
+    assert [(p["id"], p["sample"]) for p in preds] == [(r["id"], k) for r in ROWS[:2] for k in range(3)]
+    assert len(seen) == 6 and all(r["temperature"] == 1.0 and r["top_p"] == 1.0 for r in seen)
+    assert s["rows"] == 6 and s["asked"] == 6
+
+
+def test_n_resume_is_per_sample(tmp_path):
+    out = tmp_path / "p.jsonl"
+    calls = []
+
+    async def flaky(req):
+        calls.append(req)
+        if len(calls) == 2:
+            raise RuntimeError("boom")
+        return _reply()
+
+    _run(ROWS[:1], out, flaky, n=3, temperature=1.0, workers=1)
+    assert [p["finish"] for p in _lines(out)] == ["stop", "error", "stop"]
+    calls.clear()
+
+    async def ok(req):
+        calls.append(req)
+        return _reply()
+
+    s = _run(ROWS[:1], out, ok, n=3, temperature=1.0)
+    assert s["asked"] == 1 and len(calls) == 1
+    assert [(p["sample"], p["finish"]) for p in _lines(out)] == [(0, "stop"), (1, "stop"), (2, "stop")]
+
+
+def test_n_above_one_needs_a_temperature(tmp_path):
+    async def complete(req):
+        raise AssertionError("no call")
+
+    with pytest.raises(TeacherError, match="temperature"):
+        _run(ROWS[:1], tmp_path / "p.jsonl", complete, n=2)
+
+
+def test_reasoning_tokens_are_kept_separately(tmp_path):
+    out = tmp_path / "p.jsonl"
+
+    async def complete(req):
+        return {**_reply(), "completion_tokens": 120, "reasoning_tokens": 90}
+
+    _run(ROWS[:1], out, complete)
+    (p,) = _lines(out)
+    assert p["completion_tokens"] == 120 and p["reasoning_tokens"] == 90
+
+
+def test_source_filter_keeps_gallery_rows():
+    rows = [{**r, "source": "synthetic" if r["id"].startswith("synth/") else "gallery"} for r in ROWS]
+    assert [r["id"] for r in teacher.only_source(rows, "gallery")] == ["dev/a/0000", "dev/a/0001"]
+    assert teacher.only_source(rows, None) == rows
+
+
+def test_max_tokens_reaches_the_request(tmp_path):
+    seen = []
+
+    async def complete(req):
+        seen.append(req)
+        return _reply()
+
+    _run(ROWS[:1], tmp_path / "p.jsonl", complete, max_tokens=8192)
+    assert seen[0]["max_tokens"] == 8192

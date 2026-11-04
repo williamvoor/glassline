@@ -1522,7 +1522,14 @@ only because the repo has no remote.
        reached its training data. Shipping such an adapter needs "Built with Muse Spark Open".
    - **ADR 0035:** hosted Model API output stays out of training data. It is stricter than
      clause (ix), which bars only models that compete with Meta's.
-3. Phase 1, the teacher ceiling on gallery dev. This stops for a decision. ❗️ The 2026-11-03
+3. Phase 1 tooling (built 2026-11-04; nothing sampled yet):
+   - `glimmer_trainer sample --n K --temperature T [--top-p --top-k]` gives best-of-n, with a `sample` index per prediction.
+   - `a2ui_eval.teacher baseline` gains `--n`, `--temperature`, `--top-p`, `--source gallery` and `--max-tokens`, and records `reasoning_tokens`.
+   - `a2ui_eval/validate.py` holds layers 1 (mechanical), 2 (render, `a2ui_eval/render.py`: `review/dist/render.html` in headless Chromium at 375 and 1280 px) and 3 (S8 lint). `validate.pick` keeps the passing candidate with the fewest tokens.
+   - `python -m a2ui_eval.phase1 report` reports single, validator best-of-n and oracle best-of-n.
+   - Calibration finding: every `33_financial-data-grid` dev reference overflows 80 px at 375 px. The test pins this as a known reference failure, and the rule is not loosened.
+   - Sampling settings come from the model cards. Glimmer: temperature 1.0, top_p 0.95, top_k 64. Spark Open: temperature 1.0, top_p 1.0. Baseten takes only `n=1` and doesn't enforce structured outputs for Spark Open, so Spark Open runs without a grammar.
+   Phase 1 itself is the teacher ceiling on gallery dev. This stops for a decision. ❗️ The 2026-11-03
    Spark Open baseline scored 0.290 on gallery, so Glimmer best-of-8 is the likelier teacher.
    Best-of-8 must be reported twice: chosen by the validator only, and the oracle (chosen against
    the reference).

@@ -59,11 +59,13 @@ def direct(sampler: Any, ids: list[int], max_tokens: int, stop: list[int], extra
     """One greedy completion through the sampler's `DeploymentSampler`, which forwards extra fields
     (here `response_format`) into the `/inference/v1/completions` payload. Runs on the sampler's own
     event loop (`_submit`, private to the SDK's FiretitanSamplingClient). Probed 2026-11-04: the
-    serverless pool honours a GBNF `response_format`."""
+    serverless pool honours a GBNF `response_format`. `extra` may also set `temperature`, `top_p`
+    and `top_k`, which the SDK forwards into the payload."""
     ds = sampler.deployment_sampler
 
     async def one():
-        out = await ds.sample_with_prompt_tokens(ids, n=1, max_tokens=max_tokens, temperature=0.0, stop=stop, logprobs=True, **extra)
+        kw = {"temperature": 0.0, **extra}  # greedy unless the caller sets sampling params (best-of-n)
+        out = await ds.sample_with_prompt_tokens(ids, n=1, max_tokens=max_tokens, stop=stop, logprobs=True, **kw)
         return out[0]
 
     c = sampler._submit(one()).result()

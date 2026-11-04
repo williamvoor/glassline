@@ -19,7 +19,7 @@ def main() -> None:
     load_dotenv(req["env_file"])
     # Optional keys (temperature, max_tokens) are sent only when the request has them, and a null
     # reasoning_effort is left out, so the vocabulary writer's calls are unchanged.
-    extra = {k: req[k] for k in ("temperature", "max_tokens", "allowed_openai_params") if req.get(k) is not None}
+    extra = {k: req[k] for k in ("temperature", "top_p", "max_tokens", "allowed_openai_params") if req.get(k) is not None}
     if req.get("reasoning_effort") is not None:
         extra["reasoning_effort"] = req["reasoning_effort"]
     resp = litellm.completion(
@@ -37,6 +37,7 @@ def main() -> None:
             "prompt_tokens": getattr(usage, "prompt_tokens", None),
             "completion_tokens": getattr(usage, "completion_tokens", None),
             "cached_tokens": getattr(details, "cached_tokens", None) if details else None,
+            "reasoning_tokens": getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None) if usage else None,
         },
         sys.stdout,
     )
