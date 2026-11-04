@@ -65,6 +65,7 @@ def _renderer(settings: Settings, runner: SqlRunner) -> BoardRenderer:
     return BoardRenderer(
         settings.dataset.boards, runner, concurrency=settings.board_query_concurrency,
         row_cap=settings.board_row_cap, ttl_s=settings.board_cache_ttl_s, max_cache=settings.max_board_cache,
+        max_options=settings.max_control_options,
     )
 
 
@@ -148,7 +149,8 @@ async def _serve(settings: Settings) -> None:
             max_held=settings.max_prefetched,
         )
         conversations = Conversations(
-            max_action_sources=settings.max_action_sources, max_pending_pairs=settings.max_pending_pairs
+            max_action_sources=settings.max_action_sources, max_pending_pairs=settings.max_pending_pairs,
+            board_rows_to_model=settings.board_rows_to_model, board_pair_max_chars=settings.board_pair_max_chars,
         )
         app = build_app(
             loop, url=url, client_origin=settings.client_origin, conversations=conversations,

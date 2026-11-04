@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections import OrderedDict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -115,3 +116,29 @@ class ResultStore:
 
     def ids(self) -> list[str]:
         return list(self._results)
+
+
+class ResultView:
+    """`r<id>` lookups for Macros and `Cite` (SPEC §18 slice 2): the store first, then each extra
+    source in order (the live Board instances' current Results, then those pinned for the model
+    run). Read-only: new Results go into the store."""
+
+    def __init__(self, store: ResultStore, *extra: Callable[[], Iterable[StoredResult]]):
+        self._store = store
+        self._extra = extra
+
+    def get(self, result_id: str) -> StoredResult | None:
+        found = self._store.get(result_id)
+        if found is not None:
+            return found
+        for source in self._extra:
+            for result in source():
+                if result.id == result_id:
+                    return result
+        return None
+
+    def ids(self) -> list[str]:
+        out = self._store.ids()
+        for source in self._extra:
+            out += [r.id for r in source() if r.id not in out]
+        return out

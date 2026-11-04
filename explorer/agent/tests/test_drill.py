@@ -381,3 +381,31 @@ async def test_step2_errors_never_carry_bound_values(runner):
     errors = await check_drill(runner, spec, {"d": hostile}, 2000)
     assert errors and "22007" in errors[0]
     assert hostile not in " ".join(errors)
+
+
+@pytest.mark.db
+async def test_a_board_drill_binds_the_row_and_the_controls_values(runner):
+    """B10 (SPEC §18 slice 2): row placeholders as in §15, Control placeholders typed and bound to
+    the values the panel was built with; a Control's NULL means "All"."""
+    from explorer_agent.drill import DrillSpec
+
+    agency = await _first_agency(runner)
+    sql = """SELECT count(*) AS n FROM mart.contract
+WHERE agency_name IS NOT DISTINCT FROM :agency_name
+  AND (:method IS NULL OR procurement_method = :method)
+  AND amendment_count >= :min_amends"""
+    r = rewrite(sql, {"method": "text", "min_amends": "bigint"})
+    assert r.names == ("agency_name", "method", "min_amends") and "$2::text" in r.sql and "$3::bigint" in r.sql
+    ok = await runner.run("SELECT procurement_method AS m FROM mart.contract WHERE procurement_method IS NOT NULL LIMIT 1")
+    method = ok.rows[0]["m"]
+    for fixed, where in (
+        ((("method", None), ("min_amends", 0)), "TRUE"),
+        ((("method", method), ("min_amends", 1)), f"procurement_method = '{method}' AND amendment_count >= 1"),
+    ):
+        spec = DrillSpec(source="v1", visual=0, sql=r.sql, names=r.names, drill_as="table", drill_x="", drill_y="",
+                         title="t", fixed=fixed)
+        got = await runner.run_bound(spec.sql, spec.values({"agency_name": agency, "method": "ignored"}))
+        want = await runner.run_bound(
+            f"SELECT count(*) AS n FROM mart.contract WHERE agency_name IS NOT DISTINCT FROM $1 AND {where}", [agency])
+        assert isinstance(got, SqlOk) and isinstance(want, SqlOk), (got, want)
+        assert got.rows == want.rows

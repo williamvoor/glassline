@@ -83,6 +83,8 @@ class MacroContext:
     # a Card instead of failing, and placeholders name queries (`{by_agency[0].value}`).
     board: bool = False
     failed: Mapping[str, str] = field(default_factory=dict)  # Board mode: query name -> SQLSTATE
+    # Board mode: each Control's SQL cast and bound value, for Drill queries (SPEC §18 slice 2).
+    controls: Mapping[str, tuple[str, Any]] = field(default_factory=dict)
 
 
 _context: ContextVar[MacroContext | None] = ContextVar("explorer_macro_context", default=None)
@@ -403,21 +405,23 @@ def _bar_order(values: list[dict[str, Any]], x: str, y: str, color: str, domain:
 
 
 def static_drill(columns: list[str], result_name: str, *, drill_sql: str, drill_as: str, drill_x: str, drill_y: str,
-                 allowed_schemas: tuple[str, ...]) -> Rewritten:
+                 allowed_schemas: tuple[str, ...], controls: Mapping[str, str] | None = None) -> Rewritten:
     """The checks of a Drill query that need no rows (SPEC §15 step 1): shared by answers and by
-    the Board startup check (SPEC §18). Raises ValueError with the message."""
+    the Board startup check (SPEC §18). `controls`: a Board's Control names and their SQL casts,
+    which a Board's Drill query may use beside the row's columns. Raises ValueError."""
+    controls = controls or {}
     if drill_as not in DRILL_AS:
         raise ValueError(f"drill_as must be one of: {', '.join(DRILL_AS)}")
     if drill_as != "table" and not (drill_x.strip() and drill_y.strip()):
         raise ValueError(f'drill_as "{drill_as}" needs drill_x and drill_y (output columns of drill_sql)')
     try:
-        rewritten = rewrite(drill_sql)
+        rewritten = rewrite(drill_sql, controls)
     except DrillSqlError as e:
         raise ValueError(str(e)) from None
-    if not rewritten.names:
+    if not [n for n in rewritten.names if n not in controls]:
         raise ValueError("drill_sql needs at least one :column placeholder for the clicked row's values")
     for name in rewritten.names:
-        if name not in columns:
+        if name not in columns and name not in controls:
             raise ValueError(
                 f"drill_sql placeholder :{name} is not a column of {result_name}; its columns are: {', '.join(columns)}"
             )
@@ -455,16 +459,20 @@ def _drill(
     # A Board was reviewed by a person, so it has no cap (SPEC §18).
     if not ctx.board and len(ctx.drills) >= ctx.max_drills:
         raise fail(f"at most {ctx.max_drills} Visuals per Surface may have a drill_sql")
+    casts = {name: cast for name, (cast, _value) in ctx.controls.items()}
     try:
         rewritten = static_drill(result.columns, result.id, drill_sql=drill_sql, drill_as=drill_as, drill_x=drill_x,
-                                 drill_y=drill_y, allowed_schemas=ctx.allowed_schemas)
+                                 drill_y=drill_y, allowed_schemas=ctx.allowed_schemas, controls=casts)
     except ValueError as e:
         raise fail(str(e)) from None
-    for name in rewritten.names:
+    row_names = [n for n in rewritten.names if n not in casts]
+    for name in row_names:
         if any(not isinstance(result.rows[i].get(name), BINDABLE) for i in clickable_rows):
             raise fail(f"drill_sql placeholder :{name}: column {name!r} holds lists or JSON, which can't be bound")
     for n in sorted(null_dropping_params(rewritten.sql)):
         name = rewritten.names[n - 1]
+        if name in casts:
+            continue  # a Control's NULL means "All", not a dropped row (SPEC §18)
         if any(result.rows[i].get(name) is None for i in clickable_rows):
             raise fail(
                 f"drill_sql compares :{name} with =, <>, IN or ANY, but {name!r} is NULL in a clickable row; "
@@ -473,6 +481,7 @@ def _drill(
     spec = DrillSpec(
         source=source, visual=visual, sql=rewritten.sql, names=rewritten.names, drill_as=drill_as,
         drill_x=drill_x.strip(), drill_y=drill_y.strip(), title=_fill(drill_title) if drill_title.strip() else title,
+        fixed=tuple((n, ctx.controls[n][1]) for n in rewritten.names if n in casts),
     )
     ctx.drills.append(spec)
     return spec

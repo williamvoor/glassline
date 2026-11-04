@@ -46,3 +46,23 @@ def test_nested_values_are_stored_json_safe():
     row = store.get(r.id).rows[0]
     assert row == {"amounts": [1.2, None], "doc": {"v": 2.0, "d": ["2024-07-01"]}}
     json.dumps(row)
+
+
+def test_result_view_looks_up_the_store_then_each_extra_source_in_order():
+    """SPEC §18 slice 2: `r<id>` lookups check the store, then the live Board instances, then the
+    Results pinned for a model run."""
+    from explorer_agent.results import ResultView, StoredResult
+
+    store = ResultStore()
+    stored = _add(store, a="x")
+
+    def board(rid):
+        return StoredResult(id=rid, sql="", purpose="", columns=[], column_types=[], rows=[], truncated=False)
+
+    live, pinned = [board("r7")], [board("r7"), board("r9")]
+    view = ResultView(store, lambda: live, lambda: pinned)
+    assert view.get(stored.id) is stored
+    assert view.get("r7") is live[0]  # the live instance first
+    assert view.get("r9") is pinned[1]
+    assert view.get("r8") is None
+    assert view.ids() == [stored.id, "r7", "r9"]

@@ -174,4 +174,54 @@ describe('interop with the stub agent', () => {
     expect(answer.contextId).toBe(board.contextId);
     expect(answer.prose).toContain('Supplier A');
   });
+
+  it('re-queries the Explorer in place when a Control changes, without the model (SPEC §18 slice 2)', async () => {
+    const processor = createProcessor();
+    const agent = await connect(agentUrl, processor.getRendererCapabilities({versions: ['v0.9']}));
+    const open = {name: 'open_board', surfaceId: '', sourceComponentId: '', timestamp: new Date().toISOString(),
+                  context: {board: 'explorer'}};
+    let board: AskEvent | undefined;
+    for await (const e of agent.act(open)) board = e;
+    if (board?.kind !== 'final') throw new Error('no board');
+    const explorerBoard = board.metadata?.['explorerBoard'] as {id: string; controls: {name: string; kind: string}[]};
+    expect(explorerBoard.controls).toEqual([{name: 'buyer', kind: 'choice'}]);
+    const surfaceId = surfaceIdOf(board.a2ui)!;
+    processor.processMessages(board.a2ui as unknown as A2uiMessage[]);
+    const surface = processor.model.surfacesMap.get(surfaceId)!;
+    expect(surface.dataModel.get('/controls/buyer')).toEqual(['all']);
+    expect(surface.componentsModel.get('board_controls')).toBeDefined();
+
+    const change = (seq: number, buyer: number | null) => ({
+      name: 'controls', surfaceId, sourceComponentId: 'board_controls', timestamp: new Date().toISOString(),
+      context: {board: explorerBoard.id, seq, values: {buyer}},
+    });
+    let out: AskEvent | undefined;
+    for await (const e of agent.act(change(1, 0), board.contextId)) out = e;
+    if (out?.kind !== 'final') throw new Error('no in-place reply');
+    expect(out.metadata?.['explorerActionFailed']).toBeUndefined();
+    expect(out.metadata?.['explorerInPlace']).toEqual({board: explorerBoard.id, seq: 1});
+    expect(out.metadata?.['explorerLogEntry']).toMatchObject({kind: 'controls', tag: 'IN PLACE · NO MODEL'});
+    expect((out.metadata?.['explorerLogEntry'] as {text: string}).text).toMatch(/^Buyer set to /);
+    expect(out.metadata?.['explorerTab']).toBeUndefined(); // in place: no new tab
+    // Only the trend's panel is re-sent: the buyer Control is used by by_year alone.
+    expect(out.a2ui).toHaveLength(1);
+    const sent = (out.a2ui[0]!['updateComponents'] as {components: Record<string, unknown>[]}).components;
+    expect(sent.some(c => c['component'] === 'VegaChart')).toBe(true);
+    expect(sent.some(c => c['component'] === 'DataGrid')).toBe(false);
+    expect(sent.map(c => String(c['id'])).filter(id => id.startsWith('board_'))).toEqual([]);
+    processor.processMessages(out.a2ui as unknown as A2uiMessage[]); // the renderer accepts it
+
+    // The same seq again is superseded, and a stale seq never re-renders.
+    let again: AskEvent | undefined;
+    for await (const e of agent.act(change(1, 1), board.contextId)) again = e;
+    if (again?.kind !== 'final') throw new Error('no reply');
+    expect(again.metadata?.['explorerSuperseded']).toBe(true);
+    expect(again.a2ui).toEqual([]);
+
+    // Back to All: the text says so.
+    let reset: AskEvent | undefined;
+    for await (const e of agent.act(change(2, null), board.contextId)) reset = e;
+    if (reset?.kind !== 'final') throw new Error('no reply');
+    expect(reset.metadata?.['explorerLogEntry']).toMatchObject({text: 'Controls reset'});
+  });
 });

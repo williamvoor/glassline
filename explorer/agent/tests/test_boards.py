@@ -14,6 +14,7 @@ from explorer_agent.boards import (
     BoardError,
     BoardRenderer,
     build_board,
+    default_key,
     check_board,
     instance_results,
     load_board,
@@ -22,7 +23,7 @@ from explorer_agent.boards import (
 from explorer_agent.macros import NO_ROWS
 from explorer_agent.results import ResultStore
 from explorer_agent.sql import SqlFail, SqlOk
-from explorer_agent.testing.stub_server import STUB_BOARD, STUB_BOARD_ROWS, StubBoardRunner
+from explorer_agent.testing.stub_server import STUB_BOARD, STUB_BOARD_ROWS, STUB_BUYERS, STUB_OPTIONS_SQL, StubBoardRunner
 from explorer_agent.ui import UiPipeline
 
 ALLOWED = ("fixture", "mart")
@@ -82,7 +83,8 @@ def _replace(old: str, new: str) -> str:
     [
         ('extra = "x"\n' + GOOD, "unknown key extra"),
         (GOOD + '\nscope = "late"\n', "queries[1]: unknown key scope (top-level keys must come before the first [[queries]])"),
-        ('[[controls]]\nname = "m"\n' + GOOD, "key controls is not supported yet"),
+        (GOOD.replace("[[queries]]", '[[controls]]\nname = "m"\nkind = "toggle"\nlabel = "M"\ntitle = "x"\n\n[[queries]]', 1),
+         "controls.m: unknown key title for a toggle (top-level keys must come before the first [[controls]])"),
         ('key = "abn"\n' + GOOD, "key key is not supported yet"),
         (_replace('title = "Explorer"', 'title = "Top 10"'), "title must be plain text with no numbers"),
         (_replace('title = "Explorer"\n', ""), "missing key title"),
@@ -90,13 +92,15 @@ def _replace(old: str, new: str) -> str:
         (_replace('name = "totals"', 'name = "r12"'), "looks like a Result ID"),
         (_replace('name = "by_buyer"', 'name = "totals"'), "name totals is used twice"),
         (_replace("FROM fixture.contracts GROUP", "FROM fixture.contracts WHERE buyer = :buyer GROUP"),
-         "queries.by_buyer.sql: placeholder :buyer names no Control or key"),
+         "queries.by_buyer.sql: placeholder :buyer names no Control (keys are not supported yet)"),
         (_replace("FROM fixture.contracts GROUP", "FROM fixture.contracts WHERE buyer = $1 GROUP"),
          "queries.by_buyer.sql: write placeholders as :column"),
         (_replace("FROM fixture.contracts GROUP", "FROM secret.contracts GROUP"), "queries.by_buyer.sql:"),
         (_replace("root = Column", "main = Column"), "layout must define root"),
         (_replace("tiles = Treemap", "board_tiles = Treemap"), "layout name board_tiles is reserved"),
         (_replace("total = Metric", "totals = Metric"), "layout name totals is also a query name"),
+        # Built IDs are `<panel>__<n>`, so a `__` in a name would split the panel in two.
+        (_replace("tiles = Treemap", "the__tiles = Treemap"), "layout name the__tiles must not contain __"),
         ('title = "Explorer"\nlayout = "root = Column([])"\n', "[[queries]] must hold at least one query"),
     ],
 )
@@ -282,6 +286,7 @@ class BoardRunner:
         self.peak = 0
         self.gate: asyncio.Event | None = None
         self.fail: set[str] = set()
+        self.params: list[list] = []
 
     async def run(self, sql):
         self.sql.append(sql)
@@ -292,14 +297,22 @@ class BoardRunner:
                 await self.gate.wait()
             else:
                 await asyncio.sleep(0)
+            if STUB_OPTIONS_SQL in sql:
+                if "options" in self.fail:
+                    return SqlFail(sqlstate="57014", message="canceling statement due to statement timeout")
+                return SqlOk(["value", "label"], ["text", "text"], [{"value": b, "label": b} for b in STUB_BUYERS], False, 1)
             for q in STUB_BOARD.queries:
-                if q.sql in sql:
+                if q.runs in sql:
                     if q.name in self.fail:
                         return SqlFail(sqlstate="57014", message="canceling statement due to statement timeout")
                     return self.rows[q.name]
             raise AssertionError(sql)
         finally:
             self.active -= 1
+
+    async def run_bound(self, sql, params, *, timeout_ms=None):
+        self.params.append(list(params))
+        return await self.run(sql)
 
 
 def renderer(runner, **kw) -> BoardRenderer:
@@ -378,6 +391,30 @@ async def test_warm_up_pins_the_explorer_and_refreshes_it_when_its_entry_expires
     assert len(runner.sql) > n
 
 
+async def test_warm_up_refreshes_the_explorers_option_lists_as_well_as_its_queries():
+    # Regression: the pinned options entry was served forever, so the lists never refreshed.
+    runner = BoardRunner()
+    clock = Clock()
+    r = renderer(runner, ttl_s=300, clock=clock)
+    await r.warm()
+    r.stop()
+    clock.t = 1000
+    await r.warm()
+    r.stop()
+    assert sum(STUB_OPTIONS_SQL in sql for sql in runner.sql) == 2
+
+
+async def test_a_failed_option_refresh_keeps_the_pinned_lists():
+    runner = BoardRunner()
+    r = renderer(runner)
+    await r.warm()
+    r.stop()
+    runner.fail = {"options"}
+    await r.warm()  # logged, not raised
+    r.stop()
+    assert (await r.options(STUB_BOARD))["buyer"]
+
+
 # --- B3 and B21: building a Board -----------------------------------------------------------------
 
 
@@ -397,7 +434,7 @@ async def _built(pipeline, *, fail=(), rows=None, store=None, surface="turn-0-1-
 async def test_board_heading_comes_first_then_the_layout_and_every_visual_shows_its_sql(pipeline):
     ui, _, _ = await _built(pipeline)
     comps = {c["id"]: c for c in _components(ui)}
-    assert comps["root"]["children"] == ["board_heading", "board_layout"]
+    assert comps["root"]["children"] == ["board_heading", "board_controls", "board_layout"]
     assert [comps[i]["text"] for i in comps["board_heading"]["children"]] == [
         "Explorer", "Where does the money go?", "All fixture contracts.",  # captions aren't markdown
     ]
@@ -558,7 +595,7 @@ async def test_a_cancelled_caller_does_not_cancel_the_shared_render():
     out = await joined
     assert leader.cancelled() and not isinstance(out["totals"], SqlFail)
     assert len(runner.sql) == len(STUB_BOARD.queries)
-    assert r.cache.get(("explorer", None, ()))  # the run still filled the cache
+    assert r.cache.get(default_key(STUB_BOARD))  # the run still filled the cache
 
 
 async def test_a_panel_that_cannot_be_drawn_becomes_a_card_and_the_rest_renders(pipeline):

@@ -249,3 +249,263 @@ describe('explorer-app Explorer Board', () => {
     expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer']);
   });
 });
+
+// --- Controls on the Explorer Board (SPEC §18 slice 2) ---------------------------------------------------
+
+import {BOARD_KEY, CONTROLS, IN_PLACE_KEY, SUPERSEDED_KEY} from '../src/app.js';
+
+const ctrlBoardReply = (): AskEvent => ({
+  kind: 'final', contextId: 'ctx-board', prose: '',
+  a2ui: [
+    {version: 'v0.9', createSurface: {surfaceId: BOARD_SID, catalogId: EXPLORER_CATALOG_ID}},
+    {version: 'v0.9', updateComponents: {surfaceId: BOARD_SID, components: [
+      {id: 'root', component: 'Column', children: ['board_heading', 'board_controls', 'board_layout']},
+      {id: 'board_heading', component: 'Text', text: 'Explorer', variant: 'h2'},
+      {id: 'board_controls', component: 'Text', text: 'controls'},
+      {id: 'board_layout', component: 'Column', children: ['by_year']},
+      {id: 'by_year', component: 'Text', text: 'Spend 10'},
+    ]}},
+    {version: 'v0.9', updateDataModel: {surfaceId: BOARD_SID, path: '/controls', value: {buyer: ['all']}}},
+  ],
+  metadata: {
+    [LEVEL_KEY]: {turn: 0, level: 1, label: 'Explorer', surfaceId: BOARD_SID},
+    [TAB_KEY]: {id: 't1', kind: 'board', title: 'Explorer'},
+    [LOG_KEY]: {kind: 'board', tag: 'NEW TAB · NO MODEL', text: 'Opened Explorer'},
+    [BOARD_KEY]: {id: 'b1', controls: [{name: 'buyer', kind: 'choice'}]},
+  },
+});
+
+const inPlaceReply = (seq: number, spend: string, text: string): AskEvent => ({
+  kind: 'final', contextId: 'ctx-board', prose: '',
+  a2ui: [{version: 'v0.9', updateComponents: {surfaceId: BOARD_SID, components: [{id: 'by_year', component: 'Text', text: spend}]}}],
+  metadata: {[IN_PLACE_KEY]: {board: 'b1', seq}, [LOG_KEY]: {kind: 'controls', tag: 'IN PLACE · NO MODEL', text}},
+});
+
+const failedReply = (prose: string): AskEvent => ({kind: 'final', contextId: 'ctx-board', prose, a2ui: [], metadata: {[ACTION_FAILED_KEY]: true}});
+
+/** A Board agent whose `controls` replies come from `onControls`, each released by its own gate. */
+function controlsAgent(onControls: (seq: number) => {reply: AskEvent | Error; gate?: Promise<void>}, board = ctrlBoardReply) {
+  const sent: {seq: number; values: unknown; surfaceId: string; contextId?: string}[] = [];
+  const connection: AgentConnection = {
+    info: {description: 'Demo contracts', examples: ['Top suppliers?']},
+    async *askQuestion(_text, contextId) {
+      yield* answer('ok', contextId ?? 'ctx-new');
+    },
+    async *act(action, contextId) {
+      if (action.name === OPEN_BOARD) {
+        yield board();
+        return;
+      }
+      const ctx = action.context as {board: string; seq: number; values: unknown};
+      expect(action.name).toBe(CONTROLS);
+      sent.push({seq: ctx.seq, values: ctx.values, surfaceId: action.surfaceId, contextId});
+      const {reply, gate} = onControls(ctx.seq);
+      if (gate) await gate;
+      if (reply instanceof Error) throw reply;
+      yield reply;
+    },
+  };
+  return {sent, connector: async () => connection};
+}
+
+function gate() {
+  let open!: () => void;
+  const promise = new Promise<void>(r => (open = r));
+  return {promise, open};
+}
+
+// The processor is private; tests write the data model as a ChoicePicker would.
+const dataModel = (app: ExplorerApp) =>
+  (app as unknown as {processor: MessageProcessor<ComponentApi>}).processor.model.surfacesMap.get(BOARD_SID)!.dataModel;
+const surfaceText = (app: ExplorerApp) => q(app, '.canvas a2ui-surface')!.textContent!;
+const logTexts = (app: ExplorerApp) => texts(app, '.sidebar .log-entry .log-text');
+
+import type {ComponentApi, MessageProcessor} from '@a2ui/web_core/v0_9';
+
+describe('explorer-app Controls', () => {
+  it('sends a change, dims the layout while pending, then replaces the panel and logs it in place', async () => {
+    const g = gate();
+    const agent = controlsAgent(seq => ({reply: inPlaceReply(seq, 'Spend 20', 'Buyer set to Dept A'), gate: g.promise}));
+    const app = await mount(agent.connector);
+    expect(surfaceText(app)).toContain('Spend 10');
+
+    dataModel(app).set('/controls/buyer', ['0']);
+    await settle(app);
+    expect(agent.sent).toEqual([{seq: 1, values: {buyer: 0}, surfaceId: BOARD_SID, contextId: 'ctx-board'}]);
+    expect(q(app, '.canvas .level-view.requery')).not.toBeNull();
+    expect(q(app, '.canvas .level-view.inert')).toBeNull(); // not busy: the composer stays enabled
+    expect((q(app, '.composer button') as HTMLButtonElement).disabled).toBe(false);
+
+    g.open();
+    await settle(app);
+    expect(q(app, '.canvas .level-view.requery')).toBeNull();
+    expect(surfaceText(app)).toContain('Spend 20');
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer']); // in place: no new tab
+    expect(logTexts(app)).toEqual(['Opened Explorer', 'Buyer set to Dept A']);
+    expect(texts(app, '.sidebar .log-entry.in-place .log-tag')).toEqual(['IN PLACE · NO MODEL']);
+  });
+
+  it('merges consecutive changes into one log entry, but not across another tab', async () => {
+    const labels = ['Buyer set to Dept A', 'Buyer set to Dept B', 'Controls reset'];
+    const agent = controlsAgent(seq => ({reply: inPlaceReply(seq, `Spend ${seq}`, labels[seq - 1]!)}));
+    const app = await mount(agent.connector);
+    dataModel(app).set('/controls/buyer', ['0']);
+    await settle(app);
+    dataModel(app).set('/controls/buyer', ['1']);
+    await settle(app);
+    expect(logTexts(app)).toEqual(['Opened Explorer', 'Buyer set to Dept B']);
+
+    await app.ask('Top suppliers?');
+    await settle(app);
+    (q(app, '.sidebar .log-entry.in-place') as HTMLButtonElement).click(); // selects its tab
+    await settle(app);
+    expect(q(app, '.canvas a2ui-surface')).not.toBeNull();
+    dataModel(app).set('/controls/buyer', ['all']);
+    await settle(app);
+    expect(logTexts(app)).toEqual(['Opened Explorer', 'Buyer set to Dept B', 'Top suppliers?', 'Controls reset']);
+  });
+
+  it('ignores a superseded reply and an older in-place reply that arrives after a newer one', async () => {
+    const gates = [gate(), gate()];
+    const agent = controlsAgent(seq => seq === 1
+      ? {reply: inPlaceReply(1, 'Spend old', 'Buyer set to Dept A'), gate: gates[0]!.promise}
+      : {reply: inPlaceReply(2, 'Spend new', 'Buyer set to Dept B'), gate: gates[1]!.promise});
+    const app = await mount(agent.connector);
+    dataModel(app).set('/controls/buyer', ['0']);
+    dataModel(app).set('/controls/buyer', ['1']);
+    await settle(app);
+    expect(agent.sent.map(s => s.seq)).toEqual([1, 2]);
+    gates[1]!.open();
+    await settle(app);
+    expect(q(app, '.canvas .level-view.requery')).not.toBeNull(); // seq 1 still pending
+    gates[0]!.open();
+    await settle(app);
+    expect(surfaceText(app)).toContain('Spend new'); // the older reply was not applied
+    expect(logTexts(app)).toEqual(['Opened Explorer', 'Buyer set to Dept B']);
+    expect(dataModel(app).get('/controls/buyer')).toEqual(['1']); // not reverted
+    expect(q(app, '.canvas .level-view.requery')).toBeNull();
+
+    const sup = controlsAgent(() => ({reply: {kind: 'final', contextId: 'ctx-board', prose: '', a2ui: [], metadata: {[SUPERSEDED_KEY]: true}}}));
+    const app2 = await mount(sup.connector);
+    dataModel(app2).set('/controls/buyer', ['0']);
+    await settle(app2);
+    expect(dataModel(app2).get('/controls/buyer')).toEqual(['0']); // superseded: not reverted
+    expect(surfaceText(app2)).toContain('Spend 10');
+    expect(logTexts(app2)).toEqual(['Opened Explorer']);
+  });
+
+  it('ignores a drill from the Board while its re-query is pending, and accepts it after', async () => {
+    const g = gate();
+    const drills: string[] = [];
+    const base = controlsAgent(seq => ({reply: inPlaceReply(seq, 'Spend 20', 'Buyer set to Dept A'), gate: g.promise}));
+    const connector = async () => {
+      const c = await base.connector();
+      return {...c, async *act(action: UiAction, contextId?: string, viewing?: string) {
+        if (action.name === 'drill') {
+          drills.push(action.sourceComponentId);
+          yield {kind: 'final' as const, contextId: 'ctx-board', prose: '', a2ui: [], metadata: {[ACTION_FAILED_KEY]: true}};
+          return;
+        }
+        yield* c.act(action, contextId, viewing);
+      }};
+    };
+    const app = await mount(connector);
+    const surface = (app as unknown as {processor: MessageProcessor<ComponentApi>}).processor.model.surfacesMap.get(BOARD_SID)!;
+    dataModel(app).set('/controls/buyer', ['0']);
+    await settle(app);
+    await surface.dispatchAction({event: {name: 'drill', context: {source: 'v1', row: 0}}}, 'by_year');
+    await settle(app);
+    expect(drills).toEqual([]);
+    g.open();
+    await settle(app);
+    await surface.dispatchAction({event: {name: 'drill', context: {source: 'v2', row: 0}}}, 'by_year');
+    await settle(app);
+    expect(drills).toEqual(['by_year']);
+  });
+
+  it('disables the Board, Controls included, while a model run is going (B13)', async () => {
+    const g = gate();
+    const base = controlsAgent(seq => ({reply: inPlaceReply(seq, 'Spend 20', 'x')}));
+    const connector = async () => {
+      const c = await base.connector();
+      return {...c, async *askQuestion(text: string, contextId?: string) {
+        await g.promise;
+        yield* answer('ok', contextId ?? 'ctx-board');
+      }};
+    };
+    const app = await mount(connector);
+    void app.ask('Slow?');
+    await settle(app);
+    (q(app, '.tab-strip .tab-select') as HTMLButtonElement).click(); // back to the Explorer
+    await settle(app);
+    expect(q(app, '.canvas a2ui-surface')!.closest('.level-view')!.classList.contains('inert')).toBe(true);
+    g.open();
+    await settle(app);
+    (q(app, '.tab-strip .tab-select') as HTMLButtonElement).click();
+    await settle(app);
+    expect(q(app, '.canvas a2ui-surface')!.closest('.level-view')!.classList.contains('inert')).toBe(false);
+  });
+
+  it('reverts the Controls on "busy", a rejection or a network failure, without sending again', async () => {
+    for (const reply of [failedReply('The agent is busy answering; try again when it has finished.'), failedReply('bad value'), new Error('fetch failed')]) {
+      document.body.innerHTML = '';
+      const agent = controlsAgent(() => ({reply}));
+      const app = await mount(agent.connector);
+      dataModel(app).set('/controls/buyer', ['0']);
+      await settle(app);
+      expect(dataModel(app).get('/controls/buyer')).toEqual(['all']);
+      expect(agent.sent).toHaveLength(1); // the revert's write sent nothing
+      expect(surfaceText(app)).toContain('Spend 10');
+      expect(logTexts(app)).toEqual(['Opened Explorer']);
+      expect(q(app, '.canvas .level-view.requery')).toBeNull();
+    }
+  });
+
+  it('keeps the focused Control element, and its focus, across an in-place reply (B13)', async () => {
+    // The real Controls Card shape (`boards.controls_components`): a Card over a Column of inputs.
+    const withInputs = (): AskEvent => {
+      const r = ctrlBoardReply() as Extract<AskEvent, {kind: 'final'}>;
+      const comps = (r.a2ui[1] as {updateComponents: {components: Record<string, unknown>[]}}).updateComponents.components;
+      comps.splice(2, 1,
+        {id: 'board_controls', component: 'Card', child: 'board_controls_items'},
+        {id: 'board_controls_items', component: 'Column', children: ['board_control_buyer', 'board_control_spend']},
+        {id: 'board_control_buyer', component: 'ChoicePicker', label: 'Buyer', variant: 'mutuallyExclusive', value: {path: '/controls/buyer'},
+         options: [{label: 'All', value: 'all'}, {label: 'Dept A', value: '0'}]},
+        {id: 'board_control_spend', component: 'Slider', label: 'Min spend', min: 0, max: 100, value: {path: '/controls/spend'}},
+      );
+      (r.a2ui[2] as {updateDataModel: {value: unknown}}).updateDataModel.value = {buyer: ['all'], spend: 5};
+      return r;
+    };
+    const agent = controlsAgent(seq => ({reply: inPlaceReply(seq, 'Spend 20', 'Buyer set to Dept A')}), withInputs);
+    const app = await mount(agent.connector);
+    const input = deepQuery(q(app, '.canvas a2ui-surface')!, 'input[type="range"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    input.focus();
+    expect(isFocused(input)).toBe(true);
+
+    dataModel(app).set('/controls/buyer', ['0']);
+    await settle(app);
+    expect(agent.sent.map(s => s.seq)).toEqual([1]);
+    expect(surfaceText(app)).toContain('Spend 20'); // the in-place reply was applied
+
+    expect(input.isConnected).toBe(true);
+    expect(deepQuery(q(app, '.canvas a2ui-surface')!, 'input[type="range"]')).toBe(input);
+    expect(isFocused(input)).toBe(true);
+  });
+});
+
+/** querySelector that also looks inside open shadow roots. */
+function deepQuery(root: Element | ShadowRoot, sel: string): Element | null {
+  const hit = root.querySelector(sel);
+  if (hit) return hit;
+  for (const el of root.querySelectorAll('*')) {
+    if (el.shadowRoot) {
+      const found = deepQuery(el.shadowRoot, sel);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** The element is the active element of its own root (document or shadow root). */
+const isFocused = (el: Element) => (el.getRootNode() as Document | ShadowRoot).activeElement === el;

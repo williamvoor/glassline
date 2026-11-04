@@ -275,7 +275,7 @@ class LlmLoop:
 
     async def _build(self, conv: Conversation, reply: str, ignore_drills: frozenset[int] = frozenset()) -> UiResult:
         """UI pipeline, then check step 2 of every Drill query. Raises UiError."""
-        ui = self.pipeline.build(reply, conv.store, conv.surface_id, conv.actions.ids, ignore_drills)
+        ui = self.pipeline.build(reply, conv.results, conv.surface_id, conv.actions.ids, ignore_drills)
         errors, failing = await self._check_drills(ui)
         if errors:
             raise UiError(errors, prose=ui.prose or None, drill_visuals=failing, only_drill=True)

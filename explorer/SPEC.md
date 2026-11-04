@@ -1564,6 +1564,141 @@ Slices 4 and 5 get their own detailed amendments. This section fixes their shape
   open after the current tab, `MAX_TABS`, close, reopen, NEW), and `app.test.ts` and
   `levels.test.ts` rewritten for tabs.
 
+**Slice 2 scope (fixed 2026-11-03, before building).** Its decisions fall under ADR 0029, so
+no new ADR.
+- **In, server:**
+  - **`[[controls]]` and typed placeholders**, as in "Controls" and "Board files". Each Control
+    has `name` (`[a-z_][a-z0-9_]*`, unique, not `r<digits>`), `kind`, `label` (plain text), and
+    its kind's keys. `type` is declared for `choice` and `multi` only. The other kinds imply it:
+    `toggle` is `bool`, `number` is `int` (`bigint`), and `date` is `date`.
+  - **Option and range queries** (`options_sql`, `range_sql`) take no placeholders. They run
+    before the Board's queries, are cached with the render, and are kept per Board instance.
+  - **Defaults.** A `default` that needs rows to check is checked at render:
+    - a `choice` option value missing from the options falls back to All (or to the first
+      option, without `all_label`);
+    - a `multi` drops the values that are missing;
+    - a `number` outside a `range_sql` range is clamped.
+    Each fallback is logged by Control name only.
+  - **Startup checks** are those in "Startup checks":
+    - placeholders are typed, used and don't collide; an unused Control is one that no query and
+      no `drill_sql` uses;
+    - `LIMIT 0` runs at the defaults, and again with every nullable Control at NULL;
+    - options return `value` and `label`;
+    - `range_sql` returns `min` and `max`, numeric for `number` and date for `date`;
+    - a Control name isn't an output column of any Board query.
+    `key`, `key_type` and `key_columns` stay "not supported yet" until slice 3.
+  - **The Controls Card.**
+    - `board_controls` is a Card holding a Column `board_controls_items`, with one
+      `board_control_<name>` per Control, plus a `board_control_<name>_note` caption when the
+      options were cut.
+    - It sits between `board_heading` and `board_layout`, and is left out when a Board has no
+      Controls.
+    - The data model `/controls/…` (§ Data model) goes in one `updateDataModel` after the
+      opening `updateComponents`. The v0.9 `createSurface` is strict and has no data model
+      field (web_core `CreateSurfaceMessageSchema`), so "sent once, in the Board's
+      `createSurface`" below means that opening reply. The client subscribes only after it has
+      processed the reply, so the server's one write never echoes.
+    - The `choice` option values are the index strings `"0"`, `"1"`, … and `"all"`.
+    - `multi` is `filterable` over 10 options, and `date` sets `enableDate: true`.
+  - **The reply that opens a Board** also carries `explorerBoard: {id: "b<n>", controls: [{name,
+    kind}]}`, so the client knows the instance to name and how to convert each value. The spec
+    sends `board` in the context but never said where the client learns it.
+  - **`controls` action.** It is a v0.9 action with `name: "controls"`. Its `surfaceId` is the
+    instance's surface, its `sourceComponentId` is `board_controls`, and its context is
+    `{board, seq, values}`. The steps run in this order:
+    1. Look up the instance (unknown → rejected) and check the surface.
+    2. Reject with "busy" while a model run is waiting or running.
+    3. Validate (see Validation), so nothing runs for a rejected action.
+    4. Record `seq` as the highest seen.
+    5. Take the instance lock, and answer `explorerSuperseded` if a higher `seq` has arrived or
+       `seq` is not above the last applied one.
+    6. Re-query and reply in place.
+  - **Changed set.** A panel is re-sent when any of these uses a changed Control:
+    - its query;
+    - a `Cite`/`{query[i].col}` placeholder in a passthrough Text;
+    - its `drill_sql`.
+    The drill case rebuilds the panel under new source IDs, so prefetched rows held under the old
+    IDs can't be used: that is "keyed by the Control values". Queries no changed Control uses keep
+    their Results and IDs.
+  - **In-place reply.**
+    - The server rebuilds and validates the full Surface, then sends one `updateComponents` with
+      the components whose ID is a re-sent panel's root, or starts with `<root>__`.
+    - The rebuild's source IDs for panels that aren't re-sent are discarded, never sent, and
+      skipped as §15 skips a failed attempt's IDs.
+    - The re-sent panels' old sources and Results are released, and their new ones registered.
+    - The reply carries `explorerInPlace: {board, seq}` and `explorerLogEntry: {kind:
+      "controls", tag: "IN PLACE · NO MODEL", text}`.
+    - Text: each Control not at its default, in declaration order, as "<label> set to <shown
+      value>", joined with " · ". A `multi` shows its labels joined with ", ", and a `toggle`
+      "on" or "off". All at defaults: "Controls reset". So the text is the merged entry's full
+      text, with no merging on the server.
+  - **Model runs and Boards.**
+    - After a model run takes the Conversation lock, it waits for the viewed Board instance's
+      lock, builds the Board pair if one is due, and releases that lock.
+    - The pair's Results are pinned on the Conversation until the run ends.
+    - `r<id>` lookups for Macros and `Cite` check the store, then the live Board instances'
+      current Results, then the pinned ones (`results.py`).
+    - The pair goes after the queued pairs, outside `MAX_PENDING_PAIRS`.
+    - The Viewing line is still never sent for a Board tab: the pair says what is on screen, and
+      at defaults the Board says nothing a question needs.
+    - `instructions.md` and the cached prefix don't change in slice 2.
+  - **A Board Drill query** may use Control placeholders, typed and cast like a Board query's,
+    `multi` arrays included (the user, 2026-11-04). It binds the Controls' values from when its panel was built (`DrillSpec.fixed`). Row
+    placeholders stay as in §15, and the NULL-drop check covers row columns only.
+  - **Board row Asks** reuse their copy in the store. The instance remembers each Board Result's
+    copy, and copies again only when the store has evicted it (the deferral from 1b).
+- **In, client** (`controls.ts`, new, plus `app.ts`):
+  - One `/controls` subscription per Board surface, made after the surface's `createSurface` is
+    processed. It diffs the converted values against the last sent, and sends the full values
+    with `seq` + 1.
+  - When the change includes a `number`, the send is debounced by `CONTROL_DEBOUNCE_MS`. A
+    change of another kind sends at once and cancels a pending debounce.
+  - A re-query is not `busy`: the composer, other tabs and the Controls stay enabled.
+    - The Board's layout (the surface root's third child, `board_layout`) is dimmed while its
+      re-query is pending.
+    - Actions from that surface are ignored until the reply.
+    - Controls are disabled with everything else while `busy`. Under `busy`, a Drill-down counts
+      as well as a model run, which is stricter than "a model run" and harmless: the server
+      allows a Drill-down and a re-query side by side.
+  - Replies:
+    - An in-place reply is applied when its `seq` is above the displayed one, and ignored
+      otherwise. The client keeps the raw data-model values it sent per `seq`.
+    - `explorerSuperseded` is ignored.
+    - "busy", a rejection or a network failure writes the displayed values back into
+      `/controls`, after setting "last sent" to them, so the write sends nothing.
+  - **Log.** An in-place entry is a log entry of its own, not a tab. When the newest log entry
+    is an in-place entry for the same tab, its text and tag are replaced. Otherwise a new one is
+    added. Clicking it selects its tab. It appears when the reply arrives (no pending state).
+- **Stub:** the stub Explorer Board gains a `choice` Control (`buyer`, with All) on `by_year`,
+  and the stub runner answers bound queries, so the client interop test and the screenshots
+  exercise a re-query.
+- **Deferred:**
+  - Keys and Entity Boards, and `MAX_BOARD_INSTANCES`, to slice 3.
+  - B-M to slice 4.
+  - Board scenarios in `scenarios.py`, which need a real Board, to slice 4.
+- **Criteria covered:**
+  - In full: B2, B6, B7, B8, B10 and B13.
+  - In part:
+    - B1 (the Control checks);
+    - B3 (heading, then Controls Card, then layout);
+    - B12 (in-place updates keep the tab; consecutive Control changes merge);
+    - B20 (screenshots of the Explorer with Controls);
+    - B21 (`MAX_CONTROL_OPTIONS` with its caption; full merged log text; no Control values in
+      logs; `int` as `bigint`).
+- **Tests:**
+  - `test_boards.py`: Control loading and startup errors; the typed rewrite and display copy;
+    the Controls Card and data model; options cap and fallbacks; changed sets.
+  - db tests: B2's matrix on `mart.contract`, covering `text`, `int`, `date` and `bool`, and a
+    `multi` on an `int` column.
+  - `test_drill.py` (db): B10.
+  - `test_actions.py`: Validation, and the Board pair's content and cap.
+  - `test_executor.py`: B7, `explorerBoard`, the log text, the Ask copy reuse, and the pair
+    queued only when due.
+  - `test_results.py`: the lookup order.
+  - `client/test/controls.test.ts` and `app.test.ts`: B13.
+  - `tabs.test.ts`: merging in-place entries.
+  - `app.test.ts`: in-place, superseded and busy replies.
+
 ### Speed targets
 
 These are the measured bar in B-M, read like §17's bar, with p90 beside the median:
@@ -1658,7 +1793,8 @@ positional ID, such as `root_children_0`, for an inline call), and its expanded 
 Re-rendering the same layout gives the same IDs whatever the rows, because each Board instance
 has its own surface and the layout is fixed configuration. The server renames the layout's
 `root` to `board_layout` so it can put the heading and Controls Card above it, and rejects a
-layout that defines `board_heading`, `board_controls` or `board_layout` itself.
+layout that defines `board_heading`, `board_controls` or `board_layout` itself, or a variable
+name containing `__` (a built ID's root is everything before its first `__`).
 
 *Verified 2026-11-03* (`UiPipeline.build` on the stub reply): IDs were identical across two
 builds, a fresh pipeline, 1 row against 3, an advanced Conversation counter, and inline Macro
@@ -1679,7 +1815,8 @@ real browser check stays in B20's Playwright run.
   entries, oldest dropped. Each query's age is its own, so re-running a failed query doesn't make
   the others look newer. The Explorer's default entry is pinned and never counts toward the cap.
   It is served until a background refresh replaces it, even if a refresh fails (logged), so a
-  database hiccup doesn't take the Explorer down.
+  database hiccup doesn't take the Explorer down. The refresh runs the option and range queries
+  again too, replacing their pinned entry.
 - Concurrent renders of one key share a run that has its own task. A caller that goes away stops
   waiting, but the run continues for the others and still fills the cache.
 - **Failed or timed-out queries are never cached.**
@@ -1801,8 +1938,9 @@ a `_row`, so "Other" keeps the default. Only Visuals with an `action` get a poin
   rendered as markdown.
 - **Queries handle "All"** with typed NULLs, e.g. `(:method IS NULL OR procurement_method =
   :method)` with `type = "text"`, which runs as `($1::text IS NULL OR procurement_method =
-  $1::text)`. A `multi` Control binds `text[]`, `int[]` and so on (ADR 0029). Drill queries
-  still bind scalars only.
+  $1::text)`. A `multi` Control binds `text[]`, `int[]` and so on (ADR 0029). In a Board Drill
+  query, row placeholders still bind scalars only (§15). Control placeholders bind as in Board
+  queries, `multi` arrays included.
 
 **Data model.**
 - The Controls Card is sent once, in the Board's `createSurface`. Its data model holds the
@@ -2055,7 +2193,7 @@ Conversation.
 | B10 | A Board Drill query binds row placeholders and Control values; the NULL-drop check ignores Control placeholders; a Control change discards its prefetched rows | `test_drill.py` (db) |
 | B11 | The Entity Board lines are stable, the prefix stays byte-identical (snapshots regenerated on purpose), and `instructions.md` stays under the 3,200 cap | `test_prompt.py` |
 | B12 | Client tabs: Explorer first and not closable; question, Board, Drill-down and Ask open tabs; tab IDs from the server; in-place updates keep the tab; `MAX_TABS` closes the oldest unselected; closed tabs reopen from the log with no agent call; running and failed states; log entries from `explorerLogEntry` as plain text; consecutive Control changes merge; titles rendered as text | `client/test/tabs.test.ts`, `app.test.ts`, `levels.test.ts` (rewritten cases listed in Files) |
-| B13 | Client Controls: a user change sends `controls` with the full values, indices and `seq`; a `number` drag sends one action after it settles; a server-driven write (the busy revert) sends nothing; an in-place reply keeps the Controls' focus; a superseded reply is ignored; Controls stay enabled during a re-query and are disabled during a model run | `client/test/controls.test.ts` |
+| B13 | Client Controls: a user change sends `controls` with the full values, indices and `seq`; a `number` drag sends one action after it settles; a server-driven write (the busy revert) sends nothing; an in-place reply keeps the Controls' focus; a superseded reply is ignored; Controls stay enabled during a re-query and are disabled during a model run | `client/test/controls.test.ts`, `app.test.ts` |
 | B14 | `Treemap`: a valid Vega spec with one tile per row up to the cap, the rest in a non-clickable "Other" ("Other (incomplete)" when truncated); non-positive and NULL values left out and counted; no root mark; `_row` and `_label` on every clickable tile; displayed order with ties; drill and Entity Board links as for `BarChart`; strict validation passes | `test_macros.py`, `test_ui.py` |
 | B15 | `Timeline`: one bar per row; the `sort` modes; the color fold; the today rule and the horizon band; the row cut reported; NULL dates left out and counted; `end` before `start` is a macro error; `_row` and `_label` on bars only | `test_macros.py` |
 | B16 | Bar cells: shares of the shown rows' maximum, `null` for NULL; negatives are a macro error; all-zero columns get none; drawn under the text, which stays | `test_macros.py`, `client/test/data-grid.test.ts` |
@@ -2206,6 +2344,44 @@ Every finding was taken unless noted:
 - **Screenshots** (stub app at 1440 and 390 px, light and dark: the Explorer tab, a Drill-down
   from it, a question, and the log open on a narrow screen): no console errors and no horizontal
   overflow.
+
+### Build notes, slice 2 (2026-11-04)
+
+- **Refuter: FAIL.** Every finding was taken.
+  - **Blockers:** two B13 clauses had no test. Added `app.test.ts` cases: the Board view is inert
+    while a model run is going, and a focused `Slider` `<input>` is the same element, still
+    focused, after an in-place reply. The second fails if the surface is rebuilt (checked by
+    mutation).
+  - **Major:** the Explorer's option and range lists never refreshed, because the pinned entry
+    was served and `warm` didn't pass `fresh`. `BoardRenderer.options(fresh=True)` now replaces
+    it, tested with a fake clock. The Cache text now says so.
+  - **Major:** the Cite and placeholder-Text rule of the changed set had no test. It now has one,
+    covering a placeholder Text, a `Cite` and a nested inline Text.
+  - **Minors, all fixed:**
+    - A layout variable name with `__` was mis-rooted, so its panel was never re-sent. It's now
+      rejected at load.
+    - A Control change cancelled the prefetch of the panels it didn't touch. They're re-queued.
+    - `BoardInstance.copies` is pruned of released Results.
+    - Date values must be `YYYY-MM-DD` (`date.fromisoformat` also takes ISO week dates).
+    - The dimming selector was checked in a real browser (B20 screenshots): it matches
+      `board_layout`, and the composer stays enabled.
+  - **Spec issue resolved** (the user): a Board Drill query's Control placeholders bind as in
+    Board queries, `multi` arrays included. Row placeholders stay scalars only. The Controls
+    section's "Drill queries still bind scalars only" was reworded.
+- **Kept as is** (the user): while a model run is going, the busy view uses the `.inert` class
+  (opacity and `pointer-events: none`), not the `inert` attribute. A keyboard user can still
+  change a Control. The server answers "busy" and the client reverts. The server's busy check is
+  the guard, as for clicks since §15.
+- **Not fixed (judged not worth it):**
+  - `instance.state` advances before delivery. If a reply is lost, a later change back to the
+    undelivered values gives an empty changed set.
+  - A "busy" revert for seq N writes the displayed values, which could lag a success for N+1
+    across a model-run start. The window is narrow and wasn't reproduced.
+  - Single-flight keys include `only`, so a full and a partial render of the same key can run
+    side by side. That's duplicated work only.
+- **Screenshots** (stub app at 1440 and 390 px, light and dark: the Explorer with its Controls
+  Card, a pending re-query with the layout dimmed, and the settled reply): no console errors and
+  no horizontal overflow.
 
 ### Test command
 

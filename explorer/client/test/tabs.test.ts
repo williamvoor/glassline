@@ -1,6 +1,6 @@
 // The pure tab rules (explorer SPEC §18 slice 1b, B12).
 import {describe, expect, it} from 'vitest';
-import {MAX_TABS, applyCap, closeTab, logOrder, openTab, selectTab, type TabState} from '../src/tabs.js';
+import {MAX_TABS, addInPlace, applyCap, closeTab, logOrder, openTab, selectTab, type InPlaceEntry, type TabState} from '../src/tabs.js';
 
 const tab = (key: string, seq: number, extra: Partial<TabState> = {}): TabState => ({key, seq, closed: false, isNew: false, ...extra});
 const keys = (tabs: TabState[]) => tabs.filter(t => !t.closed).map(t => t.key);
@@ -52,5 +52,14 @@ describe('tabs', () => {
   it('lists tabs for the log in the order they opened, closed ones included', () => {
     const tabs = [tab('x', 0), tab('c', 3, {closed: true}), tab('a', 1)];
     expect(logOrder(tabs).map(t => t.key)).toEqual(['x', 'a', 'c']);
+  });
+
+  it('merges an in-place entry into the newest entry only when that is an in-place entry for the same tab', () => {
+    const e = (seq: number, tabKey: string, text: string): InPlaceEntry => ({key: `log-${seq}`, seq, tabKey, tag: 'IN PLACE', text});
+    let entries = addInPlace([], 0, e(1, 'x', 'A set to 1'));
+    entries = addInPlace(entries, 1, e(2, 'x', 'A set to 2')); // newest is entry 1: replaced
+    expect(entries).toEqual([{key: 'log-1', seq: 1, tabKey: 'x', tag: 'IN PLACE', text: 'A set to 2'}]);
+    expect(addInPlace(entries, 1, e(2, 'y', 'B set to 1')).map(x => x.text)).toEqual(['A set to 2', 'B set to 1']); // another tab
+    expect(addInPlace(entries, 3, e(4, 'x', 'Controls reset')).map(x => x.text)).toEqual(['A set to 2', 'Controls reset']); // a tab opened since
   });
 });

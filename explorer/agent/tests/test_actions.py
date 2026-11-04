@@ -197,3 +197,28 @@ def test_board_sources_resolve_without_counting_toward_the_cap():
     assert (resolved.kind, resolved.level, resolved.source.drill) == ("drill", board, drill)
     with pytest.raises(ActionError, match="too old"):
         state.resolve(action(board.surface_id, source=sid, row=0))  # without the instance: gone
+
+
+def test_the_board_pair_names_the_tab_holds_no_labels_in_its_call_and_is_cut_to_size():
+    """B8 (SPEC §18): previews are shortened first, then the last Results left out."""
+    from explorer_agent.actions import board_pair
+    from explorer_agent.results import StoredResult
+
+    results = [
+        StoredResult(id=f"r{i}", sql=f"SELECT {i}", purpose=f"Explorer · q{i}", columns=["label", "n"],
+                     column_types=["text", "bigint"], rows=[{"label": "x" * 40, "n": n} for n in range(9)], truncated=False)
+        for i in range(3)
+    ]
+    call, result = board_pair("synthetic-board-1-1", "t1", "Explorer", {"Method": "Limited"}, results, 5, 10_000)
+    args = json.loads(call["tool_calls"][0]["function"]["arguments"])
+    assert args == {"sql": "SELECT 0;\n\nSELECT 1;\n\nSELECT 2", "purpose": "Board shown in Tab t1"}
+    body = json.loads(result["content"])
+    assert body["board"] == "Explorer" and body["controls"] == {"Method": "Limited"}
+    assert [len(r["rows_preview"]) for r in body["results"]] == [5, 5, 5]
+    _, small = board_pair("c", "t1", "Explorer", {}, results, 5, 700)
+    body = json.loads(small["content"])
+    assert len(small["content"]) <= 700
+    assert all(len(r["rows_preview"]) < 5 for r in body["results"])
+    _, tiny = board_pair("c", "t1", "Explorer", {}, results, 5, 300)
+    body = json.loads(tiny["content"])
+    assert len(tiny["content"]) <= 300 and body["omitted_results"] >= 1

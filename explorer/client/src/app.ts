@@ -12,7 +12,8 @@ import type {A2uiMessage, ComponentApi, MessageProcessor} from '@a2ui/web_core/v
 import {connect, type AgentConnection, type AgentInfo, type AskEvent, type UiAction} from './a2a.js';
 import {createProcessor} from './catalog.js';
 import {renderSafeMarkdown} from './markdown.js';
-import {closeTab, logOrder, openTab, selectTab, type TabState} from './tabs.js';
+import {BoardControls, type ControlDecl, type WireValues} from './controls.js';
+import {addInPlace, closeTab, logOrder, openTab, selectTab, type InPlaceEntry, type TabState} from './tabs.js';
 
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
@@ -21,6 +22,10 @@ export const NO_BOARDS_KEY = 'explorerNoBoards';
 export const TAB_KEY = 'explorerTab';
 export const LOG_KEY = 'explorerLogEntry';
 export const OPEN_BOARD = 'open_board';
+export const BOARD_KEY = 'explorerBoard';
+export const IN_PLACE_KEY = 'explorerInPlace';
+export const SUPERSEDED_KEY = 'explorerSuperseded';
+export const CONTROLS = 'controls';
 const EXPLORER_KEY = 'explorer';
 
 type TabKind = 'board' | 'question' | 'drill' | 'ask';
@@ -95,6 +100,9 @@ export class ExplorerApp extends LitElement {
   @state() private now = Date.now();
   @state() private board: BoardLoad = 'loading';
   @state() private logOpen = false; // narrow screens: the log is a collapsible panel
+  @state() private inPlace: InPlaceEntry[] = []; // Control changes: log entries that aren't tabs
+  @state() private requeries = 0; // bumped when a Board's pending re-query state changes
+  private controls = new Map<string, BoardControls>(); // by tab key: a Board tab's Controls
   private boardOpening?: Promise<void>; // a question waits for it, so both use one conversation
   private seq = 0;
 
@@ -218,6 +226,7 @@ export class ExplorerApp extends LitElement {
           this.contextId = event.contextId;
           processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
           this.addExplorer(event, surfaceId);
+          this.attachControls(EXPLORER_KEY, surfaceId, event.metadata, processor);
           this.board = 'shown';
         }
       } catch {
@@ -237,6 +246,71 @@ export class ExplorerApp extends LitElement {
     };
     this.tabs = [explorer, ...this.tabs];
     this.selected ??= EXPLORER_KEY;
+  }
+
+  // Controls (SPEC §18 slice 2) -----------------------------------------------------------------------
+
+  /** Subscribes to a Board surface's `/controls`, after its opening reply was processed, so the
+   * server's one data-model write never echoes back as a change. */
+  private attachControls(tabKey: string, surfaceId: string, metadata: Record<string, unknown> | undefined,
+                         processor: MessageProcessor<ComponentApi>) {
+    const board = metadata?.[BOARD_KEY] as {id?: unknown; controls?: unknown} | undefined;
+    const controls = Array.isArray(board?.controls) ? (board.controls as ControlDecl[]) : [];
+    const dataModel = processor.model.surfacesMap.get(surfaceId)?.dataModel;
+    if (typeof board?.id !== 'string' || !controls.length || !dataModel) return;
+    const ctrl: BoardControls = new BoardControls({
+      board: board.id, controls, dataModel,
+      send: (seq, values) => void this.sendControls(tabKey, surfaceId, ctrl, seq, values),
+      onChange: () => this.requeries++,
+    });
+    this.controls.set(tabKey, ctrl);
+  }
+
+  /** One Control change: an in-place reply replaces panels when it is the newest; a superseded
+   * one is ignored; "busy", a rejection or a failure writes the displayed values back. Not
+   * `busy`: the composer, other tabs and the Controls stay enabled. */
+  private async sendControls(tabKey: string, surfaceId: string, ctrl: BoardControls, seq: number, values: WireValues) {
+    const processor = this.processor;
+    const contextId = this.contextId;
+    let answered = false;
+    try {
+      if (!contextId) return;
+      const action: UiAction = {
+        name: CONTROLS, surfaceId, sourceComponentId: 'board_controls', timestamp: new Date().toISOString(),
+        context: {board: ctrl.board, seq, values},
+      };
+      const agent = await this.connectionOnce();
+      for await (const event of agent.act(action, contextId)) {
+        if (processor !== this.processor) return;
+        if (event.kind !== 'final') continue;
+        const metadata = event.metadata ?? {};
+        if (metadata[SUPERSEDED_KEY]) {
+          answered = true;
+          continue;
+        }
+        const inPlace = metadata[IN_PLACE_KEY] as {seq?: unknown} | undefined;
+        if (metadata[ACTION_FAILED_KEY] || typeof inPlace?.seq !== 'number') continue;
+        answered = true;
+        if (!ctrl.applied(inPlace.seq)) continue; // an older reply than what is shown
+        if (event.a2ui.length) processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
+        const log = tabOf(metadata).log;
+        if (log) this.logInPlace(tabKey, log);
+      }
+    } catch {
+      // a network failure: reverted below
+    } finally {
+      if (processor === this.processor) {
+        if (!answered) ctrl.revert();
+        ctrl.settled();
+      }
+    }
+  }
+
+  private logInPlace(tabKey: string, log: {tag?: string; text: string}) {
+    const entry: InPlaceEntry = {key: `log-${this.seq + 1}`, seq: this.seq + 1, tabKey, tag: log.tag ?? 'IN PLACE', text: log.text};
+    const next = addInPlace(this.inPlace, this.seq, entry);
+    if (next.length > this.inPlace.length) this.seq++; // a new entry takes the next number
+    this.inPlace = next;
   }
 
   // typed questions -------------------------------------------------------------------------------
@@ -283,6 +357,7 @@ export class ExplorerApp extends LitElement {
     if (this.busy) return; // clicks are disabled while anything runs
     const from = this.tabs.find(t => t.surfaceId === payload.surfaceId);
     if (!from) return;
+    if (this.controls.get(from.key)?.pending) return; // its sources are about to be replaced
     const {name, surfaceId, sourceComponentId, timestamp, context} = payload;
     const action: UiAction = {name, surfaceId, sourceComponentId, timestamp, context}; // IDs only
     const label = payload.userMessage || this.buttonText(surfaceId, sourceComponentId) || 'this';
@@ -378,6 +453,9 @@ export class ExplorerApp extends LitElement {
   }
 
   private newConversation() {
+    for (const ctrl of this.controls.values()) ctrl.dispose();
+    this.controls.clear();
+    this.inPlace = [];
     this.tabs = [];
     this.selected = undefined;
     this.contextId = undefined;
@@ -459,25 +537,37 @@ export class ExplorerApp extends LitElement {
   }
 
   private renderLog() {
-    const entries = logOrder(this.tabs);
+    type Entry = {kind: 'tab'; tab: Tab; seq: number} | {kind: 'in-place'; entry: InPlaceEntry; seq: number};
+    const entries: Entry[] = [
+      ...logOrder(this.tabs).map(tab => ({kind: 'tab' as const, tab, seq: tab.seq})),
+      ...this.inPlace.map(entry => ({kind: 'in-place' as const, entry, seq: entry.seq})),
+    ].sort((a, b) => a.seq - b.seq);
     return html`<button type="button" class="log-head label" aria-expanded=${this.logOpen ? 'true' : 'false'}
         @click=${() => (this.logOpen = !this.logOpen)}>
         <span>Investigation</span><span class="count">${entries.length}</span>
       </button>
       ${entries.length
         ? html`<ol class=${this.logOpen ? 'log open' : 'log'}>
-            ${entries.map(t => html`<li>
-              <button
-                type="button"
-                class=${t.key === this.selected ? 'log-entry selected' : 'log-entry'}
-                aria-current=${t.key === this.selected ? 'page' : 'false'}
-                @click=${() => this.select(t.key)}
-              >
-                <span class="log-tag">${t.log.tag ?? 'NEW TAB'}</span>
-                <span class="log-text">${t.log.text}</span>
-                <span class="entry-state">${this.renderEntryState(t)}</span>
-              </button>
-            </li>`)}
+            ${entries.map(e => e.kind === 'in-place'
+              ? html`<li>
+                  <button type="button" class="log-entry in-place" @click=${() => this.select(e.entry.tabKey)}>
+                    <span class="log-tag">${e.entry.tag}</span>
+                    <span class="log-text">${e.entry.text}</span>
+                    <span class="entry-state"></span>
+                  </button>
+                </li>`
+              : html`<li>
+                  <button
+                    type="button"
+                    class=${e.tab.key === this.selected ? 'log-entry selected' : 'log-entry'}
+                    aria-current=${e.tab.key === this.selected ? 'page' : 'false'}
+                    @click=${() => this.select(e.tab.key)}
+                  >
+                    <span class="log-tag">${e.tab.log.tag ?? 'NEW TAB'}</span>
+                    <span class="log-text">${e.tab.log.text}</span>
+                    <span class="entry-state">${this.renderEntryState(e.tab)}</span>
+                  </button>
+                </li>`)}
           </ol>`
         : html`<div class="log-spacer"></div>`}`;
   }
@@ -570,7 +660,7 @@ export class ExplorerApp extends LitElement {
       ${heading ? html`<h2 class="question">${tab.title}</h2>` : nothing}
       ${tab.running ? this.renderStatus(tab.steps, tab.startedAt) : nothing}
       ${this.renderActionBars(tab)}
-      <div class=${this.busy ? 'level-view inert' : 'level-view'}>
+      <div class=${['level-view', this.busy ? 'inert' : '', this.controls.get(tab.key)?.pending ? 'requery' : ''].filter(Boolean).join(' ')}>
         ${tab.proseHtml ? html`<div class="prose">${unsafeHTML(tab.proseHtml)}</div>` : nothing}
         ${surface ? html`<a2ui-surface .surface=${surface}></a2ui-surface>` : nothing}
       </div>

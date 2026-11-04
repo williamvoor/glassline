@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from explorer_agent.drill import DrillSpec
-from explorer_agent.results import ResultStore, StoredResult
+from explorer_agent.results import ResultStore, StoredResult, to_json_safe
 
 MAX_ACTION_SOURCES = 50
 MAX_PENDING_PAIRS = 5
@@ -147,6 +147,7 @@ class ActionState:
     turns: int = 0
     levels: dict[int, int] = field(default_factory=dict)  # highest Level number per Turn
     pending: deque[list[dict[str, Any]]] = field(default_factory=deque)  # synthetic pairs
+    board_pair: list[dict[str, Any]] | None = None  # at most one, outside max_pending (SPEC §18)
     # Tabs (SPEC §18 slice 1b): t<n> -> its Level, issued when a reply adds a Level, never reused.
     tabs: dict[str, Level] = field(default_factory=dict)
     board_tabs: set[str] = field(default_factory=set)  # tabs showing a Board
@@ -271,8 +272,10 @@ class ActionState:
             self.pending.popleft()
 
     def take_pairs(self) -> list[dict[str, Any]]:
-        out = [m for pair in self.pending for m in pair]
+        """The queued pairs, then the Board pair (it describes what is on screen now)."""
+        out = [m for pair in self.pending for m in pair] + (self.board_pair or [])
         self.pending.clear()
+        self.board_pair = None
         return out
 
 
@@ -350,3 +353,44 @@ def restore_result(store: ResultStore, result: StoredResult) -> StoredResult:
     if store.get(result.id) is result:
         return result
     return store.readd(result)
+
+
+BOARD_PAIR_PURPOSE = "Board shown in Tab {tab}"
+BOARD_SQL_JOIN = ";\n\n"
+
+
+def board_pair(call_id: str, tab: str, board_title: str, controls: Mapping[str, str], results: list[StoredResult],
+               rows: int, max_chars: int) -> list[dict[str, Any]]:
+    """The Board pair (SPEC §18): what the viewed Board shows, so a question can use its state.
+    The call holds the display copies of its queries and no titles or labels; the result holds
+    the title, the Controls' shown values, and a few rows per Result, cut to `max_chars` by
+    shortening the previews first, then leaving out the last Results."""
+    sql = BOARD_SQL_JOIN.join(r.sql for r in results)
+    purpose = BOARD_PAIR_PURPOSE.format(tab=tab)
+
+    def body(n: int, keep: int) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "board": board_title,
+            "controls": dict(controls),
+            "results": [
+                {"id": r.id, "purpose": r.purpose, "columns": r.columns,
+                 "rows_preview": [_cut(to_json_safe(row)) for row in r.rows[:n]]}
+                for r in results[:keep]
+            ],
+        }
+        if keep < len(results):
+            out["omitted_results"] = len(results) - keep
+        return out
+
+    def size(b: dict[str, Any]) -> int:
+        return len(json.dumps(b, ensure_ascii=False))
+
+    chosen = None
+    for keep in range(len(results), -1, -1):
+        for n in range(rows, -1, -1):
+            if size(body(n, keep)) <= max_chars:
+                chosen = body(n, keep)
+                break
+        if chosen is not None:
+            break
+    return synthetic_pair(call_id, sql, purpose, chosen if chosen is not None else body(0, 0))

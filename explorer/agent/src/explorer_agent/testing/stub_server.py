@@ -17,8 +17,8 @@ from pathlib import Path
 
 import uvicorn
 
-from explorer_agent.boards import Board, BoardQuery, BoardRenderer
-from explorer_agent.drill import Prefetcher
+from explorer_agent.boards import Board, BoardQuery, BoardRenderer, Control
+from explorer_agent.drill import Prefetcher, rewrite
 from explorer_agent.executor import BoardViews, Conversation, DrillDowns, StatusFn
 from explorer_agent.results import ResultStore
 from explorer_agent.server import build_app
@@ -76,7 +76,7 @@ async def stub_answerer(conv: Conversation, text: str, status: StatusFn) -> UiRe
     rid = found[0] if found else seed_fixture(conv.store)
     conv.actions.take_pairs()  # the tool loop would send them to the model
     await status(STATUS_TEXT)
-    return _pipeline().build(FIXED_REPLY.replace("r1", rid), conv.store, conv.surface_id, conv.actions.ids)
+    return _pipeline().build(FIXED_REPLY.replace("r1", rid), conv.results, conv.surface_id, conv.actions.ids)
 
 
 class StubDrillRunner:
@@ -100,6 +100,15 @@ def stub_drills(prefetch_rows: int = 3) -> DrillDowns:
 STUB_BOARD_DRILL = (
     "SELECT buyer, count(*) AS contracts FROM fixture.contracts WHERE supplier IS NOT DISTINCT FROM :supplier GROUP BY buyer"
 )
+# The Explorer's one Control (SPEC §18 slice 2): a buyer filter on the trend, with "All buyers".
+STUB_OPTIONS_SQL = "SELECT DISTINCT buyer AS value, buyer AS label FROM fixture.contracts ORDER BY 1"
+STUB_BUYER = Control(name="buyer", kind="choice", label="Buyer", type="text", default="all",
+                     options_sql=STUB_OPTIONS_SQL, all_label="All buyers")
+STUB_BY_YEAR = (
+    "SELECT year, sum(value) AS value FROM fixture.contracts WHERE (:buyer IS NULL OR buyer = :buyer) "
+    "GROUP BY year ORDER BY year"
+)
+STUB_BUYERS = tuple(f"Buyer {c}" for c in "ABCDE")
 STUB_BOARD = Board(
     name="explorer",
     path=Path("<stub>/boards/explorer.toml"),
@@ -109,7 +118,7 @@ STUB_BOARD = Board(
     queries=(
         BoardQuery("totals", "SELECT count(*) AS contracts, sum(value) AS value FROM fixture.contracts"),
         BoardQuery("by_buyer", "SELECT buyer, sum(value) AS value FROM fixture.contracts GROUP BY buyer"),
-        BoardQuery("by_year", "SELECT year, sum(value) AS value FROM fixture.contracts GROUP BY year ORDER BY year"),
+        BoardQuery("by_year", STUB_BY_YEAR, rewrite(STUB_BY_YEAR, {"buyer": "text"}).sql, ("buyer",)),
         BoardQuery("top_suppliers", FIXTURE_SQL),
     ),
     layout=f"""root = Column([metrics, Row([tiles, years]), suppliers])
@@ -119,6 +128,7 @@ contracts = Metric("totals", "contracts", "Contracts", 0, "int")
 tiles = Treemap("by_buyer", "Value by buyer", "buyer", "value", "currency_compact")
 years = LineChart("by_year", "year", "value", "Value by year", format="currency_compact")
 suppliers = DataTable("top_suppliers", "Top suppliers", "supplier,contracts,value", "value:currency_compact", bars="value", drill_sql="{STUB_BOARD_DRILL}", drill_title="Contracts by buyer")""",
+    controls=(STUB_BUYER,),
 )
 
 STUB_BOARD_ROWS: dict[str, SqlOk] = {
@@ -139,13 +149,24 @@ STUB_BOARD_ROWS: dict[str, SqlOk] = {
 
 
 class StubBoardRunner:
-    """Canned rows for the stub Explorer Board's queries, found by their SQL."""
+    """Canned rows for the stub Explorer Board's queries, found by their SQL. With a buyer
+    chosen, the trend is that buyer's share (a fifth per letter from A), so a change shows."""
 
     async def run(self, sql: str) -> SqlOk:
+        if STUB_OPTIONS_SQL in sql:
+            return SqlOk(["value", "label"], ["text", "text"], [{"value": b, "label": b} for b in STUB_BUYERS], False, 1)
         for q in STUB_BOARD.queries:
-            if q.sql in sql:
+            if q.runs in sql:
                 return STUB_BOARD_ROWS[q.name]
         raise ValueError("not a stub Board query")
+
+    async def run_bound(self, sql: str, params: list, *, timeout_ms: int | None = None) -> SqlOk:
+        rows = await self.run(sql)
+        buyer = params[0] if params else None
+        if buyer is None or buyer not in STUB_BUYERS:
+            return rows
+        share = (len(STUB_BUYERS) - STUB_BUYERS.index(buyer)) / 15
+        return SqlOk(rows.columns, rows.column_types, [{**r, "value": r["value"] * share} for r in rows.rows], False, 1)
 
 
 def stub_boards() -> BoardViews:

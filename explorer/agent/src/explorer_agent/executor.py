@@ -34,15 +34,32 @@ from explorer_agent.actions import (
     Level,
     Resolved,
     ask_text,
+    board_pair,
     drill_down_pair,
     restore_result,
     row_pair,
 )
-from explorer_agent.boards import BoardInstance, BoardRenderer, build_board, instance_results
+from explorer_agent.boards import (
+    BoardInstance,
+    BoardRenderer,
+    ControlError,
+    OptionsError,
+    bound_values,
+    build_board,
+    changed_panels,
+    instance_results,
+    layout_components,
+    log_text,
+    panel_components,
+    panel_dependencies,
+    panel_sources,
+    shown_values,
+    validate_values,
+)
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.drill import Prefetcher, display_sql
 from explorer_agent.macros import escape_markdown, unescape_markdown
-from explorer_agent.results import ResultStore
+from explorer_agent.results import ResultStore, ResultView, StoredResult
 from explorer_agent.sql import SqlFail
 from explorer_agent.ui import UiError, UiPipeline, UiResult
 
@@ -65,6 +82,14 @@ MODEL_KEY = "explorerModel"  # final message metadata: the serving model's name,
 ACTION_FAILED_KEY = "explorerActionFailed"  # final message metadata: the Action failed, no Level was added
 NO_BOARDS_KEY = "explorerNoBoards"  # final message metadata: open_board in a Dataset without Boards (SPEC §18)
 OPEN_BOARD = "open_board"
+CONTROLS = "controls"
+BOARD_KEY = "explorerBoard"  # final message metadata on a Board's tab: {id, controls: [{name, kind}]}
+IN_PLACE_KEY = "explorerInPlace"  # final message metadata: a re-query replaced panels, {board, seq}
+SUPERSEDED_KEY = "explorerSuperseded"  # final message metadata: a newer Control change won; ignore
+IN_PLACE = "IN PLACE"
+CONTROLS_LOG_KIND = "controls"
+CONTROLS_KEYS = {"board", "seq", "values"}
+BOARD_UPDATE_FAILED = "The Board couldn't be updated. Try again."
 NO_BOARDS = "This dataset has no Boards."
 BOARD_OPEN = "The Explorer is already open in this conversation."
 UNKNOWN_BOARD = "Unknown board."
@@ -91,9 +116,31 @@ class Conversation:
     actions: ActionState = field(init=False, repr=False)
     boards: OrderedDict[str, BoardInstance] = field(default_factory=OrderedDict)  # by instance ID b<n>
     board_opened: bool = False  # open_board is allowed once per Conversation (SPEC §18)
+    pinned: dict[str, StoredResult] = field(default_factory=dict)  # the Board pair's Results, for its model run
+    board_rows_to_model: int = 5
+    board_pair_max_chars: int = 6000
 
     def __post_init__(self) -> None:
         self.actions = ActionState(self.surface_tag, self.max_action_sources, self.max_pending_pairs)
+
+    @property
+    def results(self) -> ResultView:
+        """`r<id>` lookups: the store, then the live Board instances, then pinned (SPEC §18)."""
+        return ResultView(
+            self.store,
+            lambda: [r for b in self.boards.values() for r in b.results.values()],
+            lambda: list(self.pinned.values()),
+        )
+
+    def board_of_tab(self, tab: Any) -> BoardInstance | None:
+        """The Board instance a Board tab shows."""
+        if not isinstance(tab, str) or tab not in self.actions.board_tabs:
+            return None
+        level = self.actions.tabs[tab]
+        return next((b for b in self.boards.values() if b.surface_id == level.surface_id), None)
+
+    def board_of_source(self, source_id: str) -> BoardInstance | None:
+        return next((b for b in self.boards.values() if source_id in b.sources), None)
 
     @property
     def busy(self) -> bool:
@@ -122,11 +169,13 @@ class Conversations:
     """In-memory conversations by A2A context ID, least recently used evicted beyond the cap."""
 
     def __init__(self, max_conversations: int = MAX_CONVERSATIONS, *, max_action_sources: int = MAX_ACTION_SOURCES,
-                 max_pending_pairs: int = MAX_PENDING_PAIRS) -> None:
+                 max_pending_pairs: int = MAX_PENDING_PAIRS, board_rows_to_model: int = 5,
+                 board_pair_max_chars: int = 6000) -> None:
         self._max = max_conversations
         self._by_id: OrderedDict[str, Conversation] = OrderedDict()
         self.id_generator = _IssuedIds()
-        self._limits = {"max_action_sources": max_action_sources, "max_pending_pairs": max_pending_pairs}
+        self._limits = {"max_action_sources": max_action_sources, "max_pending_pairs": max_pending_pairs,
+                        "board_rows_to_model": board_rows_to_model, "board_pair_max_chars": board_pair_max_chars}
         self.on_evict: Callable[[str], None] | None = None
 
     def get_or_create(self, context_id: str) -> Conversation:
@@ -234,7 +283,8 @@ class ExplorerExecutor(AgentExecutor):
             async def status(text: str) -> None:
                 await updater.update_status(TaskState.working, message=text_message(text))
 
-            async def send(level: Level, ui: UiResult, tab: Tab, unknown: bool = False, *, model_run: bool = True) -> None:
+            async def send(level: Level, ui: UiResult, tab: Tab, unknown: bool = False, *, model_run: bool = True,
+                           board: BoardInstance | None = None) -> None:
                 prose = f"{UNKNOWN_CONTEXT_PROSE}\n\n{ui.prose}" if unknown else ui.prose
                 parts = [Part(root=TextPart(text=prose))]
                 if ui_on:
@@ -250,7 +300,16 @@ class ExplorerExecutor(AgentExecutor):
                 tag = f"{NEW_TAB} · {NO_MODEL}" if not model_run else f"{NEW_TAB} · {self._model}" if self._model else NEW_TAB
                 meta[TAB_KEY] = {"id": tab_id, "kind": tab.kind, "title": tab.title}
                 meta[LOG_KEY] = {"kind": tab.kind, "tag": tag, "text": tab.text}
+                if board is not None:
+                    meta[BOARD_KEY] = {"id": board.id, "controls": [{"name": c.name, "kind": c.kind} for c in board.board.controls]}
                 await updater.complete(updater.new_agent_message(parts, metadata=meta))
+
+            async def reply(metadata: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> None:
+                """A final message that adds no Level: in place, or superseded."""
+                parts = [Part(root=TextPart(text=""))]
+                if ui_on:
+                    parts += [create_a2ui_part(m) for m in messages or []]
+                await updater.complete(updater.new_agent_message(parts, metadata=metadata))
 
             async def fail(text: str, **extra: Any) -> None:
                 await updater.complete(text_message(text, {ACTION_FAILED_KEY: True, **extra}))
@@ -262,6 +321,9 @@ class ExplorerExecutor(AgentExecutor):
                 return
             if isinstance(action, dict) and action.get("name") == OPEN_BOARD:
                 await self._open_board(conv, action, send, fail)
+                return
+            if isinstance(action, dict) and action.get("name") == CONTROLS:
+                await self._controls(conv, action, reply, fail)
                 return
             try:
                 resolved = conv.actions.resolve(action, {sid: s for b in conv.boards.values() for sid, s in b.sources.items()})
@@ -291,7 +353,7 @@ class ExplorerExecutor(AgentExecutor):
             level = conv.actions.new_level(resolved.level.turn, resolved.label)
             result_id = ""
             if resolved.source is not None:
-                result = restore_result(conv.store, resolved.source.spec.result)
+                result = self._ask_result(conv, resolved.source)
                 result_id = result.id
                 if resolved.kind == "row":
                     assert resolved.row is not None
@@ -303,12 +365,46 @@ class ExplorerExecutor(AgentExecutor):
         await self._model_run(conv, start, viewing, status, send, text_message, updater, action=True,
                               tab=Tab("ask", label, f"Ask: {label}"))
 
+    @staticmethod
+    def _ask_result(conv: Conversation, source: ActionSource) -> StoredResult:
+        """The Result an Ask names, in the store. A Board Result is copied in once, and the copy
+        is reused while the store holds it (SPEC §18 slice 2)."""
+        result = source.spec.result
+        board = conv.board_of_source(source.id)
+        if board is None:
+            return restore_result(conv.store, result)
+        copy = board.copies.get(result.id)
+        if copy is None or conv.store.get(copy.id) is not copy:
+            copy = conv.store.readd(result)
+            board.copies[result.id] = copy
+        return copy
+
+    async def _board_pair(self, conv: Conversation, viewing: Any, level: Level) -> None:
+        """Queues the Board pair for the viewed Board tab when it says something: an Entity Board
+        or Controls off their defaults. Waits for a re-query in flight, so the pair describes a
+        completed render, and pins its Results until the run ends (SPEC §18)."""
+        board = conv.board_of_tab(viewing)
+        if board is None or not board.board.controls:
+            return
+        async with board.lock:
+            if board.at_defaults:
+                return
+            results = [board.results[q.name] for q in board.board.queries if q.name in board.results]
+            conv.actions.board_pair = board_pair(
+                f"synthetic-board-{level.turn}-{level.level}", viewing, board.board.title,
+                shown_values(board.board, board.options, board.state), results,
+                conv.board_rows_to_model, conv.board_pair_max_chars,
+            )
+            conv.pinned = {r.id: r for r in results}
+        log.info("board pair: board=%s results=%d", board.id, len(results))
+
     async def _model_run(self, conv, start, viewing, status, send, text_message, updater, *, action: bool,
                          tab: Tab) -> None:
         conv.model_runs_waiting += 1
         try:
             async with conv.lock:  # overlapping messages on one context run one after the other
                 level, text = start()
+                await self._board_pair(conv, viewing, level)
                 lines = conv.actions.viewing_lines(viewing)
                 if lines:
                     text = "\n".join(lines) + "\n\n" + text
@@ -324,6 +420,8 @@ class ExplorerExecutor(AgentExecutor):
                     return
                 finally:
                     conv.unknown_context = False
+                    conv.pinned = {}
+                    conv.actions.board_pair = None  # unsent if the run failed before the model
                 registered = conv.actions.register(level, ui.sources, ui.drills, ui.follow_ups)
         finally:
             conv.model_runs_waiting -= 1
@@ -391,8 +489,15 @@ class ExplorerExecutor(AgentExecutor):
             await fail(BOARD_OPEN)
             return
         conv.board_opened = True
+        renderer = self._boards.renderer
         try:
-            outcomes = await self._boards.renderer.outcomes(board)
+            options, state, bound = await renderer.defaults(board)
+            outcomes = await renderer.outcomes(board, bound)
+        except OptionsError as e:
+            log.warning("board options failed: board=%s query=%s", board.name, e)
+            conv.board_opened = False
+            await fail(BOARD_BUILD_FAILED)
+            return
         except BaseException:
             conv.board_opened = False  # it can be tried again
             raise
@@ -400,7 +505,8 @@ class ExplorerExecutor(AgentExecutor):
         level = conv.actions.new_level(0, board.title)
         results, failed = instance_results(outcomes, conv.store.reserve_id)
         try:
-            ui = build_board(board, results, failed, self._boards.pipeline, level.surface_id, conv.actions.ids)
+            ui = build_board(board, results, failed, self._boards.pipeline, level.surface_id, conv.actions.ids,
+                             options, state)
         except UiError:
             # Panels that can't be drawn are Cards (Board mode), so this is the Surface itself.
             log.error("board build failed: board=%s", board.name)  # the message can quote values
@@ -411,10 +517,93 @@ class ExplorerExecutor(AgentExecutor):
             return
         instance_id = f"b{len(conv.boards) + 1}"
         sources = conv.actions.board_sources(level, ui.sources, ui.drills)
-        conv.boards[instance_id] = BoardInstance(instance_id, board, level.surface_id, results, sources)
+        instance = BoardInstance(
+            instance_id, board, level.surface_id, results, sources, level=level, failed=dict(failed),
+            options=options, state=state, defaults=dict(state),
+            deps=panel_dependencies(board, layout_components(board, self._boards.pipeline)),
+            panel_sources=panel_sources(ui.messages),
+        )
+        conv.boards[instance_id] = instance
         log.info("board opened: board=%s instance=%s failed=%d", board.name, instance_id, len(failed))
-        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False)
+        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False, board=instance)
         self._start_prefetch(conv, list(sources.values()))
+
+    async def _controls(self, conv: Conversation, action: dict[str, Any], reply, fail) -> None:
+        """A Control change: re-query the Board instance in place (SPEC §18 slice 2). Logs name
+        the instance, `seq` and queries only, never Control values or labels."""
+        context = action.get("context")
+        if not isinstance(context, dict) or set(context) != CONTROLS_KEYS or not isinstance(context["board"], str):
+            await fail("The action is malformed.")
+            return
+        seq = context["seq"]
+        instance = conv.boards.get(context["board"])
+        if instance is None or self._boards is None:
+            await fail(UNKNOWN_BOARD)
+            return
+        if action.get("surfaceId") != instance.surface_id:
+            await fail("The action doesn't match its view.")
+            return
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1:
+            await fail("The action is malformed.")
+            return
+        if conv.busy:
+            await fail(BUSY_ERROR)
+            return
+        board = instance.board
+        try:
+            state = validate_values(board, instance.options, context["values"])
+        except ControlError as e:
+            log.info("controls rejected: board=%s seq=%d", instance.id, seq)
+            await fail(str(e))
+            return
+        instance.seq_seen = max(instance.seq_seen, seq)
+        async with instance.lock:
+            if seq < instance.seq_seen or seq <= instance.seq_applied:
+                log.info("controls superseded: board=%s seq=%d", instance.id, seq)
+                await reply({SUPERSEDED_KEY: True})
+                return
+            # Measured against the last completed render, so a superseded change's panels re-run.
+            changed = {n for n in state if state[n] != instance.state[n]}
+            queries, panels = changed_panels(board, instance.deps, changed)
+            bound = bound_values(board, instance.options, state)
+            outcomes = await self._boards.renderer.outcomes(board, bound, only=queries) if queries else {}
+            new_results, new_failed = instance_results(outcomes, conv.store.reserve_id)
+            results = {**{n: r for n, r in instance.results.items() if n not in queries}, **new_results}
+            failed = {**{n: f for n, f in instance.failed.items() if n not in queries}, **new_failed}
+            assert instance.level is not None
+            try:
+                ui = build_board(board, results, failed, self._boards.pipeline, instance.surface_id, conv.actions.ids,
+                                 instance.options, state)
+            except UiError:
+                log.error("board rebuild failed: board=%s seq=%d", instance.id, seq)
+                await fail(BOARD_UPDATE_FAILED)
+                return
+            sent = panel_components(ui.messages, panels)
+            built = panel_sources(ui.messages)
+            new_sources = conv.actions.board_sources(instance.level, ui.sources, ui.drills)
+            for panel in panels:
+                for sid in instance.panel_sources.pop(panel, []):
+                    instance.sources.pop(sid, None)
+                if panel in built:
+                    instance.panel_sources[panel] = built[panel]
+                    instance.sources.update({sid: new_sources[sid] for sid in built[panel]})
+            for name in queries:  # released Results: their store copies are no longer reused
+                if name in instance.results:
+                    instance.copies.pop(instance.results[name].id, None)
+            instance.results, instance.failed, instance.state = results, failed, state
+            instance.seq_applied = seq
+            registered = [instance.sources[sid] for p in panels for sid in instance.panel_sources.get(p, [])]
+            log.info("controls applied: board=%s seq=%d queries=%s panels=%d", instance.id, seq,
+                     ",".join(sorted(queries)) or "-", len(sent))
+            messages = [{"version": "v0.9", "updateComponents": {"surfaceId": instance.surface_id, "components": sent}}] if sent else []
+            text = log_text(board, instance.options, state, instance.defaults)
+            await reply({
+                IN_PLACE_KEY: {"board": instance.id, "seq": seq},
+                LOG_KEY: {"kind": CONTROLS_LOG_KIND, "tag": f"{IN_PLACE} · {NO_MODEL}", "text": text},
+            }, messages)
+        # `start` replaces the Conversation's prefetch, so the untouched panels' sources go too,
+        # after the re-sent ones; rows already held are skipped.
+        self._start_prefetch(conv, [*registered, *(s for s in instance.sources.values() if s not in registered)])
 
     # prefetch --------------------------------------------------------------------------------
 

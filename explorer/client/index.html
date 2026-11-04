@@ -184,6 +184,9 @@
       explorer-app .confirm button { padding: 5px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); }
       explorer-app .confirm button.ok { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
       explorer-app .level-view.inert { opacity: 0.5; pointer-events: none; transition: opacity 0.15s; }
+      /* A Board's re-query (SPEC §18 slice 2): its layout (the surface root's last child) dims and
+         takes no clicks; the heading and the Controls stay usable. */
+      explorer-app .level-view.requery a2ui-surface > * > :last-child { opacity: 0.5; pointer-events: none; transition: opacity 0.15s; }
 
       /* Surfaces: Cards, titles, Metrics, buttons ------------------------------------------------ */
       explorer-app .level-view a2ui-surface { display: block; }

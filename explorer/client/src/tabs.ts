@@ -62,3 +62,25 @@ export function selectTab<T extends TabState>(tabs: T[], from: string | undefine
 export function logOrder<T extends TabState>(tabs: T[]): T[] {
   return [...tabs].sort((a, b) => a.seq - b.seq);
 }
+
+/** A log entry that isn't a tab: a Control change on a Board tab (SPEC §18 slice 2). */
+export interface InPlaceEntry {
+  key: string;
+  seq: number; // shares the tabs' counter, so the log orders both
+  tabKey: string; // clicking it selects this tab
+  tag: string;
+  text: string;
+}
+
+/** Adds an in-place entry, or replaces the newest log entry when it is an in-place entry for the
+ * same tab: consecutive Control changes on one tab make one entry. The server sends the full
+ * text each time, so the client only replaces it. */
+export function addInPlace(
+  entries: InPlaceEntry[], newestSeq: number, entry: InPlaceEntry,
+): InPlaceEntry[] {
+  const last = entries.at(-1);
+  if (last && last.seq === newestSeq && last.tabKey === entry.tabKey) {
+    return [...entries.slice(0, -1), {...last, tag: entry.tag, text: entry.text}];
+  }
+  return [...entries, entry];
+}

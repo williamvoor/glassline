@@ -12,7 +12,7 @@ import asyncio
 import logging
 import re
 from collections import OrderedDict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -71,8 +71,9 @@ def _tokens(sql: str) -> list[Any]:
         raise DrillSqlError(f"drill_sql: SQL syntax error: {e.args[0]}") from None
 
 
-def rewrite(sql: str) -> Rewritten:
+def rewrite(sql: str, casts: Mapping[str, str] | None = None) -> Rewritten:
     """`:name` placeholders → `$n`, one per distinct name, found with the Postgres scanner.
+    `casts`: a SQL type per name, written as `$n::<type>` (a Board's Controls, SPEC §18).
 
     Not placeholders: `::` casts, text inside strings, comments and quoted identifiers, and `:`
     inside a subscript `[…]` (array slices). Inside an `ARRAY[…]` constructor they are. A `:` directly before an identifier that isn't lower case is
@@ -104,7 +105,8 @@ def rewrite(sql: str) -> Rewritten:
                 )
             if word not in names:
                 names.append(word)
-            spans.append((tok.start, nxt.end + 1, f"${names.index(word) + 1}"))
+            cast = f"::{casts[word]}" if casts and word in casts else ""
+            spans.append((tok.start, nxt.end + 1, f"${names.index(word) + 1}{cast}"))
     out = body
     for start, end, param in reversed(spans):
         out = out[:start] + param + out[end:]
@@ -181,9 +183,13 @@ class DrillSpec:
     drill_x: str
     drill_y: str
     title: str  # filled template; the row label is appended per Drill-down
+    # A Board's Control placeholders and the values they bind, fixed when the panel was built
+    # (SPEC §18 slice 2): a Control change rebuilds the panel, so these never go stale.
+    fixed: tuple[tuple[str, Any], ...] = ()
 
     def values(self, row: dict[str, Any]) -> list[Any]:
-        return [row.get(n) for n in self.names]
+        fixed = dict(self.fixed)
+        return [fixed[n] if n in fixed else row.get(n) for n in self.names]
 
 
 def check_output(spec: DrillSpec, columns: list[str], types: list[str]) -> list[str]:

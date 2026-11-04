@@ -92,6 +92,9 @@ class Settings:
     board_row_cap: int = 500
     board_cache_ttl_s: int = 300
     max_board_cache: int = 20
+    board_rows_to_model: int = 5
+    board_pair_max_chars: int = 6000
+    max_control_options: int = 100
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
         return f"Settings(model={self.model!r}, format={self.format!r}, dataset={self.dataset.name!r})"
@@ -118,6 +121,9 @@ _INTS = {
     "BOARD_ROW_CAP": 500,
     "BOARD_CACHE_TTL_S": 300,
     "MAX_BOARD_CACHE": 20,
+    "BOARD_ROWS_TO_MODEL": 5,
+    "BOARD_PAIR_MAX_CHARS": 6000,
+    "MAX_CONTROL_OPTIONS": 100,
 }
 
 
@@ -312,4 +318,7 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         board_row_cap=_positive_int(env, "BOARD_ROW_CAP"),
         board_cache_ttl_s=_positive_int(env, "BOARD_CACHE_TTL_S"),
         max_board_cache=_positive_int(env, "MAX_BOARD_CACHE"),
+        board_rows_to_model=_positive_int(env, "BOARD_ROWS_TO_MODEL"),
+        board_pair_max_chars=_positive_int(env, "BOARD_PAIR_MAX_CHARS"),
+        max_control_options=_positive_int(env, "MAX_CONTROL_OPTIONS"),
     )
