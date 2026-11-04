@@ -86,7 +86,7 @@ A button the agent offers on a Surface for a next step it can't already show; pr
 _Avoid_: Suggestion, chip, next step
 
 **Control**:
-An input on a Board (a choice, a multi-select, a toggle, a number slider or a date) bound to placeholders in the Board's queries. Changing it re-runs those queries in place, without the agent.
+An input on a Board (a choice, a multi-select, a toggle, a number slider or a date) bound to placeholders in the Board's queries. Changing it re-runs those queries in place, without the agent. A click on a Board's row keeps its Controls' values (a Drill-down, or an Ask within filters). A question typed while the Board is in view doesn't have to.
 _Avoid_: Filter (a filter is part of a query), input, widget
 
 **Breadcrumb** (retired by SPEC §18):

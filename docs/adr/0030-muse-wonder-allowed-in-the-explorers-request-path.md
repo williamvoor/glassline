@@ -75,7 +75,9 @@ are in `docs/scenarios/austender/`: `runs-20261104T094134Z.jsonl` (Spark),
   reported, not gated.
 - Cost isn't computed here, because the prices aren't in the code. Token use per answer is about
   the same for both models, so the estimate above (about 3.5×) still stands.
-- **What this can't show.** The Board set was at the ceiling for both models after the
-  scenario review. Each (a) question now says "in this view", where the Spark probe, with the
-  earlier wording, had dropped the filter twice. A harder Board set might separate the models.
-  Until then, the faster and cheaper model stays.
+- **What this can't show.** Both models were at the ceiling on the Board set. A harder Board
+  set might separate them. Until then, the faster and cheaper model stays.
+- **Board filters (the user, 2026-11-04):** a question typed on a Board doesn't have to keep
+  that Board's filters. Only clicks do (Drill-downs, and "Ask within filters"). So the (a)
+  scenarios say "in this view" to ask for the filter. In the probe, Spark's unfiltered answers
+  to the earlier bare wording were a valid reading, not an error.

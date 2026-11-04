@@ -715,8 +715,9 @@ Where the build had to decide, these notes win over the text above.
 - **Spark probe (2026-11-04, one run each, `docs/scenarios/austender/runs-20261104T092340Z.jsonl`):**
   - every set-up worked, with no `setup_failed`;
   - Meta's filter blocked nothing;
-  - Spark dropped the Procurement method filter in both (a) list questions (fail, the wrong
-    entry matched). `board-open-home-affairs-total` showed both readings (`needs_review`);
+  - Spark answered both (a) list questions without the Procurement method filter. The wrong
+    entry matched, so they failed. With that bare wording, this was a valid reading (see the
+    scenario review below). `board-open-home-affairs-total` showed both readings (`needs_review`);
   - all 3 (b) passed;
   - in (c), the Thales and BAE answers were right but showed the pair's total by financial year
     in their tables, so each (c) scenario gained an alternate for that breakdown. Rescored from
@@ -733,9 +734,10 @@ Where the build had to decide, these notes win over the text above.
   - two alternates identical to their references were removed;
   - (c) scores the pair's lifetime value, as a total or by financial year. The by-year alternate
     was added after the probe. Other shapes, such as a split by method, fail;
-  - not done: a prompt rule that a question on a Board honours its Controls. The prompt says
-    nothing about it, so the (a) scenarios measure whether a model infers it from the Board pair.
-    The same prompt goes to both models.
+  - no prompt rule that a question on a Board honours its Controls, by design. The user decided
+    (2026-11-04) that a typed question doesn't have to keep a Board's filters; only clicks
+    (Drill-downs, "Ask within filters") do. The (a) questions ask for the filter ("in this
+    view"), and the model has to find its value in the Board pair.
 
 ## Test command
 
