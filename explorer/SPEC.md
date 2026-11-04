@@ -2807,7 +2807,7 @@ Same scenarios, same settings, 3 runs each, `SURFACE_MODEL=spark` vs `glimmer`:
 
 ## 20. Amendment: an Entity Board click asks which view (2026-11-04)
 
-Status: **approved** (the user, 2026-11-04). Not built yet. Decision: ADR 0037 (accepted). It amends
+Status: **approved** (the user, 2026-11-04). Built 2026-11-04 (E1–E6 green, live run passed). Decision: ADR 0037 (accepted). It amends
 §18's "Entity Boards (slice 3)" and §15's Ask table. ADR 0028 stands for what an Entity Board
 shows.
 
@@ -2843,14 +2843,51 @@ wants to choose on each click, without new Board files.
 
 - Whether Spark keeps the Board's entity reliably from the Board pair alone. Checked by hand on
   the onward case (Agency Board → supplier row) before approval, one live run.
+  - **Result (2026-11-04, one live run, Spark, second instance with Playwright).** Explorer
+    treemap → Department of Defence → the dialog showed, with Open Board focused. A real Enter
+    opened the Agency Board with no model call. On that Board, the Thales Australia row ($17.6B,
+    11,161 contracts) → Ask within filters. Spark answered in 11.2 s and 2 model calls. Both of
+    its queries filter on the supplier's and the agency's keys, and its totals match the Board
+    row exactly. One run, not a rate. This also checks E3's Enter in a browser, and the dialog on
+    a VegaChart click (the tests use a `DataGrid`).
 
-### Criteria → tests (planned)
+### Criteria → tests
 
 | # | Criterion | Test |
 |---|---|---|
-| E1 | A click on a `boards` row shows the choice and sends nothing until a button is pressed | `client/test/app.test.ts` |
-| E2 | Open Board sends `drill`; Ask within filters sends `ask` with the same context; Cancel and Escape send nothing | `app.test.ts` |
-| E3 | Open Board is focused; Enter opens the Board | `app.test.ts` |
-| E4 | A click on a row outside `boards` behaves as before (Drill-down at once, Ask confirmed) | `app.test.ts` |
+| E1 | A click on a `boards` row shows the choice and sends nothing until a button is pressed | `client/test/levels.test.ts` |
+| E2 | Open Board sends `drill`; Ask within filters sends `ask` with the same context; Cancel and Escape send nothing | `levels.test.ts` |
+| E3 | Open Board is focused; Enter opens the Board | `levels.test.ts` (focus); live run (Enter) |
+| E4 | A click on a row outside `boards` behaves as before (Drill-down at once, Ask confirmed) | `levels.test.ts`; `data-grid.test.ts` (`boardRow` fails open) |
 | E5 | An `ask` on a `boards` row gets the Entity Board Ask text; other rows keep `ASK_ROW_TEXT` | `test_actions.py` |
-| E6 | An `ask` from an Entity Board row queues the Board pair, from a Board at defaults with no key it doesn't | `test_executor.py` (stub model) |
+| E6 | An `ask` from an Entity Board row queues the Board pair, from a Board at defaults with no key it doesn't | `test_entity_executor.py` (stub model) |
+
+### Build notes (2026-11-04)
+
+Where a test file differs from the table above, these notes win.
+
+- **Test files.** E1–E4 are in `client/test/levels.test.ts`, where row clicks on a real `DataGrid`
+  are already tested; `app.test.ts` has no clickable Visual fixture. E5 is in
+  `agent/tests/test_actions.py`. E6 is in `agent/tests/test_entity_executor.py`, next to the
+  other Entity Board pair tests, through the stub server and stub model.
+- **How the client knows.** `onAction` looks up the source component (`sourceComponentId`) in
+  the surface's components model and parses its literal `action` property with
+  `ActionPropSchema`. The click is a Board click when `name` is `drill` and `context.row` is in
+  `boards`. If the component or the prop can't be read, the click is treated as before (fail
+  open to today's behaviour, never to a model run).
+- **One dialog per tab.** The Board choice uses the tab's existing `confirm` slot with a `board`
+  flag, so a Board choice and an Ask confirmation never show at once on a tab.
+- **Ask within filters** sends the clicked action with `name: 'ask'` and a fresh `timestamp`:
+  same `surfaceId`, `sourceComponentId` and `context`. Its tab is an Ask tab titled with the
+  row's label.
+- **Enter (E3).** Open Board is a native `<button>` that gets focus when the dialog opens. A
+  browser's own button activation handles Enter, so there's no extra key handler (one would fire
+  twice in a browser). The test checks focus and that Enter's target is that button. The live run
+  checks Enter in a real browser.
+- **Text.** A new constant `ASK_BOARD_ROW_TEXT` in `actions.py` with the wording above. `ask_text`
+  picks it when the resolved row is in its source's `boards`. The row pair is queued as for every
+  row Ask.
+- **Non-goals.** The hint lines above Visuals and the `DataGrid` row tags don't change: a Board
+  row still reads as instant. No server change to `drill`.
+
+**Test command.** `cd agent && uv run pytest`; `cd client && npm test && npm run build`.

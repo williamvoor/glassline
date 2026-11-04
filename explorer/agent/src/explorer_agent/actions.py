@@ -30,6 +30,12 @@ ASK_ROW_TEXT = (
     "Ask: the user clicked a row of a Visual in Turn {turn} (Result {result_id}, row {row}). Show the "
     "next level of detail for that row, keeping the same filters and period."
 )
+# SPEC §20: "Ask within filters" on a row whose click would open an Entity Board.
+ASK_BOARD_ROW_TEXT = (
+    "Ask: the user clicked a row of a Visual in Turn {turn} (Result {result_id}, row {row}). Show that "
+    "row's entity within the filters the Visual was shown with (on a Board: the Board's own entity and "
+    "its Controls), keeping the same period."
+)
 ASK_DRILL_TEXT = "Ask: explain the Drill-down in Turn {turn}, Level {level} (Result {result_id})."
 
 
@@ -292,7 +298,9 @@ def ask_text(resolved: Resolved, result_id: str) -> str:
         return resolved.follow_up.spec.request
     if resolved.kind == "drill_down":
         return ASK_DRILL_TEXT.format(turn=resolved.level.turn, level=resolved.level.level, result_id=result_id)
-    return ASK_ROW_TEXT.format(turn=resolved.level.turn, result_id=result_id, row=resolved.row)
+    assert resolved.source is not None
+    text = ASK_BOARD_ROW_TEXT if resolved.row in resolved.source.spec.boards else ASK_ROW_TEXT
+    return text.format(turn=resolved.level.turn, result_id=result_id, row=resolved.row)
 
 
 def _cut(value: Any) -> Any:

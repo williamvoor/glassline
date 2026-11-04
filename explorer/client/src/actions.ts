@@ -33,6 +33,13 @@ export function instant(action: ActionProp): boolean {
   return action.drillable || !!action.boards?.length;
 }
 
+/** True when a click on `row` would open an Entity Board, so the app asks which view first
+ * (SPEC §20). `rawAction` is the clicked component's literal `action` property. */
+export function boardRow(rawAction: unknown, row: unknown): boolean {
+  const parsed = ActionPropSchema.safeParse(rawAction);
+  return parsed.success && typeof row === 'number' && !!parsed.data.boards?.includes(row);
+}
+
 export function dispatchRow(context: ActionContext, action: ActionProp, row: number, label: string) {
   // web_core copies `userMessage` from the event (not the payload) into the dispatched action.
   return context.dispatchAction({

@@ -10,14 +10,14 @@ import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
 const CTX = 'ctx-1';
 
 /** A surface with a clickable DataGrid (rows "A", "B") and a Follow-up button. */
-function surface(id: string, opts: {drillable?: boolean; followUp?: boolean} = {}): Record<string, unknown>[] {
+function surface(id: string, opts: {drillable?: boolean; followUp?: boolean; boards?: number[]} = {}): Record<string, unknown>[] {
   const children = ['grid', ...(opts.followUp ? ['more'] : [])];
   return [
     {version: 'v0.9', createSurface: {surfaceId: id, catalogId: EXPLORER_CATALOG_ID}},
     {version: 'v0.9', updateComponents: {surfaceId: id, components: [
       {id: 'root', component: 'Column', children},
       {id: 'grid', component: 'DataGrid', columns: [{key: 'name', label: 'Name'}], rows: [['A'], ['B']],
-       action: {source: `v-${id}`, rows: [0, 1], drillable: opts.drillable ?? true}},
+       action: {source: `v-${id}`, rows: [0, 1], drillable: opts.drillable ?? true, ...(opts.boards ? {boards: opts.boards} : {})}},
       ...(opts.followUp ? [
         {id: 'more', component: 'Button', child: 'more_t', action: {event: {name: 'ask', context: {follow_up: 'f1'}}}},
         {id: 'more_t', component: 'Text', text: 'By year'},
@@ -151,6 +151,79 @@ describe('Actions, tabs and the investigation log', () => {
     expect(titles(app)).toEqual(['q', 'B']);
     expect(q(app, '.tab-view .question')!.textContent).toContain('B'); // an Ask tab is headed by its title
     expect(q(app, '.tab-view .prose')!.textContent).toContain('More');
+  });
+
+  // SPEC §20: a row whose click opens an Entity Board asks which view first.
+  it('shows the Board choice on a boards row and sends nothing until a button is pressed (E1, E3)', async () => {
+    const agent = fakeAgent(() => [final('s1', 't1', 'q', '', {drillable: false, boards: [1]})], () => [final('s2', 't2', 'B')]);
+    const app = await mount(agent);
+    await app.ask('q');
+    await settle(app);
+    await click(app, rows(app)[1]!);
+    const dialog = q(app, '.confirm.board-choice')!;
+    expect(dialog.textContent).toContain('B: open its Board (all its data, not only this view\'s filters)');
+    expect(dialog.textContent).toContain('ask the agent within this view\'s filters (takes a few seconds)');
+    expect([...dialog.querySelectorAll('button')].map(b => b.textContent?.trim())).toEqual(['Open Board', 'Ask within filters', 'Cancel']);
+    expect(agent.actions).toHaveLength(0);
+    // E3: Open Board has focus, so a browser's Enter activates it; it is a native button.
+    const ok = q(app, '.confirm .ok')!;
+    expect(document.activeElement).toBe(ok);
+    expect(ok.tagName).toBe('BUTTON');
+    expect(ok.textContent?.trim()).toBe('Open Board');
+  });
+
+  it('Open Board sends drill, Ask within filters sends ask with the same context, Cancel and Escape send nothing (E2)', async () => {
+    const agent = fakeAgent(
+      () => [final('s1', 't1', 'q', '', {boards: [0, 1]})],
+      (a, n) => [final(`s${n + 1}`, `t${n + 1}`, a.name === 'drill' ? 'Board' : 'Asked')],
+    );
+    const app = await mount(agent);
+    await app.ask('q');
+    await settle(app);
+    await click(app, rows(app)[0]!);
+    await click(app, q(app, '.confirm .cancel')!);
+    expect(q(app, '.confirm')).toBeNull();
+    await click(app, rows(app)[0]!);
+    q(app, '.confirm')!.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    await settle(app);
+    expect(q(app, '.confirm')).toBeNull();
+    expect(agent.actions).toHaveLength(0);
+
+    await click(app, rows(app)[0]!);
+    await click(app, q(app, '.confirm .ok')!);
+    expect(agent.actions).toHaveLength(1);
+    const drill = agent.actions[0]!.action;
+    expect(drill).toMatchObject({name: 'drill', surfaceId: 's1', sourceComponentId: 'grid', context: {source: 'v-s1', row: 0}});
+
+    await click(app, tabButton(app, 'q')!);
+    await click(app, rows(app)[1]!);
+    await click(app, q(app, '.confirm .ask-within')!);
+    expect(agent.actions).toHaveLength(2);
+    const ask = agent.actions[1]!.action;
+    expect(ask).toMatchObject({name: 'ask', surfaceId: 's1', sourceComponentId: 'grid', context: {source: 'v-s1', row: 1}});
+    expect(Object.keys(ask).sort()).toEqual(['context', 'name', 'sourceComponentId', 'surfaceId', 'timestamp']);
+    expect(agent.actions[1]!.viewing).toBe('t1');
+  });
+
+  it('a row outside boards behaves as before: a Drill-down at once, an Ask confirmed (E4)', async () => {
+    const drills = fakeAgent(() => [final('s1', 't1', 'q', '', {boards: [1]})], () => [final('s2', 't2', 'A')]);
+    let app = await mount(drills);
+    await app.ask('q');
+    await settle(app);
+    await click(app, rows(app)[0]!);
+    expect(q(app, '.confirm')).toBeNull();
+    expect(drills.actions.map(a => a.action.name)).toEqual(['drill']);
+    document.body.innerHTML = '';
+
+    const asks = fakeAgent(() => [final('s1', 't1', 'q', '', {drillable: false, boards: [1]})], () => [final('s2', 't2', 'A')]);
+    app = await mount(asks);
+    await app.ask('q');
+    await settle(app);
+    await click(app, rows(app)[0]!);
+    expect(q(app, '.confirm.board-choice')).toBeNull();
+    expect(q(app, '.confirm')!.textContent).toContain('Ask the agent: A');
+    await click(app, q(app, '.confirm .ok')!);
+    expect(asks.actions.map(a => a.action.name)).toEqual(['ask']);
   });
 
   it('labels a Follow-up confirmation with its button text', async () => {

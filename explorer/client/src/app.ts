@@ -11,6 +11,7 @@ import '@a2ui/lit/v0_9';
 import type {A2uiMessage, ComponentApi, MessageProcessor} from '@a2ui/web_core/v0_9';
 import {connect, type AgentConnection, type AgentInfo, type AskEvent, type UiAction} from './a2a.js';
 import {createProcessor} from './catalog.js';
+import {boardRow} from './actions.js';
 import {renderSafeMarkdown} from './markdown.js';
 import {BoardControls, type ControlDecl, type WireValues} from './controls.js';
 import {addInPlace, closeTab, logOrder, openTab, selectTab, type InPlaceEntry, type TabState} from './tabs.js';
@@ -45,7 +46,8 @@ interface Tab extends TabState {
   question?: string; // a question tab: what was asked
   action?: UiAction; // a Drill-down or Ask tab: what was sent, for Retry
   viewing?: string; // explorerViewing when it was sent; Retry sends it again
-  confirm?: {label: string; action: UiAction}; // an Ask from this tab, waiting for the user's OK
+  // An Ask from this tab waiting for the user's OK, or (`board`) an Entity Board row's choice (SPEC §20).
+  confirm?: {label: string; action: UiAction; board?: boolean};
 }
 
 /** The Explorer Board's load (SPEC §18): its tab exists only once it is `shown`. `none`: the
@@ -355,6 +357,11 @@ export class ExplorerApp extends LitElement {
     return typeof text === 'string' ? text : undefined;
   }
 
+  /** The literal `action` property of a component (a clickable Visual's, SPEC §15). */
+  private actionProp(surfaceId: string, componentId: string): unknown {
+    return this.processor.model.surfacesMap.get(surfaceId)?.componentsModel?.get(componentId)?.properties?.['action'];
+  }
+
   private onAction(payload: ActionPayload) {
     if (this.busy) return; // clicks are disabled while anything runs
     const from = this.tabs.find(t => t.surfaceId === payload.surfaceId);
@@ -363,19 +370,30 @@ export class ExplorerApp extends LitElement {
     const {name, surfaceId, sourceComponentId, timestamp, context} = payload;
     const action: UiAction = {name, surfaceId, sourceComponentId, timestamp, context}; // IDs only
     const label = payload.userMessage || this.buttonText(surfaceId, sourceComponentId) || 'this';
-    if (name === 'drill') {
+    // A row that opens an Entity Board asks first: the whole entity, or an Ask within filters (SPEC §20).
+    const board = name === 'drill' && boardRow(this.actionProp(surfaceId, sourceComponentId), context?.['row']);
+    if (name === 'drill' && !board) {
       void this.runAction(from.key, action, label);
     } else {
-      this.patch(from.key, {confirm: {label, action}});
+      this.patch(from.key, {confirm: {label, action, ...(board ? {board} : {})}});
       void this.updateComplete.then(() => (this.querySelector('.canvas .tab-view .confirm .ok') as HTMLElement | null)?.focus());
     }
   }
 
+  /** The confirmation's OK: the Ask, or on a Board choice Open Board (`drill` as clicked). */
   private confirmAsk(key: string) {
     const confirm = this.tab(key)?.confirm;
     if (!confirm || this.busy) return;
     this.patch(key, {confirm: undefined});
     void this.runAction(key, confirm.action, confirm.label);
+  }
+
+  /** A Board choice's "Ask within filters": the same row and context, as an Ask (SPEC §20). */
+  private askWithinFilters(key: string) {
+    const confirm = this.tab(key)?.confirm;
+    if (!confirm?.board || this.busy) return;
+    this.patch(key, {confirm: undefined});
+    void this.runAction(key, {...confirm.action, name: 'ask', timestamp: new Date().toISOString()}, confirm.label);
   }
 
   private cancelAsk(key: string) {
@@ -618,7 +636,20 @@ export class ExplorerApp extends LitElement {
   }
 
   private renderActionBars(tab: Tab) {
-    return html`${tab.confirm
+    return html`${tab.confirm?.board
+      ? html`<div
+          class="confirm board-choice"
+          role="dialog"
+          aria-label="Open Board or ask the agent"
+          @keydown=${(e: KeyboardEvent) => e.key === 'Escape' && this.cancelAsk(tab.key)}
+        >
+          <span><strong>${tab.confirm.label}</strong>: open its Board (all its data, not only this view's filters), or
+            ask the agent within this view's filters (takes a few seconds).</span>
+          <button type="button" class="ok" ?disabled=${this.busy} @click=${() => this.confirmAsk(tab.key)}>Open Board</button>
+          <button type="button" class="ask-within" ?disabled=${this.busy} @click=${() => this.askWithinFilters(tab.key)}>Ask within filters</button>
+          <button type="button" class="cancel" @click=${() => this.cancelAsk(tab.key)}>Cancel</button>
+        </div>`
+      : tab.confirm
       ? html`<div
           class="confirm"
           role="dialog"

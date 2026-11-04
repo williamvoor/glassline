@@ -5,6 +5,8 @@ import json
 import pytest
 
 from explorer_agent.actions import (
+    ASK_BOARD_ROW_TEXT,
+    ASK_ROW_TEXT,
     TOO_OLD,
     ActionError,
     ActionState,
@@ -131,6 +133,24 @@ def test_ask_texts_carry_ids_and_numbers_only():
     assert HOSTILE not in text
     fu = state.resolve(action(level.surface_id, "ask", follow_up="f1"))
     assert ask_text(fu, "") == "Show by year"
+
+
+def test_an_ask_on_a_board_row_gets_the_entity_board_text_and_other_rows_keep_the_row_text():
+    """SPEC §20 E5: "Ask within filters" on a row in `boards`; IDs only, as every Ask text."""
+    store = ResultStore()
+    state = ActionState("abc123")
+    level = state.new_turn()
+    result = _result(store)
+    sid = state.ids.source()
+    src = SourceSpec(id=sid, visual=0, result=result, title="T", rows=(0, 1), labels={0: "A", 1: HOSTILE},
+                     boards=(1,), board="entity", key_column="name")
+    state.register(level, [src], [], [])
+    on_board = state.resolve(action(level.surface_id, "ask", source=sid, row=1))
+    assert ask_text(on_board, "r1") == ASK_BOARD_ROW_TEXT.format(turn=1, result_id="r1", row=1)
+    assert "within the filters" in ask_text(on_board, "r1") and HOSTILE not in ask_text(on_board, "r1")
+    off_board = state.resolve(action(level.surface_id, "ask", source=sid, row=0))
+    assert ask_text(off_board, "r1") == ASK_ROW_TEXT.format(turn=1, result_id="r1", row=0)
+    assert state.resolve(action(level.surface_id, "drill", source=sid, row=1)).kind == "board"  # drill unchanged
 
 
 def test_ask_on_a_drill_down_needs_no_row():

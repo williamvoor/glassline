@@ -5,10 +5,11 @@ model, no database: the stub Explorer and its `buyer` Entity Board."""
 import asyncio
 import dataclasses
 import json
+import re
 
 import httpx
 
-from explorer_agent.actions import TOO_OLD
+from explorer_agent.actions import ASK_BOARD_ROW_TEXT, ASK_ROW_TEXT, TOO_OLD
 from explorer_agent.boards import BoardRenderer, Control
 from explorer_agent.drill import rewrite
 from explorer_agent.executor import (
@@ -234,6 +235,30 @@ async def test_a_viewed_entity_board_sends_its_pair_at_its_defaults():
     body = json.loads(pair[-1]["content"])
     assert call["purpose"] == "Board shown in Tab t2"
     assert body["board"] == "Buyer · Buyer A" and body["controls"] == {}
+
+
+async def test_ask_within_filters_from_an_entity_board_row_sends_its_pair_and_from_the_explorer_at_defaults_not():
+    """SPEC §20 E6 (with E5 end to end): "Ask within filters" is a plain `ask` on the clicked row.
+    The stub Entity Board has no onward `boards` row, so the Board text and the Board pair are checked
+    on separate clicks: the text on an Explorer tile, the pair on the Entity Board's suppliers."""
+    from tests.test_controls_executor import board_pairs
+
+    client, answers, *_ = make(board_prefetch_rows=0)
+    async with client:
+        board, ctx = await explorer(client)
+        tiles_surface, tiles = visual(board, "VegaChart", "tiles")
+        row = tiles["boards"][0]
+        await send_action(client, act(tiles_surface, "ask", source=tiles["source"], row=row), ctx, viewing="t1")
+        entity = await click_buyer(client, board, ctx)
+        entity_surface, suppliers = visual(entity, "DataGrid")
+        await send_action(client, act(entity_surface, "ask", source=suppliers["source"], row=suppliers["rows"][0]),
+                          ctx, viewing=meta(entity)[TAB_KEY]["id"])
+    assert [len(board_pairs(p)) for p in answers.pairs] == [0, 1]
+    # The stub model's canned reply fails to render here; only what the model was sent matters.
+    pattern = re.escape(ASK_BOARD_ROW_TEXT).replace(re.escape("{turn}"), r"\d+").replace(
+        re.escape("{result_id}"), r"r\d+").replace(re.escape("{row}"), str(row))
+    assert re.fullmatch(pattern, answers.texts[0])
+    assert answers.texts[1].startswith(ASK_ROW_TEXT.split("{")[0]) and "within the filters" not in answers.texts[1]
 
 
 # --- Controls on an Entity Board keep the key bound -----------------------------------------------------

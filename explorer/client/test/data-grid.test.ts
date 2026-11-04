@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 import '@a2ui/lit/v0_9';
 import type {A2uiMessage} from '@a2ui/web_core/v0_9';
 import {EXPLORER_CATALOG_ID, createProcessor} from '../src/catalog.js';
-import {ASK_HINT_ROW, DRILL_HINT_ROW} from '../src/actions.js';
+import {ASK_HINT_ROW, DRILL_HINT_ROW, boardRow} from '../src/actions.js';
 
 async function grid(action?: Record<string, unknown>) {
   const processor = createProcessor();
@@ -135,5 +135,21 @@ describe('DataGrid Entity Board rows (SPEC §18 slice 3)', () => {
     second!.click();
     await new Promise(r => setTimeout(r, 0));
     expect(actions.map(a => [a['name'], (a['context'] as {row: number}).row])).toEqual([['drill', 0], ['ask', 1]]);
+  });
+});
+
+describe('boardRow (SPEC §20)', () => {
+  const action = {source: 'v1', rows: [0, 1, 2], drillable: true, boards: [1]};
+  it('is true only for a row in boards', () => {
+    expect(boardRow(action, 1)).toBe(true);
+    expect(boardRow(action, 0)).toBe(false);
+    expect(boardRow({...action, boards: undefined}, 1)).toBe(false);
+  });
+  it('fails open to the old behaviour on a missing or unreadable action or row', () => {
+    expect(boardRow(undefined, 1)).toBe(false);
+    expect(boardRow({source: 'v1'}, 1)).toBe(false);
+    expect(boardRow({...action, extra: true}, 1)).toBe(false); // the schema is strict
+    expect(boardRow(action, '1')).toBe(false);
+    expect(boardRow(action, undefined)).toBe(false);
   });
 });
