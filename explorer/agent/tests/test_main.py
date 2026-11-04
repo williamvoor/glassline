@@ -170,3 +170,31 @@ async def test_boards_check_fails_a_board_over_the_cold_target(pg, tmp_path, cap
     assert out.startswith("FAIL explorer: ") and "s cold (target < 0.0 s)" in out
     assert "failed queries" not in out  # it failed on time alone
     assert await _boards_check(settings, target_s=60.0) == 0
+
+
+AGENCY_BOARD = '''title = "Agency"
+key = "agency_name"
+key_type = "text"
+key_columns = ["agency_name"]
+layout = """root = Column([total])
+total = Metric("totals", "total_value", "Total", 0, "currency_compact")"""
+
+[[queries]]
+name = "totals"
+sql = "SELECT sum(total_value) AS total_value FROM mart.agency WHERE agency_name = :agency_name"
+'''
+
+
+@pytest.mark.db
+async def test_boards_check_skips_entity_boards_it_cannot_render_without_a_key(pg, tmp_path, capsys):
+    """Refuter F4: a keyed Board can't be timed cold without a key value; it's checked, not timed."""
+    from explorer_agent.__main__ import EXPLORER_ROOT, _boards_check
+    from explorer_agent.config import load_settings
+
+    dataset = _dataset_with_board(tmp_path, "SELECT sum(total_value) AS total_value FROM mart.agency")
+    (tmp_path / "boards" / "agency.toml").write_text(AGENCY_BOARD, encoding="utf-8")
+    settings = load_settings({"DATABASE_URL": pg.ro_dsn, "DATASET_DIR": dataset}, EXPLORER_ROOT)
+    assert await _boards_check(settings, target_s=60.0) == 0
+    out = capsys.readouterr().out
+    assert "skip agency: an Entity Board renders per row; not timed" in out
+    assert "ok agency" not in out and "ok explorer: " in out

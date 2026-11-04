@@ -33,14 +33,30 @@ def instructions() -> str:
     return _clean(INSTRUCTIONS_PATH.read_text(encoding="utf-8"))
 
 
+def _columns(names: tuple[str, ...]) -> str:
+    quoted = [f"`{n}`" for n in names]
+    return quoted[0] if len(quoted) == 1 else f"{', '.join(quoted[:-1])} or {quoted[-1]}"
+
+
+def board_lines(dataset: Dataset) -> list[str]:
+    """One stable line per Entity Board, in file name order (SPEC §18 slice 3)."""
+    return [
+        f"- Rows with a {_columns(b.key_columns)} column open the {b.title} Board."
+        for _name, b in sorted(dataset.boards.items()) if b.key
+    ]
+
+
 def dataset_context(dataset: Dataset, schema_section: str) -> str:
     """Layer 3. Pure: a made-up schema string works as well as one rendered from a database."""
     parts = [
         f"## Dataset: {dataset.name}\n{_clean(dataset.description)}",
         f"### Notes\n{_clean(dataset.notes)}",
         f"### Glossary\n{_clean(dataset.glossary)}",
-        f"### Schema\n{_clean(schema_section)}",
     ]
+    lines = board_lines(dataset)
+    if lines:
+        parts.append("### Boards\n" + "\n".join(lines))
+    parts.append(f"### Schema\n{_clean(schema_section)}")
     return "\n\n".join(parts)
 
 

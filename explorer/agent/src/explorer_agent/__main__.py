@@ -102,6 +102,9 @@ async def _boards_check(settings: Settings, target_s: float = BOARD_COLD_TARGET_
         renderer = _renderer(settings, runner)
         slow = []
         for board in settings.dataset.boards.values():
+            if board.key:  # rendered per clicked row: the startup check covered it (SPEC §18 slice 3)
+                print(f"skip {board.name}: an Entity Board renders per row; not timed")
+                continue
             start = time.perf_counter()
             outcomes = await renderer.outcomes(board, fresh=True)
             results, failed_states = instance_results(outcomes, iter(f"r{i}" for i in range(1, 10_000)).__next__)
@@ -151,12 +154,13 @@ async def _serve(settings: Settings) -> None:
         conversations = Conversations(
             max_action_sources=settings.max_action_sources, max_pending_pairs=settings.max_pending_pairs,
             board_rows_to_model=settings.board_rows_to_model, board_pair_max_chars=settings.board_pair_max_chars,
+            max_board_instances=settings.max_board_instances,
         )
         app = build_app(
             loop, url=url, client_origin=settings.client_origin, conversations=conversations,
             description=settings.dataset.description, examples=settings.dataset.examples,
             drills=DrillDowns(runner, pipeline, prefetcher, settings.rows_to_model), model=settings.model,
-            boards=BoardViews(renderer := _renderer(settings, runner), pipeline) if settings.dataset.boards else None,
+            boards=BoardViews(renderer := _renderer(settings, runner), pipeline, settings.board_prefetch_rows) if settings.dataset.boards else None,
         )
         server = uvicorn.Server(
             uvicorn.Config(app, host=settings.agent_host, port=settings.agent_port, log_level="warning")

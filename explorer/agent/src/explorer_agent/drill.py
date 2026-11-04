@@ -9,10 +9,11 @@ check (step 2), running a Drill-down, and prefetch.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import re
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -287,37 +288,42 @@ class Prefetcher:
                 item.task.cancel()
         state.items = {k: v for k, v in state.items.items() if v.state == "done"}
 
-    def start(self, conv_id: str, jobs: Iterable[tuple[DrillSpec, int, list[Any]]]) -> None:
-        """Replace the Conversation's prefetch with `jobs` (spec, row index, bound values), in order."""
-        jobs = list(jobs)
-        if self.rows <= 0 or not jobs:
+    def start(self, conv_id: str, jobs: Iterable[tuple[DrillSpec, int, list[Any]]],
+              other: Iterable[tuple[str, int, Callable[[], Awaitable[Any]]]] = ()) -> None:
+        """Replace the Conversation's prefetch with `jobs` (spec, row index, bound values), then
+        `other` (source, row, run): an Entity Board render (SPEC §18 slice 3), in order."""
+        runs = [
+            (spec.source, row, functools.partial(self.runner.run_bound, spec.sql, values, timeout_ms=self.timeout_ms))
+            for spec, row, values in (jobs if self.rows > 0 else ())  # DRILL_PREFETCH_ROWS=0: off
+        ] + list(other)
+        if not runs:
             return
         self.cancel(conv_id)
         state = self._conv(conv_id)
-        for spec, row, values in jobs:
-            key = (conv_id, spec.source, row)
-            if (spec.source, row) in state.items:
+        for source, row, run in runs:
+            key = (conv_id, source, row)
+            if (source, row) in state.items:
                 continue  # already held
             item = _Item(key=key)
-            item.task = asyncio.create_task(self._run(item, spec, values))
-            state.items[(spec.source, row)] = item
+            item.task = asyncio.create_task(self._run(item, source, run))
+            state.items[(source, row)] = item
 
-    async def _run(self, item: _Item, spec: DrillSpec, values: list[Any]) -> None:
+    async def _run(self, item: _Item, source: str, run: Callable[[], Awaitable[Any]]) -> None:
         from explorer_agent.sql import SqlFail
 
         try:
             async with self._sem:
                 item.state = "running"
-                outcome = await self.runner.run_bound(spec.sql, values, timeout_ms=self.timeout_ms)
+                outcome = await run()
         except asyncio.CancelledError:
             item.state = "dropped"
             raise
         except Exception:
-            log.exception("prefetch failed: source=%s row=%d", spec.source, item.key[2])
+            log.exception("prefetch failed: source=%s row=%d", source, item.key[2])
             item.state = "failed"
             return
         if isinstance(outcome, SqlFail):
-            log.warning("prefetch failed: source=%s row=%d sqlstate=%s", spec.source, item.key[2], outcome.sqlstate)
+            log.warning("prefetch failed: source=%s row=%d sqlstate=%s", source, item.key[2], outcome.sqlstate)
             item.state = "failed"
             return
         item.state, item.result = "done", outcome

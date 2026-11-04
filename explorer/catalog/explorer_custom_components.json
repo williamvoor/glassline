@@ -32,12 +32,13 @@
               "description": "Optional height of the chart in pixels. Defaults to 290."
             },
             "action": {
-              "description": "Optional. Makes marks (VegaChart: data with a _row field) or rows (DataGrid: by index) clickable. source: the server's action source ID; rows: the clickable row indices; drillable: a click runs a Drill-down (true) or asks the agent after confirmation (false).",
+              "description": "Optional. Makes marks (VegaChart: data with a _row field) or rows (DataGrid: by index) clickable. source: the server's action source ID; rows: the clickable row indices; drillable: a click runs a Drill-down (true) or asks the agent after confirmation (false); boards: optional row indices whose click opens an Entity Board (sent as a drill).",
               "type": "object",
               "properties": {
                 "source": {"type": "string"},
                 "rows": {"type": "array", "items": {"type": "integer"}},
-                "drillable": {"type": "boolean"}
+                "drillable": {"type": "boolean"},
+                "boards": {"type": "array", "items": {"type": "integer"}}
               },
               "required": ["source", "rows", "drillable"],
               "additionalProperties": false
@@ -90,12 +91,13 @@
               "type": "string"
             },
             "action": {
-              "description": "Optional. Makes marks (VegaChart: data with a _row field) or rows (DataGrid: by index) clickable. source: the server's action source ID; rows: the clickable row indices; drillable: a click runs a Drill-down (true) or asks the agent after confirmation (false).",
+              "description": "Optional. Makes marks (VegaChart: data with a _row field) or rows (DataGrid: by index) clickable. source: the server's action source ID; rows: the clickable row indices; drillable: a click runs a Drill-down (true) or asks the agent after confirmation (false); boards: optional row indices whose click opens an Entity Board (sent as a drill).",
               "type": "object",
               "properties": {
                 "source": {"type": "string"},
                 "rows": {"type": "array", "items": {"type": "integer"}},
-                "drillable": {"type": "boolean"}
+                "drillable": {"type": "boolean"},
+                "boards": {"type": "array", "items": {"type": "integer"}}
               },
               "required": ["source", "rows", "drillable"],
               "additionalProperties": false

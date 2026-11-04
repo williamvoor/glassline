@@ -95,6 +95,8 @@ class Settings:
     board_rows_to_model: int = 5
     board_pair_max_chars: int = 6000
     max_control_options: int = 100
+    max_board_instances: int = 10
+    board_prefetch_rows: int = 1
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
         return f"Settings(model={self.model!r}, format={self.format!r}, dataset={self.dataset.name!r})"
@@ -124,6 +126,8 @@ _INTS = {
     "BOARD_ROWS_TO_MODEL": 5,
     "BOARD_PAIR_MAX_CHARS": 6000,
     "MAX_CONTROL_OPTIONS": 100,
+    "MAX_BOARD_INSTANCES": 10,
+    "BOARD_PREFETCH_ROWS": 1,
 }
 
 
@@ -321,4 +325,6 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         board_rows_to_model=_positive_int(env, "BOARD_ROWS_TO_MODEL"),
         board_pair_max_chars=_positive_int(env, "BOARD_PAIR_MAX_CHARS"),
         max_control_options=_positive_int(env, "MAX_CONTROL_OPTIONS"),
+        max_board_instances=_positive_int(env, "MAX_BOARD_INSTANCES"),
+        board_prefetch_rows=_non_negative_int(env, "BOARD_PREFETCH_ROWS"),
     )

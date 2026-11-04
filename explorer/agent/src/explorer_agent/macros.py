@@ -8,7 +8,9 @@ those errors into feedback for the model.
 
 from __future__ import annotations
 
+import calendar
 import contextlib
+import datetime as dt
 import functools
 import logging
 import math
@@ -25,7 +27,7 @@ from a2ui.transformers.macros import MacroExpander, macro
 from explorer_agent.actions import FollowUpSpec, IdAllocator, SourceSpec
 from explorer_agent.catalog import DataGrid, SqlDetails, VegaChart
 from explorer_agent.drill import BINDABLE, DRILL_AS, DrillSpec, DrillSqlError, Rewritten, null_dropping_params, rewrite
-from explorer_agent.results import INTEGER_TYPES, NUMERIC_TYPES, ResultStore, StoredResult
+from explorer_agent.results import INTEGER_TYPES, NUMERIC_TYPES, TEMPORAL_TYPES, ResultStore, StoredResult
 from explorer_agent.sql import GuardError, guard
 
 log = logging.getLogger(__name__)
@@ -43,6 +45,8 @@ ROW_LABEL_MAX = 80
 ROW_FIELD = "_row"  # hidden field on a clickable chart datum: its row index in the Result
 LABEL_FIELD = "_label"  # hidden field on a clickable chart datum: its row label (SPEC §18)
 MAX_TREEMAP_TILES = 12
+MAX_TIMELINE_ROWS = 30
+TIMELINE_SORTS = ("result", "start", "end")
 NO_ROWS = "No rows"
 PANEL_FAILED = "This panel couldn't load: {reason}"
 PANEL_UNDRAWABLE = "This panel couldn't be drawn from its rows."
@@ -85,6 +89,12 @@ class MacroContext:
     failed: Mapping[str, str] = field(default_factory=dict)  # Board mode: query name -> SQLSTATE
     # Board mode: each Control's SQL cast and bound value, for Drill queries (SPEC §18 slice 2).
     controls: Mapping[str, tuple[str, Any]] = field(default_factory=dict)
+    # Entity Boards (SPEC §18 slice 3): key column -> the Board its rows open, and the Board being
+    # built (its own key columns are skipped: no self-link).
+    entity: Mapping[str, str] = field(default_factory=dict)
+    key_types: Mapping[str, str] = field(default_factory=dict)  # Board name -> key_type
+    own_board: str = ""
+    today: Callable[[], dt.date] = dt.date.today  # Timeline's today line, per request
 
 
 _context: ContextVar[MacroContext | None] = ContextVar("explorer_macro_context", default=None)
@@ -496,12 +506,58 @@ class _Drill:
     title: str = ""
 
 
+def key_fits(value: Any, key_type: str) -> bool:
+    """Whether a row's key value can bind to an Entity Board's `key_type` (SPEC §18 slice 3).
+    Rows hold JSON-safe values: numerics as floats, dates as ISO strings."""
+    if value is None:
+        return False
+    if key_type == "text":
+        return isinstance(value, str)
+    if key_type == "int":  # a float above 2^53 has lost its exact digits
+        return ((isinstance(value, int) and not isinstance(value, bool))
+                or (isinstance(value, float) and value.is_integer() and abs(value) < 2.0**53))
+    if key_type == "float":
+        return _is_number(value)
+    if key_type == "date":
+        if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value[:10]):
+            return False
+        try:
+            dt.date.fromisoformat(value[:10])
+        except ValueError:
+            return False
+        return True
+    return isinstance(value, bool)
+
+
+def key_value(value: Any, key_type: str) -> Any:
+    """The value a fitting key binds: whole floats as ints for `int`, dates as `YYYY-MM-DD`."""
+    if key_type == "int":
+        return int(value)
+    if key_type == "date":
+        return value[:10]
+    return value
+
+
+def _entity(result: StoredResult, rows: list[int]) -> tuple[str, str, list[int]]:
+    """The Visual's key column, its Board and the rows that open it: the first column in Result
+    order that some other Board keys on (SPEC §18 slice 3)."""
+    ctx = _ctx()
+    for column in result.columns:
+        board = ctx.entity.get(column)
+        if board is None or board == ctx.own_board:
+            continue
+        key_type = ctx.key_types.get(board, "text")
+        return column, board, [i for i in rows if key_fits(result.rows[i].get(column), key_type)]
+    return "", "", []
+
+
 def _register_visual(
     result: StoredResult, *, visual: int, clickable: bool, rows: list[int], labels: dict[int, str],
     title: str, drill: _Drill,
 ) -> dict[str, Any] | None:
     """Reserve an action source for a clickable Visual, check its Drill query, and return the
-    component's `action`. A Visual with no clickable rows isn't clickable."""
+    component's `action`. A Visual with no clickable rows isn't clickable. Rows whose key opens
+    an Entity Board go to that Board; in answers its Drill query is then ignored unchecked."""
     ctx = _ctx()
     if not clickable:
         return None
@@ -510,9 +566,15 @@ def _register_visual(
             log.warning("drill query of visual %d ignored: the visual has no clickable rows", visual)
         return None
     source = ctx.ids.source()
+    key_column, board, board_rows = _entity(result, rows)
+    if board_rows and not ctx.board:
+        if drill.sql.strip():
+            log.info("drill query of visual %d ignored: its rows open the %s Board", visual, board)
+        drill = _Drill()
+    fallback = [i for i in rows if i not in set(board_rows)]
     try:
         spec = _drill(
-            result, visual=visual, source=source, clickable_rows=rows, title=title, drill_sql=drill.sql,
+            result, visual=visual, source=source, clickable_rows=fallback, title=title, drill_sql=drill.sql,
             drill_as=drill.drill_as, drill_x=drill.x, drill_y=drill.y, drill_title=drill.title,
         )
     except DrillError:
@@ -523,8 +585,14 @@ def _register_visual(
         # can quote a value.
         log.warning("board drill query dropped: visual=%d", visual)
         spec = None
-    ctx.sources.append(SourceSpec(id=source, visual=visual, result=result, title=title, rows=tuple(rows), labels=labels))
-    return {"source": source, "rows": rows, "drillable": spec is not None}
+    ctx.sources.append(SourceSpec(
+        id=source, visual=visual, result=result, title=title, rows=tuple(rows), labels=labels,
+        boards=tuple(board_rows), board=board if board_rows else "", key_column=key_column if board_rows else "",
+    ))
+    action: dict[str, Any] = {"source": source, "rows": rows, "drillable": spec is not None}
+    if board_rows:
+        action["boards"] = board_rows
+    return action
 
 
 def _card(children: list[Any]) -> Card:
@@ -835,6 +903,193 @@ def Treemap(
     """
     return _card(_treemap_parts(
         _result(result_id), title=_fill(title, markdown=False), label=label, value=value, fmt=format, clickable=clickable,
+        drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title),
+    ))
+
+
+def _months_later(day: dt.date, months: int) -> dt.date:
+    year, month = divmod(day.month - 1 + months, 12)
+    year, month = day.year + year, month + 1
+    return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def _date_column(result: StoredResult, column: str, role: str) -> str:
+    _column(result, column)
+    if not result.is_temporal(column):
+        raise MacroError(f"{role} column {column!r} of {result.id} is {result.column_type(column)}, not a date")
+    return column
+
+
+def _timeline_parts(
+    result: StoredResult, *, title: str, label: str, start: str, end: str, color: str, value: str, fmt: str,
+    sort: str, horizon_months: int, clickable: bool, drill: _Drill,
+) -> list[Any]:
+    """A Vega-Lite `layer`: the horizon band, the bars, their values and the today rule. Only the
+    bar layer's data carries `_row` and `_label` (SPEC §18 slice 3)."""
+    ctx = _ctx()
+    visual = ctx.visuals
+    ctx.visuals += 1
+    _column(result, label)
+    _date_column(result, start, "start")
+    _date_column(result, end, "end")
+    if color:
+        _column(result, color)
+    if value:
+        _numeric_column(result, value, "value")
+    if sort not in TIMELINE_SORTS:
+        raise MacroError(f"sort must be one of: {', '.join(TIMELINE_SORTS)}")
+    if isinstance(horizon_months, bool) or not isinstance(horizon_months, int) or horizon_months < 0:
+        raise MacroError("horizon_months must be a whole number of months, 0 or more")
+    fmt = _format_name(fmt or "auto")
+    drawn: list[tuple[int, dict[str, Any], str, str]] = []
+    left_out = 0
+    for i, r in enumerate(result.rows):
+        if r.get(start) is None or r.get(end) is None:
+            left_out += 1
+            continue
+        s, e = str(r[start])[:10], str(r[end])[:10]
+        if e < s:
+            raise MacroError(f"row {i} of {result.id}: {end!r} comes before {start!r}")
+        drawn.append((i, r, s, e))
+    if sort == "start":
+        drawn.sort(key=lambda t: t[2])
+    elif sort == "end":
+        drawn.sort(key=lambda t: t[3])
+    shown = drawn[:MAX_TIMELINE_ROWS]
+    if not shown:
+        if ctx.board:
+            raise _no_rows(result, title)
+        raise MacroError(f"{result.id} has no rows with both {start!r} and {end!r} to draw")
+    domain: list[str] = []
+    keep: set[str] = set()
+    if color:  # fold by row count, most rows first, ties by label
+        counts: dict[str, int] = {}
+        for _i, r, _s, _e in drawn:
+            name = label_text(result, color, r.get(color))
+            counts[name] = counts.get(name, 0) + 1
+        ranked = sorted(counts, key=lambda k: (-counts[k], k))
+        keep = set(ranked[: ctx.max_color_categories])
+        domain = [k for k in ranked if k in keep] + ([OTHER] if len(ranked) > len(keep) else [])
+    names = [label_text(result, label, r.get(label)) for _i, r, _s, _e in shown]
+    lanes = list(dict.fromkeys(names))
+    repeats = {n for n in names if names.count(n) > 1}
+    label_title = column_label(label)
+    bars: list[dict[str, Any]] = []
+    texts: list[dict[str, Any]] = []
+    rows: list[int] = []
+    labels: dict[int, str] = {}
+    unit = compact_unit(_largest(r.get(value) for _i, r, _s, _e in shown)) if value and fmt == "currency_compact" else None
+    for (i, r, s, e), name in zip(shown, names, strict=True):
+        bar: dict[str, Any] = {"_lane": name, "_start": s, "_end": e}
+        if color:
+            group = label_text(result, color, r.get(color))
+            bar["_color"] = group if group in keep else OTHER
+        if value:
+            bar["_value"] = _format(result, r.get(value), value, fmt, unit)
+            texts.append({"_lane": name, "_end": e, "_value": bar["_value"]})
+        if clickable and i < ctx.table_row_cap:
+            labels[i] = f"{name} · {s}" if name in repeats else name
+            bar[ROW_FIELD], bar[LABEL_FIELD] = i, labels[i]
+            rows.append(i)
+        bars.append(bar)
+    lane = {"field": "_lane", "type": "nominal", "sort": lanes, "title": label_title}
+    tooltip = [
+        {"field": "_lane", "type": "nominal", "title": label_title},
+        {"field": "_start", "type": "temporal", "title": column_label(start)},
+        {"field": "_end", "type": "temporal", "title": column_label(end)},
+        *([{"field": "_color", "type": "nominal", "title": column_label(color)}] if color else []),
+        *([{"field": "_value", "type": "nominal", "title": column_label(value)}] if value else []),
+    ]
+    bar_layer: dict[str, Any] = {
+        "data": {"values": bars},
+        "mark": {"type": "bar"},
+        "encoding": {
+            "y": lane,
+            "x": {"field": "_start", "type": "temporal", "title": None},
+            "x2": {"field": "_end"},
+            "tooltip": tooltip,
+            **({"color": {"field": "_color", "type": "nominal", "sort": domain, "title": column_label(color)}} if color else {}),
+        },
+    }
+    today = ctx.today()
+    layers: list[dict[str, Any]] = []
+    if horizon_months:
+        layers.append({
+            "data": {"values": [{"_from": today.isoformat(), "_to": _months_later(today, horizon_months).isoformat()}]},
+            "mark": {"type": "rect", "opacity": 0.12},
+            "encoding": {"x": {"field": "_from", "type": "temporal"}, "x2": {"field": "_to"}},
+        })
+    layers.append(bar_layer)
+    if texts:
+        layers.append({
+            "data": {"values": texts},
+            "mark": {"type": "text", "align": "left", "dx": 4},
+            "encoding": {"y": lane, "x": {"field": "_end", "type": "temporal"}, "text": {"field": "_value"}},
+        })
+    layers.append({
+        "data": {"values": [{"_today": today.isoformat()}]},
+        "mark": {"type": "rule", "strokeDash": [4, 4]},
+        "encoding": {"x": {"field": "_today", "type": "temporal"}},
+    })
+    spec = {"$schema": "https://vega.github.io/schema/vega-lite/v5.json", "layer": layers}
+    notes = []
+    if len(drawn) > len(shown):
+        notes.append(f"Showing {len(shown):,} of {len(drawn):,} bars")
+    if left_out:
+        notes.append(f"{_plural(left_out, 'row')} with no {column_label(start).lower()} or {column_label(end).lower()} left out")
+    if result.truncated:
+        notes.append(f"query truncated at {result.row_count:,} rows")
+    action = _register_visual(result, visual=visual, clickable=clickable, rows=rows, labels=labels, title=title, drill=drill)
+    if action:  # the client sets no cursor on a layer: only the bars point
+        bar_layer["mark"]["cursor"] = "pointer"
+    chart = VegaChart(spec=spec, action=action) if action else VegaChart(spec=spec)
+    caption = [Text(text="; ".join(notes), variant="caption")] if notes else []
+    return [Text(text=title, variant="h4"), chart, *caption, _sql_details(result)]
+
+
+@macro
+@_captured
+def Timeline(
+    result_id: str,
+    title: str,
+    label: str,
+    start: str,
+    end: str,
+    color: str = "",
+    value: str = "",
+    format: str = "",
+    sort: str = "result",
+    horizon_months: int = 0,
+    clickable: bool = True,
+    drill_sql: str = "",
+    drill_as: str = "table",
+    drill_x: str = "",
+    drill_y: str = "",
+    drill_title: str = "",
+) -> Card:
+    """Timeline of a stored query result: one bar per row from its start date to its end date, with a line at today, followed by its SQL. Shows at most 30 bars.
+
+    Args:
+        result_id: ID of a stored query result, e.g. "r1".
+        title: Chart title, plain text.
+        label: Column naming each bar's lane; rows with the same label share a lane.
+        start: Date column where each bar starts.
+        end: Date column where each bar ends (not before start).
+        color: Optional column to colour bars by; the top 8 groups are kept, the rest become "Other".
+        value: Optional numeric column shown at the end of each bar.
+        format: Format of value: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct.
+        sort: Bar order: result (the result's order, default), start or end.
+        horizon_months: Optional number of months from today to shade, e.g. 6.
+        clickable: Bars can be clicked to explore them (default true); false turns it off.
+        drill_sql: Optional SQL for the next level of detail below a clicked bar: one SELECT with :column placeholders naming columns of this result. It runs without you when a bar is clicked.
+        drill_as: How the drill-down is shown: table (default), bar or line.
+        drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
+        drill_y: For drill_as bar or line: the numeric drill_sql output column.
+        drill_title: Optional title of the drill-down (default: this title); the clicked bar's label is appended.
+    """
+    return _card(_timeline_parts(
+        _result(result_id), title=_fill(title, markdown=False), label=label, start=start, end=end, color=color,
+        value=value, fmt=format, sort=sort, horizon_months=horizon_months, clickable=clickable,
         drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title),
     ))
 
@@ -1162,8 +1417,8 @@ def _bare_numbers(text: str) -> list[str]:
     return _BARE_NUMBER.findall(_DATE.sub(" ", _PLACEHOLDER_SHAPE.sub("", text)))
 
 
-MACROS = [BarChart, LineChart, Treemap, DataTable, Metric, Cite, FollowUp]
-VISUAL_MACROS = frozenset({"BarChart", "LineChart", "Treemap", "DataTable"})
+MACROS = [BarChart, LineChart, Treemap, Timeline, DataTable, Metric, Cite, FollowUp]
+VISUAL_MACROS = frozenset({"BarChart", "LineChart", "Treemap", "Timeline", "DataTable"})
 
 
 # --- startup checks for Board layouts (SPEC §18) ----------------------------------------------
@@ -1188,6 +1443,8 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
         type_ = types[columns.index(column)]
         if want == "numeric" and type_ not in NUMERIC_TYPES:
             problems.append(f"{cid}: {role} column {column!r} of query {query!r} is {type_}, not a number")
+        if want == "date" and type_ not in TEMPORAL_TYPES:
+            problems.append(f"{cid}: {role} column {column!r} of query {query!r} is {type_}, not a date")
 
     def template(text: Any, cid: str) -> None:
         if not isinstance(text, str):
@@ -1224,6 +1481,14 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
         elif name == "Treemap":
             kind_of(query, comp.get("label", ""), "label", "any", cid)
             kind_of(query, comp.get("value", ""), "value", "numeric", cid)
+        elif name == "Timeline":
+            kind_of(query, comp.get("label", ""), "label", "any", cid)
+            kind_of(query, comp.get("start", ""), "start", "date", cid)
+            kind_of(query, comp.get("end", ""), "end", "date", cid)
+            if comp.get("color"):
+                kind_of(query, comp["color"], "color", "any", cid)
+            if comp.get("value"):
+                kind_of(query, comp["value"], "value", "numeric", cid)
         elif name == "Metric":
             kind_of(query, comp.get("column", ""), "column", "any", cid)
         elif name == "DataTable":

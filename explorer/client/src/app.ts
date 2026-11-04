@@ -77,12 +77,14 @@ function modelOf(metadata: Record<string, unknown> | undefined): string | null |
 }
 
 /** The tab ID, title and log entry a reply brings (SPEC §18), each only when well formed. */
-function tabOf(metadata: Record<string, unknown> | undefined): Partial<Pick<Tab, 'id' | 'title' | 'log'>> {
-  const tab = metadata?.[TAB_KEY] as {id?: unknown; title?: unknown} | undefined;
+function tabOf(metadata: Record<string, unknown> | undefined): Partial<Pick<Tab, 'id' | 'title' | 'log' | 'kind'>> {
+  const tab = metadata?.[TAB_KEY] as {id?: unknown; title?: unknown; kind?: unknown} | undefined;
   const log = metadata?.[LOG_KEY] as {tag?: unknown; text?: unknown} | undefined;
   return {
     ...(typeof tab?.id === 'string' ? {id: tab.id} : {}),
     ...(typeof tab?.title === 'string' ? {title: tab.title} : {}),
+    // A row whose key opens an Entity Board: the running Drill-down tab becomes a Board's (slice 3).
+    ...(tab?.kind === 'board' ? {kind: 'board' as const} : {}),
     ...(typeof log?.text === 'string' ? {log: {text: log.text, ...(typeof log.tag === 'string' ? {tag: log.tag} : {})}} : {}),
   };
 }
@@ -414,10 +416,13 @@ export class ExplorerApp extends LitElement {
         this.patch(key, {error: event.prose});
         return;
       }
+      const surfaceId = surfaceIdOf(event.a2ui);
       this.patch(key, {
-        ...tabOf(event.metadata), surfaceId: surfaceIdOf(event.a2ui), proseHtml: await renderSafeMarkdown(event.prose),
+        ...tabOf(event.metadata), surfaceId, proseHtml: await renderSafeMarkdown(event.prose),
         model: modelOf(event.metadata),
       });
+      // An Entity Board's Controls (SPEC §18 slice 3), once its reply was processed.
+      if (surfaceId) this.attachControls(key, surfaceId, event.metadata, this.processor);
     });
   }
 
@@ -655,7 +660,7 @@ export class ExplorerApp extends LitElement {
   private renderTab(tab: Tab) {
     const surface = tab.surfaceId ? this.processor.model.surfacesMap.get(tab.surfaceId) : undefined;
     const heading = tab.kind === 'question' || tab.kind === 'ask'; // a Board and a Drill-down title themselves
-    const examples = tab.kind === 'board' && !this.tabs.some(t => t.kind === 'question');
+    const examples = tab.key === EXPLORER_KEY && !this.tabs.some(t => t.kind === 'question');
     return html`<section class="tab-view" role="tabpanel">
       ${heading ? html`<h2 class="question">${tab.title}</h2>` : nothing}
       ${tab.running ? this.renderStatus(tab.steps, tab.startedAt) : nothing}

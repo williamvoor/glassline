@@ -196,7 +196,7 @@ def test_dataset_context_is_pure():
 # P6
 def test_instructions_are_generic():
     text = instructions()
-    assert len(text) < 3000  # 2,000, then 2,600 for the Clicks section (SPEC §15), 3,000 for its example (§17)
+    assert len(text) < 3200  # 2,000; 2,600 for Clicks (SPEC §15); 3,000 for its example (§17); 3,200 for Boards (§18)
     for word in ("austender", "mart", "supplier", "agency", "contract"):
         assert word not in text.lower()
 
@@ -280,3 +280,26 @@ def test_prompt_has_name_and_period_rules():
     assert "Don't run a separate query to look up keys or IDs first" in text
     assert "string_agg(DISTINCT name, '; ')" in text
     assert "Don't convert it into a date range yourself" in text
+
+
+# B11: Entity Board lines (SPEC §18 slice 3)
+def test_entity_boards_add_stable_lines_between_glossary_and_schema():
+    import dataclasses
+
+    from explorer_agent.testing.stub_server import STUB_BOARD, STUB_ENTITY
+
+    base = DEMO
+    two = dataclasses.replace(STUB_ENTITY, name="agency", title="Agency", key_columns=("agency_id", "portfolio", "agency"))
+    dataset = dataclasses.replace(base, boards={"explorer": STUB_BOARD, "buyer": STUB_ENTITY, "agency": two})
+    text = dataset_context(dataset, "### s.things (table)")
+    assert (
+        "### Glossary\n- term: meaning\n\n### Boards\n"
+        "- Rows with a `agency_id`, `portfolio` or `agency` column open the Agency Board.\n"
+        "- Rows with a `buyer` column open the Buyer Board.\n\n### Schema" in text
+    )
+    assert dataset_context(dataset, "### s.things (table)") == text
+    assert "### Boards" not in dataset_context(dataclasses.replace(base, boards={"explorer": STUB_BOARD}), "x")
+
+
+def test_clicks_say_a_board_column_needs_no_drill_sql():
+    assert "opens that\n  Board on a click, so it needs no `drill_sql`" in instructions()

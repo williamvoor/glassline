@@ -164,8 +164,13 @@ class UiPipeline:
         table_row_cap: int = TABLE_ROW_CAP,
         allowed_schemas: Iterable[str] = (),
         max_drills: int = MAX_DRILLS_PER_SURFACE,
+        entity: Mapping[str, str] | None = None,
+        key_types: Mapping[str, str] | None = None,
     ):
         self._currency_symbol = currency_symbol
+        # Key column -> the Entity Board its rows open (SPEC §18 slice 3), for every Visual.
+        self.entity = dict(entity or {})
+        self.key_types = dict(key_types or {})  # Entity Board name -> its key_type
         self._table_row_cap = table_row_cap
         self._allowed_schemas = tuple(sorted(allowed_schemas))
         self._max_drills = max_drills
@@ -179,16 +184,20 @@ class UiPipeline:
 
     @classmethod
     def from_settings(cls, settings: Any) -> UiPipeline:
+        from explorer_agent.boards import entity_columns  # noqa: PLC0415 - boards imports ui lazily too
+
         return cls(
             settings.format, settings.dataset.currency.symbol, settings.table_row_cap,
             settings.dataset.allowed_schemas, settings.max_drills_per_surface,
+            entity_columns(settings.dataset.boards),
+            {b.name: b.key_type for b in settings.dataset.boards.values() if b.key},
         )
 
     def _context(self, store: Any, ids: IdAllocator | None, ignore_drills: Iterable[int] = (), **board: Any):
         return macro_context(
             store, currency_symbol=self._currency_symbol, table_row_cap=self._table_row_cap,
             ids=ids or IdAllocator(), allowed_schemas=self._allowed_schemas, max_drills=self._max_drills,
-            ignore_drills=frozenset(ignore_drills), **board,
+            ignore_drills=frozenset(ignore_drills), entity=self.entity, key_types=self.key_types, **board,
         )
 
     @staticmethod

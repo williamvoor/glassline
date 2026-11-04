@@ -459,3 +459,14 @@ def test_surface_summary_reads_a_full_vega_treemap():
     summary = ec.surface_summary([{"updateComponents": {"surfaceId": "s", "components": comps}}])
     assert summary["charts"] == [{"title": "Tiles", "values": [{"_id": "root"}, {"_id": "t0", "_row": 0}]}]
     assert summary["visuals"][0]["kind"] == "chart"
+
+
+# SPEC §18 slice 3: rows that open an Entity Board count as a Drill query in the rate
+def test_surface_summary_counts_board_rows_as_drillable():
+    comps = [
+        {"id": "root", "component": "Column", "children": ["c1"]},
+        {"id": "c1", "component": "VegaChart", "spec": {},
+         "action": {"source": "v1", "rows": [0, 1], "drillable": False, "boards": [1]}},
+    ]
+    summary = ec.surface_summary([{"updateComponents": {"surfaceId": "turn-1-1-x", "components": comps}}])
+    assert summary["visuals"][0]["drillable"] is True

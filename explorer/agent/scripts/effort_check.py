@@ -271,7 +271,9 @@ def surface_summary(a2ui: list[dict[str, Any]]) -> dict[str, Any]:
             visuals.append({
                 "kind": "table" if kind == "DataGrid" else "chart", "id": c.get("id"),
                 "surface_id": surface_of.get(c.get("id", ""), ""), "title": sibling_title(c["id"]),
-                "clickable": action is not None, "drillable": bool(action and action.get("drillable")),
+                "clickable": action is not None,
+                # A Visual whose rows open an Entity Board counts as drillable (SPEC §18 slice 3).
+                "drillable": bool(action and (action.get("drillable") or action.get("boards"))),
                 "source": (action or {}).get("source"), "rows": list((action or {}).get("rows") or []),
             })
         if kind == "DataGrid":

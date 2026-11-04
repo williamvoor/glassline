@@ -205,3 +205,63 @@ describe('VegaChart labels and full Vega (SPEC §18)', () => {
     view.finalize();
   });
 });
+
+// SPEC §18 slice 3: rows that open an Entity Board, and the Timeline's Vega-Lite `layer`.
+import * as vegaLite from 'vega-lite';
+import timelineSpec from './fixtures/timeline_spec.json';
+
+describe('VegaChart Entity Board rows and Timeline (SPEC §18 slice 3)', () => {
+  it('dispatches drill for a row that opens a Board, ask for the others, with the Drill-down hint', async () => {
+    const actions = await chart({source: 'v1', rows: [0, 1], drillable: false, boards: [0]});
+    clicks[0]!({}, {datum: {name: 'A', v: 1, _row: 0}});
+    clicks[0]!({}, {datum: {name: 'B', v: 1, _row: 1}});
+    await new Promise(r => setTimeout(r, 0));
+    expect(actions.map(a => a['name'])).toEqual(['drill', 'ask']);
+    expect(document.querySelector('.visual-hint')?.textContent).toBe(DRILL_HINT_CHART);
+  });
+
+  it('leaves a layer spec\'s cursor to the agent and dispatches a bar click', async () => {
+    const processor = createProcessor();
+    const actions: Record<string, unknown>[] = [];
+    processor.model.onAction.subscribe(a => void actions.push(a as unknown as Record<string, unknown>));
+    processor.processMessages([
+      {version: 'v0.9', createSurface: {surfaceId: 's', catalogId: EXPLORER_CATALOG_ID}},
+      {version: 'v0.9', updateComponents: {surfaceId: 's', components: [{
+        id: 'root', component: 'VegaChart', spec: timelineSpec, action: {source: 'v1', rows: [0, 1, 2], drillable: false, boards: [1]},
+      }]}},
+    ] as unknown as A2uiMessage[]);
+    const el = document.createElement('a2ui-surface') as HTMLElement & {surface: unknown};
+    el.surface = processor.model.surfacesMap.get('s');
+    document.body.appendChild(el);
+    await settle(el);
+    const embedded = specs.at(-1)!;
+    expect(embedded['mark']).toBeUndefined(); // no top-level mark was added to the layer spec
+    const layers = embedded['layer'] as {mark: Record<string, unknown>}[];
+    expect(layers.filter(l => l.mark['cursor'] === 'pointer').map(l => l.mark['type'])).toEqual(['bar']);
+    clicks[0]!({}, {datum: {_lane: 'C1', _row: 1, _label: 'C1'}});
+    clicks[0]!({}, {datum: {_today: '2026-01-31'}}); // the rule: no row
+    await new Promise(r => setTimeout(r, 0));
+    expect(actions).toEqual([expect.objectContaining({name: 'drill', context: {source: 'v1', row: 1}, userMessage: 'C1'})]);
+  });
+
+  it('compiles the agent timeline in real Vega-Lite: only bars carry _row, _label and the pointer', async () => {
+    const compiled = vegaLite.compile(timelineSpec as never).spec;
+    const view = new vega.View(vega.parse(compiled), {renderer: 'none'});
+    await view.runAsync();
+    type Item = {datum: Record<string, unknown>; cursor?: string};
+    type Mark = {marktype: string; items: Item[]};
+    const marks: Mark[] = [];
+    const walk = (node: {items?: unknown[]; marktype?: string}) => {
+      if (node.marktype) marks.push(node as Mark);
+      for (const child of (node.items ?? []) as {items?: unknown[]; marktype?: string}[]) walk(child);
+    };
+    walk((view.scenegraph() as unknown as {root: {items?: unknown[]}}).root);
+    const bars = marks.filter(m => m.marktype === 'rect' && m.items.some(i => '_row' in i.datum)).flatMap(m => m.items);
+    expect(bars.map(b => [b.datum['_row'], b.datum['_label'], b.cursor])).toEqual([
+      [0, 'C2', 'pointer'], [1, 'C1', 'pointer'], [2, 'C3', 'pointer'],
+    ]);
+    const others = marks.filter(m => !m.items.some(i => '_row' in (i.datum ?? {}))).flatMap(m => m.items);
+    expect(others.every(i => i.cursor !== 'pointer')).toBe(true);
+    view.finalize();
+  });
+});

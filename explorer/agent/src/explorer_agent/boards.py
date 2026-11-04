@@ -14,6 +14,7 @@ parts: the startup check, the cache with single-flight, and the warm-up of the E
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime as dt
 import logging
@@ -48,8 +49,8 @@ RESERVED_PREFIX = "board_"  # IDs the server adds around the layout: board_headi
 BOARD_ALIAS = "_explorer_board"
 CHECK_ALIAS = "_explorer_board_check"
 DRILL_CHECK_ALIAS = "_explorer_board_drill_check"
-KEYS = frozenset({"title", "question", "scope", "controls", "queries", "layout"})
-NOT_YET = frozenset({"key", "key_type", "key_columns"})  # slice 3
+KEYS = frozenset({"title", "question", "scope", "controls", "queries", "layout", "key", "key_type", "key_columns"})
+KEY_KEYS = ("key", "key_type", "key_columns")
 OPTIONS_ALIAS = "_explorer_board_options"
 # Control kinds and their keys besides name, kind and label (SPEC §18 Controls).
 CONTROL_KEYS = {
@@ -124,6 +125,11 @@ class Board:
     queries: tuple[BoardQuery, ...]
     layout: str  # Express statements, without <a2ui>
     controls: tuple[Control, ...] = ()
+    # An Entity Board (slice 3): the placeholder the clicked row's key binds to, its SQL type,
+    # and the Result columns whose rows open it. Empty for the Explorer.
+    key: str = ""
+    key_type: str = ""
+    key_columns: tuple[str, ...] = ()
 
     @property
     def express(self) -> str:
@@ -134,6 +140,7 @@ class Board:
 
     @property
     def casts(self) -> dict[str, str]:
+        """The Controls' casts, as Drill queries bind them: the key isn't bound there (slice 3)."""
         return {c.name: c.cast for c in self.controls}
 
 
@@ -149,7 +156,23 @@ def load_boards(dataset_dir: Path, allowed_schemas: tuple[str, ...]) -> dict[str
     paths = sorted(directory.glob("*.toml"))
     if not any(p.stem == EXPLORER for p in paths):
         raise BoardError(f"{directory}: {EXPLORER}.toml is required once a Dataset has a {BOARDS_DIR}/ directory")
-    return {p.stem: load_board(p, allowed_schemas) for p in paths}
+    boards = {p.stem: load_board(p, allowed_schemas) for p in paths}
+    explorer = boards[EXPLORER]
+    if explorer.key:
+        raise BoardError(f"{explorer.path}: {EXPLORER}.toml can't have a key: the Explorer opens without a row")
+    opens: dict[str, Board] = {}
+    for board in boards.values():
+        for column in board.key_columns:
+            other = opens.get(column)
+            if other is not None:
+                raise BoardError(f"{board.path}: key_columns: {column} also opens {other.path}")
+            opens[column] = board
+    return boards
+
+
+def entity_columns(boards: Mapping[str, Board]) -> dict[str, str]:
+    """Key column -> the name of the Entity Board its rows open (SPEC §18 slice 3)."""
+    return {column: b.name for b in boards.values() for column in b.key_columns}
 
 
 def _text(data: Mapping[str, Any], key: str, path: Path, *, required: bool) -> str:
@@ -180,15 +203,14 @@ def parse_board(text: str, path: Path, allowed_schemas: tuple[str, ...]) -> Boar
     except tomllib.TOMLDecodeError as e:
         raise BoardError(f"{path} is not valid TOML: {e}") from None
     for key in sorted(data):
-        if key in NOT_YET:
-            raise BoardError(f"{path}: key {key} is not supported yet")
         if key not in KEYS:
             raise BoardError(f"{path}: unknown key {key}")
     title = _text(data, "title", path, required=True)
     if any(ch.isdigit() for ch in title):
         raise BoardError(f"{path}: title must be plain text with no numbers")
     controls = _controls(data, path, allowed_schemas)
-    queries = _queries(data, path, allowed_schemas, controls)
+    key, key_type, key_columns = _key(data, path, controls)
+    queries = _queries(data, path, allowed_schemas, controls, key, key_type)
     layout = _text(data, "layout", path, required=True)
     defined = _STATEMENT.findall(layout)
     if "root" not in defined:
@@ -204,7 +226,32 @@ def parse_board(text: str, path: Path, allowed_schemas: tuple[str, ...]) -> Boar
     return Board(
         name=path.stem, path=path, title=title, question=_text(data, "question", path, required=False),
         scope=_text(data, "scope", path, required=False), queries=queries, layout=layout, controls=controls,
+        key=key, key_type=key_type, key_columns=key_columns,
     )
+
+
+def _key(data: Mapping[str, Any], path: Path, controls: tuple[Control, ...]) -> tuple[str, str, tuple[str, ...]]:
+    """An Entity Board's `key`, `key_type` and `key_columns` (all three or none)."""
+    present = [k for k in KEY_KEYS if k in data]
+    if not present:
+        return "", "", ()
+    if len(present) != len(KEY_KEYS):
+        missing = ", ".join(k for k in KEY_KEYS if k not in data)
+        raise BoardError(f"{path}: key, key_type and key_columns go together; missing {missing}")
+    key, key_type, columns = data["key"], data["key_type"], data["key_columns"]
+    if not isinstance(key, str) or not QUERY_NAME.fullmatch(key) or RESULT_ID.fullmatch(key):
+        raise BoardError(f"{path}: key must match [a-z_][a-z0-9_]* and not look like a Result ID")
+    if any(c.name == key for c in controls):
+        raise BoardError(f"{path}: key {key} is also a Control name")
+    if key_type not in SQL_TYPES:
+        raise BoardError(f"{path}: key_type must be one of: {', '.join(SQL_TYPES)}")
+    if (not isinstance(columns, list) or not columns
+            or not all(isinstance(c, str) and QUERY_NAME.fullmatch(c) for c in columns)):
+        raise BoardError(f"{path}: key_columns must be a non-empty list of column names ([a-z_][a-z0-9_]*)")
+    for c in columns:
+        if columns.count(c) > 1:
+            raise BoardError(f"{path}: key_columns names {c} twice")
+    return key, key_type, tuple(columns)
 
 
 _YMD = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
@@ -344,7 +391,7 @@ def _range(c: Mapping[str, Any], where: str, allowed_schemas: tuple[str, ...], o
 
 
 def _queries(data: Mapping[str, Any], path: Path, allowed_schemas: tuple[str, ...],
-             controls: tuple[Control, ...] = ()) -> tuple[BoardQuery, ...]:
+             controls: tuple[Control, ...] = (), key: str = "", key_type: str = "") -> tuple[BoardQuery, ...]:
     raw = data.get("queries")
     if not isinstance(raw, list) or not raw:
         raise BoardError(f"{path}: [[queries]] must hold at least one query")
@@ -369,7 +416,7 @@ def _queries(data: Mapping[str, Any], path: Path, allowed_schemas: tuple[str, ..
         sql = q.get("sql")
         if not isinstance(sql, str) or not sql.strip():
             raise BoardError(f"{path}: queries.{name}.sql must be non-empty text")
-        casts = {c.name: c.cast for c in controls}
+        casts = {c.name: c.cast for c in controls} | ({key: SQL_TYPES[key_type]} if key else {})
         try:
             rewritten = rewrite(sql, casts)
         except DrillSqlError as e:
@@ -377,7 +424,7 @@ def _queries(data: Mapping[str, Any], path: Path, allowed_schemas: tuple[str, ..
         unknown = [n for n in rewritten.names if n not in casts]
         if unknown:
             raise BoardError(
-                f"{path}: queries.{name}.sql: placeholder :{unknown[0]} names no Control (keys are not supported yet)"
+                f"{path}: queries.{name}.sql: placeholder :{unknown[0]} names no Control or the key"
             )
         try:
             guard(rewritten.sql, allowed_schemas)
@@ -385,6 +432,8 @@ def _queries(data: Mapping[str, Any], path: Path, allowed_schemas: tuple[str, ..
             raise BoardError(f"{path}: queries.{name}.sql: {e}") from None
         out.append(BoardQuery(name=name, sql=normalise(sql), dollar=rewritten.sql if rewritten.names else "",
                               names=rewritten.names))
+    if key and not any(key in q.names for q in out):
+        raise BoardError(f"{path}: key {key}: no query uses :{key}")
     return tuple(out)
 
 
@@ -424,6 +473,8 @@ def startup_values(board: Board) -> dict[str, Any]:
             out[c.name] = c.default or None
         else:
             out[c.name] = c.default
+    if board.key:
+        out[board.key] = None  # the check fetches no rows: a NULL key is enough to plan
     return out
 
 
@@ -873,14 +924,52 @@ def _hashable(value: Any) -> Any:
     return tuple(value) if isinstance(value, list) else value
 
 
-def render_key(board: Board, bound: Mapping[str, Any] | None = None) -> tuple[Any, ...]:
-    """The cache key: `(board, key value, Control values)`; no key value until slice 3."""
+def render_key(board: Board, bound: Mapping[str, Any] | None = None, key: Any = None) -> tuple[Any, ...]:
+    """The cache key: `(board, key value, Control values)`."""
     bound = bound or {}
-    return (board.name, None, tuple(_hashable(bound.get(c.name)) for c in board.controls))
+    return (board.name, _hashable(key), tuple(_hashable(bound.get(c.name)) for c in board.controls))
 
 
 def default_key(board: Board) -> tuple[Any, ...]:
     return render_key(board, startup_values(board))
+
+
+class BoardSemaphore:
+    """The agent-wide Board query permits (`BOARD_QUERY_CONCURRENCY`). A low-priority permit (an
+    Entity Board prefetch, SPEC §18 slice 3) is granted only while no user render waits."""
+
+    def __init__(self, permits: int):
+        self.permits = permits
+        self.used = 0
+        self._waiting = 0  # user renders waiting for a permit
+        self._cond = asyncio.Condition()
+
+    async def acquire(self, *, low: bool = False) -> None:
+        async with self._cond:
+            if not low:
+                self._waiting += 1
+            try:
+                await self._cond.wait_for(lambda: self.used < self.permits and (not low or self._waiting == 0))
+            finally:
+                if not low:
+                    self._waiting -= 1
+                    # A low waiter may be blocked only by this one: let it look again, whether this
+                    # waiter got a permit or was cancelled.
+                    self._cond.notify_all()
+            self.used += 1
+
+    async def release(self) -> None:
+        async with self._cond:
+            self.used -= 1
+            self._cond.notify_all()
+
+    @contextlib.asynccontextmanager
+    async def permit(self, *, low: bool = False):
+        await self.acquire(low=low)
+        try:
+            yield
+        finally:
+            await asyncio.shield(self.release())
 
 
 class OptionsError(Exception):
@@ -894,7 +983,7 @@ class BoardRenderer:
                  ttl_s: float, max_cache: int, clock: Callable[[], float] = time.monotonic, max_options: int = 100):
         self.boards = dict(boards)
         self._runner = runner
-        self._semaphore = asyncio.Semaphore(concurrency)
+        self._semaphore = BoardSemaphore(concurrency)
         self._row_cap = row_cap
         self.max_options = max_options
         self.cache = BoardCache(ttl_s, max_cache, clock)
@@ -915,21 +1004,45 @@ class BoardRenderer:
         return asyncio.shield(task)
 
     async def outcomes(self, board: Board, bound: Mapping[str, Any] | None = None, *, fresh: bool = False,
-                       only: set[str] | None = None) -> dict[str, Outcome]:
-        """Each query's outcome at the Control values `bound` (the startup defaults when None).
-        `only`: just these queries (a re-query in place)."""
+                       only: set[str] | None = None, key: Any = None) -> dict[str, Outcome]:
+        """Each query's outcome at the Control values `bound` (the startup defaults when None)
+        and, for an Entity Board, the clicked row's `key` value. `only`: just these queries (a
+        re-query in place)."""
         bound = startup_values(board) if bound is None else dict(bound)
-        key = render_key(board, bound)
-        flight = (*key, None if only is None else tuple(sorted(only)))
-        return await self._shared(flight, lambda: self._render(board, key, bound, fresh=fresh, only=only))
+        if board.key:
+            bound[board.key] = key
+        cache_key = render_key(board, bound, key)
+        flight = (*cache_key, None if only is None else tuple(sorted(only)))
+        return await self._shared(flight, lambda: self._render(board, cache_key, bound, fresh=fresh, only=only))
 
-    async def options(self, board: Board, *, fresh: bool = False) -> dict[str, Options]:
+    async def prefetch(self, board: Board, key: Any, *, timeout_ms: int) -> None:
+        """An Entity Board at its default Controls, for a row not yet clicked (SPEC §18 slice 3):
+        its option queries, then its queries, one at a time on a low-priority permit, each with
+        `timeout_ms`. Successful queries fill the cache; a click renders the rest."""
+        options = await self.options(board, low=True, timeout_ms=timeout_ms)
+        bound = bound_values(board, options, default_state(board, options)) if board.controls else {}
+        bound[board.key] = key
+        cache_key = render_key(board, bound, key)
+        cached = self.cache.get(cache_key)
+        ran: dict[str, StoredResult] = {}
+        for q in board.queries:
+            if q.name in cached:
+                continue
+            outcome = await self._run(board, q, bound, low=True, timeout_ms=timeout_ms)
+            if isinstance(outcome, StoredResult):
+                ran[q.name] = outcome
+        if ran:
+            self.cache.put(cache_key, ran, dict(self.cache.get(cache_key)))
+
+    async def options(self, board: Board, *, fresh: bool = False, low: bool = False,
+                      timeout_ms: int | None = None) -> dict[str, Options]:
         """The Controls' options and ranges, cached with the render. `fresh`: run them again (the
-        background refresh), replacing a pinned entry. Raises OptionsError."""
+        background refresh), replacing a pinned entry. `low`: a prefetch's (its own flight, so a
+        user render never joins a slow run). Raises OptionsError."""
         if not board.controls:
             return {}
         key = (board.name, None, "options")
-        side = await self._shared((*key, fresh), lambda: self._side(board, key, fresh=fresh))
+        side = await self._shared((*key, fresh, low), lambda: self._side(board, key, fresh=fresh, low=low, timeout_ms=timeout_ms))
         return options_of(board, side, self.max_options)
 
     async def defaults(self, board: Board, *, fresh: bool = False) -> tuple[dict[str, Options], dict[str, Any], dict[str, Any]]:
@@ -947,12 +1060,16 @@ class BoardRenderer:
         if not task.cancelled() and task.exception() is not None:  # retrieved, if every caller left
             log.warning("board render failed: key=%s", key[0])
 
-    async def _side(self, board: Board, key: tuple[Any, ...], *, fresh: bool = False) -> dict[str, StoredResult]:
+    async def _side(self, board: Board, key: tuple[Any, ...], *, fresh: bool = False, low: bool = False,
+                    timeout_ms: int | None = None) -> dict[str, StoredResult]:
         cached = {} if fresh else self.cache.get(key)
         jobs = [(f"options.{c.name}", c.options_sql) for c in board.controls if c.options_sql]
         jobs += [(f"range.{c.name}", c.range_sql) for c in board.controls if c.range_sql]
         todo = [(n, sql) for n, sql in jobs if n not in cached]
-        ran = await asyncio.gather(*(self._run_sql(board, n, sql, sql, []) for n, sql in todo))
+        if low:  # a prefetch: one at a time
+            ran = [await self._run_sql(board, n, sql, sql, [], low=True, timeout_ms=timeout_ms) for n, sql in todo]
+        else:
+            ran = await asyncio.gather(*(self._run_sql(board, n, sql, sql, []) for n, sql in todo))
         failed = [n for (n, _), o in zip(todo, ran, strict=True) if isinstance(o, SqlFail)]
         if failed:
             raise OptionsError(failed[0])  # never cached
@@ -975,16 +1092,21 @@ class BoardRenderer:
             self.cache.put(key, ran_ok, dict(cached), pin=pin)
         return {q.name: out[q.name] for q in wanted}
 
-    async def _run(self, board: Board, q: BoardQuery, bound: Mapping[str, Any]) -> Outcome:
+    async def _run(self, board: Board, q: BoardQuery, bound: Mapping[str, Any], *, low: bool = False,
+                   timeout_ms: int | None = None) -> Outcome:
         values = [bound[n] for n in q.names]
         shown = display_sql(q.dollar, values) if q.names else q.sql
-        return await self._run_sql(board, q.name, q.runs, shown, values)
+        return await self._run_sql(board, q.name, q.runs, shown, values, low=low, timeout_ms=timeout_ms)
 
-    async def _run_sql(self, board: Board, name: str, sql: str, shown: str, values: list[Any]) -> Outcome:
-        async with self._semaphore:
+    async def _run_sql(self, board: Board, name: str, sql: str, shown: str, values: list[Any], *,
+                       low: bool = False, timeout_ms: int | None = None) -> Outcome:
+        async with self._semaphore.permit(low=low):
             start = time.perf_counter()
             wrapped = wrap(sql, BOARD_ALIAS, f" LIMIT {self._row_cap + 1}")
-            outcome = await (self._runner.run_bound(wrapped, values) if values else self._runner.run(wrapped))
+            if timeout_ms is not None:  # a prefetch: its own, shorter timeout
+                outcome = await self._runner.run_bound(wrapped, values, timeout_ms=timeout_ms)
+            else:
+                outcome = await (self._runner.run_bound(wrapped, values) if values else self._runner.run(wrapped))
             ms = round((time.perf_counter() - start) * 1000)
         # Logs name the Board and query only, never Control values (SPEC §18).
         if isinstance(outcome, SqlFail):
@@ -1046,6 +1168,11 @@ class BoardInstance:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     seq_seen: int = 0  # the highest `seq` that arrived (and passed validation)
     seq_applied: int = 0
+    key: Any = None  # an Entity Board's bound key value (slice 3)
+    title: str = ""  # the heading and tab title: "<title> · <row label>" for an Entity Board
+
+    def __post_init__(self) -> None:
+        self.title = self.title or self.board.title
 
     @property
     def at_defaults(self) -> bool:
@@ -1084,10 +1211,11 @@ def instance_results(outcomes: Mapping[str, Outcome], reserve: Callable[[], str]
     return results, failed
 
 
-def heading_components(board: Board) -> list[dict[str, Any]]:
-    """The title, then the optional question and scope lines. Written as they are: the client
-    renders h1–h5 and caption Text as plain text, so escaping would show backslashes."""
-    texts = [("board_title", board.title, "h2")]
+def heading_components(board: Board, title: str = "") -> list[dict[str, Any]]:
+    """The title (an Entity Board's with its row label), then the optional question and scope
+    lines. Written as they are: the client renders h1–h5 and caption Text as plain text, so
+    escaping would show backslashes."""
+    texts = [("board_title", title or board.title, "h2")]
     if board.question:
         texts.append(("board_question", board.question, "caption"))
     if board.scope:
@@ -1100,7 +1228,7 @@ def heading_components(board: Board) -> list[dict[str, Any]]:
 
 def build_board(board: Board, results: Mapping[str, StoredResult], failed: Mapping[str, str], pipeline: UiPipeline,
                 surface_id: str, ids: IdAllocator | None = None, options: Mapping[str, Options] | None = None,
-                state: Mapping[str, Any] | None = None) -> UiResult:
+                state: Mapping[str, Any] | None = None, *, title: str = "") -> UiResult:
     """The Board's Surface: heading, then the Controls Card, then the layout (renamed
     `board_layout`), in Board mode, and the Controls' data model. Panel IDs are the layout's own,
     stable across renders (SPEC §18)."""
@@ -1110,7 +1238,8 @@ def build_board(board: Board, results: Mapping[str, StoredResult], failed: Mappi
     state = state if state is not None else ({} if not board.controls else default_state(board, options))
     bound = bound_values(board, options, state) if board.controls else {}
     controls = {c.name: (c.cast, bound[c.name]) for c in board.controls}
-    ui = pipeline.build(board.express, _Named(results), surface_id, ids, board={"failed": dict(failed), "controls": controls})
+    board_args = {"failed": dict(failed), "controls": controls, "own_board": board.name}
+    ui = pipeline.build(board.express, _Named(results), surface_id, ids, board=board_args)
     top = ["board_heading", *(["board_controls"] if board.controls else []), "board_layout"]
     for message in ui.messages:
         update = message.get("updateComponents")
@@ -1121,7 +1250,7 @@ def build_board(board: Board, results: Mapping[str, StoredResult], failed: Mappi
                 comp["id"] = "board_layout"
         update["components"] = [
             {"id": "root", "component": "Column", "children": top},
-            *heading_components(board),
+            *heading_components(board, title),
             *(controls_components(board, options) if board.controls else []),
             *update["components"],
         ]

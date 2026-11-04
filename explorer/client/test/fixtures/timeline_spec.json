@@ -1,0 +1,171 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "layer": [
+    {
+      "data": {
+        "values": [
+          {
+            "_from": "2026-01-31",
+            "_to": "2026-07-31"
+          }
+        ]
+      },
+      "mark": {
+        "type": "rect",
+        "opacity": 0.12
+      },
+      "encoding": {
+        "x": {
+          "field": "_from",
+          "type": "temporal"
+        },
+        "x2": {
+          "field": "_to"
+        }
+      }
+    },
+    {
+      "data": {
+        "values": [
+          {
+            "_lane": "C2",
+            "_start": "2025-03-01",
+            "_end": "2026-06-30",
+            "_value": "$2.0M",
+            "_row": 0,
+            "_label": "C2"
+          },
+          {
+            "_lane": "C1",
+            "_start": "2024-01-01",
+            "_end": "2025-12-31",
+            "_value": "$1.0M",
+            "_row": 1,
+            "_label": "C1"
+          },
+          {
+            "_lane": "C3",
+            "_start": "2025-01-01",
+            "_end": "2027-01-01",
+            "_value": "$3.0M",
+            "_row": 2,
+            "_label": "C3"
+          }
+        ]
+      },
+      "mark": {
+        "type": "bar",
+        "cursor": "pointer"
+      },
+      "encoding": {
+        "y": {
+          "field": "_lane",
+          "type": "nominal",
+          "sort": [
+            "C2",
+            "C1",
+            "C3"
+          ],
+          "title": "Contract"
+        },
+        "x": {
+          "field": "_start",
+          "type": "temporal",
+          "title": null
+        },
+        "x2": {
+          "field": "_end"
+        },
+        "tooltip": [
+          {
+            "field": "_lane",
+            "type": "nominal",
+            "title": "Contract"
+          },
+          {
+            "field": "_start",
+            "type": "temporal",
+            "title": "Start"
+          },
+          {
+            "field": "_end",
+            "type": "temporal",
+            "title": "End"
+          },
+          {
+            "field": "_value",
+            "type": "nominal",
+            "title": "Value"
+          }
+        ]
+      }
+    },
+    {
+      "data": {
+        "values": [
+          {
+            "_lane": "C2",
+            "_end": "2026-06-30",
+            "_value": "$2.0M"
+          },
+          {
+            "_lane": "C1",
+            "_end": "2025-12-31",
+            "_value": "$1.0M"
+          },
+          {
+            "_lane": "C3",
+            "_end": "2027-01-01",
+            "_value": "$3.0M"
+          }
+        ]
+      },
+      "mark": {
+        "type": "text",
+        "align": "left",
+        "dx": 4
+      },
+      "encoding": {
+        "y": {
+          "field": "_lane",
+          "type": "nominal",
+          "sort": [
+            "C2",
+            "C1",
+            "C3"
+          ],
+          "title": "Contract"
+        },
+        "x": {
+          "field": "_end",
+          "type": "temporal"
+        },
+        "text": {
+          "field": "_value"
+        }
+      }
+    },
+    {
+      "data": {
+        "values": [
+          {
+            "_today": "2026-01-31"
+          }
+        ]
+      },
+      "mark": {
+        "type": "rule",
+        "strokeDash": [
+          4,
+          4
+        ]
+      },
+      "encoding": {
+        "x": {
+          "field": "_today",
+          "type": "temporal"
+        }
+      }
+    }
+  ]
+}

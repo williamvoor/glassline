@@ -15,8 +15,8 @@ def test_merged_catalog_has_basic_and_custom_components():
 def test_inference_catalog_exposes_only_macros_and_passthrough():
     inference = macro_expander().transform_to_inference_catalog(explorer_catalog())
     names = set(inference.to_json()["components"])
-    assert names == {"BarChart", "LineChart", "Treemap", "DataTable", "Metric", "Cite", "FollowUp"} | set(PASSTHROUGH_COMPONENTS)
-    assert len(MACROS) == 7
+    assert names == {"BarChart", "LineChart", "Treemap", "Timeline", "DataTable", "Metric", "Cite", "FollowUp"} | set(PASSTHROUGH_COMPONENTS)
+    assert len(MACROS) == 8
 
 
 def test_macro_schemas_keep_parameter_types_and_order():

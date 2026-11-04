@@ -48,6 +48,10 @@ class SourceSpec:
     title: str
     rows: tuple[int, ...]  # clickable row indices, in displayed order
     labels: dict[int, str]
+    # Entity Boards (SPEC §18 slice 3): the rows whose click opens `board`, keyed by `key_column`.
+    boards: tuple[int, ...] = ()
+    board: str = ""
+    key_column: str = ""
 
 
 @dataclass(frozen=True)
@@ -119,7 +123,7 @@ class Resolved:
     """A validated action."""
 
     name: str  # drill | ask
-    kind: str  # drill | row | drill_down | follow_up
+    kind: str  # drill | board | row | drill_down | follow_up
     level: Level  # where it was clicked
     source: ActionSource | None = None
     row: int | None = None
@@ -250,6 +254,8 @@ class ActionState:
         row = context["row"]
         if isinstance(row, bool) or not isinstance(row, int) or row not in src.spec.labels:
             raise ActionError("That row can't be explored.")
+        if name == "drill" and row in src.spec.boards:
+            return Resolved(name=name, kind="board", level=level, source=src, row=row)  # SPEC §18 slice 3
         if name == "drill":
             if src.drill is None:
                 raise ActionError("This view has no drill-down; ask the agent instead.")

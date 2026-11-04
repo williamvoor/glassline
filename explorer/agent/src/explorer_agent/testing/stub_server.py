@@ -66,7 +66,7 @@ _PIPELINE: UiPipeline | None = None
 def _pipeline() -> UiPipeline:
     global _PIPELINE
     if _PIPELINE is None:
-        _PIPELINE = UiPipeline(allowed_schemas=FIXTURE_SCHEMAS)
+        _PIPELINE = UiPipeline(allowed_schemas=FIXTURE_SCHEMAS, entity={"buyer": "buyer"}, key_types={"buyer": "text"})
     return _PIPELINE
 
 
@@ -148,6 +148,71 @@ STUB_BOARD_ROWS: dict[str, SqlOk] = {
 }
 
 
+# The buyer Entity Board (SPEC §18 slice 3): opened by any row with a `buyer` column (the
+# Explorer's treemap, the Drill-down rows). The fixture answer has no `buyer` column.
+STUB_ENTITY_SUMMARY = "SELECT count(*) AS contracts, sum(value) AS value FROM fixture.contracts WHERE buyer = :buyer"
+STUB_ENTITY_CONTRACTS = (
+    "SELECT contract, supplier, start_date, end_date, value FROM fixture.contracts WHERE buyer = :buyer "
+    "ORDER BY start_date"
+)
+STUB_ENTITY_SUPPLIERS = (
+    "SELECT supplier, count(*) AS contracts, sum(value) AS value FROM fixture.contracts WHERE buyer = :buyer "
+    "GROUP BY supplier ORDER BY value DESC"
+)
+
+
+def _keyed(name: str, sql: str) -> BoardQuery:
+    return BoardQuery(name, sql, rewrite(sql, {"buyer": "text"}).sql, ("buyer",))
+
+
+STUB_ENTITY = Board(
+    name="buyer",
+    path=Path("<stub>/boards/buyer.toml"),
+    title="Buyer",
+    question="What does this buyer buy, and from whom?",
+    scope="All of the buyer's fixture contracts, not only the clicked answer's.",
+    queries=(
+        _keyed("summary", STUB_ENTITY_SUMMARY),
+        _keyed("contracts", STUB_ENTITY_CONTRACTS),
+        _keyed("suppliers", STUB_ENTITY_SUPPLIERS),
+    ),
+    layout="""root = Column([metrics, timeline, suppliers])
+metrics = Row([total, count])
+total = Metric("summary", "value", "Total value", 0, "currency_compact")
+count = Metric("summary", "contracts", "Contracts", 0, "int")
+timeline = Timeline("contracts", "Contracts over time", "contract", "start_date", "end_date", value="value", format="currency_compact", horizon_months=6)
+suppliers = DataTable("suppliers", "Suppliers", "supplier,contracts,value", "value:currency_compact", bars="value")""",
+    key="buyer",
+    key_type="text",
+    key_columns=("buyer",),
+)
+
+
+def stub_entity_rows(buyer: str) -> dict[str, SqlOk]:
+    """Canned rows for one buyer: a fifth of the money per letter from A, as on the Explorer."""
+    share = (len(STUB_BUYERS) - STUB_BUYERS.index(buyer)) / 15 if buyer in STUB_BUYERS else 0.05
+    contracts = [
+        {"contract": f"{buyer} · CN{n}", "supplier": f"Supplier {s}", "start_date": start, "end_date": end,
+         "value": round(v * share, 2)}
+        for n, (s, start, end, v) in enumerate([
+            ("A", "2023-07-01", "2026-06-30", 1.2e9), ("B", "2024-01-15", "2025-12-31", 4.0e8),
+            ("A", "2025-03-01", "2027-02-28", 9.0e8), ("C", "2025-09-01", "2026-03-31", 6.0e7),
+        ], start=1)
+    ]
+    total = sum(c["value"] for c in contracts)
+    by_supplier: dict[str, list[float]] = {}
+    for c in contracts:
+        by_supplier.setdefault(c["supplier"], []).append(c["value"])
+    return {
+        "summary": SqlOk(["contracts", "value"], ["bigint", "numeric"], [{"contracts": len(contracts), "value": total}], False, 1),
+        "contracts": SqlOk(["contract", "supplier", "start_date", "end_date", "value"], ["text", "text", "date", "date", "numeric"],
+                           contracts, False, 1),
+        "suppliers": SqlOk(["supplier", "contracts", "value"], ["text", "bigint", "numeric"], sorted(
+            ({"supplier": k, "contracts": len(v), "value": sum(v)} for k, v in by_supplier.items()),
+            key=lambda r: -r["value"]), False, 1),
+    }
+
+
 class StubBoardRunner:
     """Canned rows for the stub Explorer Board's queries, found by their SQL. With a buyer
     chosen, the trend is that buyer's share (a fifth per letter from A), so a change shows."""
@@ -161,6 +226,9 @@ class StubBoardRunner:
         raise ValueError("not a stub Board query")
 
     async def run_bound(self, sql: str, params: list, *, timeout_ms: int | None = None) -> SqlOk:
+        for q in STUB_ENTITY.queries:
+            if q.runs in sql:
+                return stub_entity_rows(str(params[0]))[q.name]
         rows = await self.run(sql)
         buyer = params[0] if params else None
         if buyer is None or buyer not in STUB_BUYERS:
@@ -170,7 +238,8 @@ class StubBoardRunner:
 
 
 def stub_boards() -> BoardViews:
-    renderer = BoardRenderer({"explorer": STUB_BOARD}, StubBoardRunner(), concurrency=2, row_cap=500, ttl_s=300, max_cache=20)
+    boards = {"explorer": STUB_BOARD, "buyer": STUB_ENTITY}
+    renderer = BoardRenderer(boards, StubBoardRunner(), concurrency=2, row_cap=500, ttl_s=300, max_cache=20)
     return BoardViews(renderer, _pipeline())
 
 

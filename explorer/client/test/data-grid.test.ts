@@ -109,3 +109,31 @@ describe('DataGrid', () => {
     expect(el.querySelector('tbody tr td:first-child .share-bar')).toBeNull(); // the Name column has none
   });
 });
+
+describe('DataGrid Entity Board rows (SPEC §18 slice 3)', () => {
+  it('makes a row that opens a Board instant and dispatches drill for it, ask for the others', async () => {
+    const processor = createProcessor();
+    const actions: Record<string, unknown>[] = [];
+    processor.model.onAction.subscribe(a => void actions.push(a as unknown as Record<string, unknown>));
+    processor.processMessages([
+      {version: 'v0.9', createSurface: {surfaceId: 's', catalogId: EXPLORER_CATALOG_ID}},
+      {version: 'v0.9', updateComponents: {surfaceId: 's', components: [{
+        id: 'root', component: 'DataGrid', columns: [{key: 'a', label: 'A'}], rows: [['x'], ['y']],
+        action: {source: 'v1', rows: [0, 1], drillable: false, boards: [0]},
+      }]}},
+    ] as unknown as A2uiMessage[]);
+    const el = document.createElement('a2ui-surface') as HTMLElement & {surface: unknown};
+    el.surface = processor.model.surfacesMap.get('s');
+    document.body.replaceChildren(el);
+    for (let i = 0; i < 10; i++) await new Promise(r => setTimeout(r, 10));
+    expect(el.querySelector('.visual-hint')!.textContent).toBe(DRILL_HINT_ROW);
+    const [first, second] = [...el.querySelectorAll('tbody tr')] as HTMLElement[];
+    expect(first!.className).toContain('drillable');
+    expect(first!.querySelector('.ask-tag')).toBeNull();
+    expect(second!.querySelector('.ask-tag')).not.toBeNull();
+    first!.click();
+    second!.click();
+    await new Promise(r => setTimeout(r, 0));
+    expect(actions.map(a => [a['name'], (a['context'] as {row: number}).row])).toEqual([['drill', 0], ['ask', 1]]);
+  });
+});

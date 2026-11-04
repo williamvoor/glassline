@@ -9,6 +9,7 @@ executor only sends it. A Drill-down runs its Drill query here, with no model ca
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import secrets
 from collections import OrderedDict
@@ -28,6 +29,7 @@ from a2ui.constants import A2UI_CLIENT_CAPABILITIES_KEY
 from explorer_agent.actions import (
     MAX_ACTION_SOURCES,
     MAX_PENDING_PAIRS,
+    TOO_OLD,
     ActionError,
     ActionSource,
     ActionState,
@@ -40,6 +42,7 @@ from explorer_agent.actions import (
     row_pair,
 )
 from explorer_agent.boards import (
+    EXPLORER,
     BoardInstance,
     BoardRenderer,
     ControlError,
@@ -58,6 +61,7 @@ from explorer_agent.boards import (
 )
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.drill import Prefetcher, display_sql
+from explorer_agent.macros import key_value
 from explorer_agent.results import ResultStore, ResultView, StoredResult
 from explorer_agent.sql import SqlFail
 from explorer_agent.ui import UiError, UiPipeline, UiResult
@@ -93,6 +97,9 @@ NO_BOARDS = "This dataset has no Boards."
 BOARD_OPEN = "The Explorer is already open in this conversation."
 UNKNOWN_BOARD = "Unknown board."
 BOARD_BUILD_FAILED = "The Explorer couldn't be shown. You can still ask a question."
+ENTITY_FAILED = "The Board couldn't be shown. You can retry, or ask the agent instead."
+KEYED_BOARD = "This Board opens from a row."
+MAX_BOARD_INSTANCES = 10
 
 
 @dataclass
@@ -115,6 +122,9 @@ class Conversation:
     actions: ActionState = field(init=False, repr=False)
     boards: OrderedDict[str, BoardInstance] = field(default_factory=OrderedDict)  # by instance ID b<n>
     board_opened: bool = False  # open_board is allowed once per Conversation (SPEC §18)
+    max_board_instances: int = MAX_BOARD_INSTANCES
+    board_counter: int = 0  # Board instance IDs b<n>, never reused (slice 3)
+    dropped_boards: set[str] = field(default_factory=set)  # beyond max_board_instances: "too old"
     pinned: dict[str, StoredResult] = field(default_factory=dict)  # the Board pair's Results, for its model run
     board_rows_to_model: int = 5
     board_pair_max_chars: int = 6000
@@ -169,12 +179,13 @@ class Conversations:
 
     def __init__(self, max_conversations: int = MAX_CONVERSATIONS, *, max_action_sources: int = MAX_ACTION_SOURCES,
                  max_pending_pairs: int = MAX_PENDING_PAIRS, board_rows_to_model: int = 5,
-                 board_pair_max_chars: int = 6000) -> None:
+                 board_pair_max_chars: int = 6000, max_board_instances: int = MAX_BOARD_INSTANCES) -> None:
         self._max = max_conversations
         self._by_id: OrderedDict[str, Conversation] = OrderedDict()
         self.id_generator = _IssuedIds()
         self._limits = {"max_action_sources": max_action_sources, "max_pending_pairs": max_pending_pairs,
-                        "board_rows_to_model": board_rows_to_model, "board_pair_max_chars": board_pair_max_chars}
+                        "board_rows_to_model": board_rows_to_model, "board_pair_max_chars": board_pair_max_chars,
+                        "max_board_instances": max_board_instances}
         self.on_evict: Callable[[str], None] | None = None
 
     def get_or_create(self, context_id: str) -> Conversation:
@@ -224,6 +235,7 @@ class BoardViews:
 
     renderer: BoardRenderer
     pipeline: UiPipeline
+    prefetch_rows: int = 1  # BOARD_PREFETCH_ROWS: Entity Boards prefetched per clickable Visual
 
 
 def client_supports_catalog(metadata: dict[str, Any] | None) -> bool:
@@ -330,7 +342,9 @@ class ExplorerExecutor(AgentExecutor):
                 log.info("action rejected: %s", e)
                 await fail(str(e))
                 return
-            if resolved.name == "drill":
+            if resolved.kind == "board":
+                await self._open_entity(conv, resolved, send, fail)
+            elif resolved.name == "drill":
                 await self._drill(conv, resolved, send, fail)
             else:
                 await self._ask(conv, resolved, viewing, status, send, text_message, updater)
@@ -383,14 +397,14 @@ class ExplorerExecutor(AgentExecutor):
         or Controls off their defaults. Waits for a re-query in flight, so the pair describes a
         completed render, and pins its Results until the run ends (SPEC §18)."""
         board = conv.board_of_tab(viewing)
-        if board is None or not board.board.controls:
+        if board is None or not (board.board.key or board.board.controls):
             return
         async with board.lock:
-            if board.at_defaults:
+            if not board.board.key and board.at_defaults:
                 return
             results = [board.results[q.name] for q in board.board.queries if q.name in board.results]
             conv.actions.board_pair = board_pair(
-                f"synthetic-board-{level.turn}-{level.level}", viewing, board.board.title,
+                f"synthetic-board-{level.turn}-{level.level}", viewing, board.title,
                 shown_values(board.board, board.options, board.state), results,
                 conv.board_rows_to_model, conv.board_pair_max_chars,
             )
@@ -483,6 +497,9 @@ class ExplorerExecutor(AgentExecutor):
         if board is None:
             await fail(UNKNOWN_BOARD)
             return
+        if board.key:
+            await fail(KEYED_BOARD)
+            return
         if conv.board_opened:
             await fail(BOARD_OPEN)
             return
@@ -513,18 +530,77 @@ class ExplorerExecutor(AgentExecutor):
             conv.board_opened = False
             await fail(BOARD_BUILD_FAILED)
             return
-        instance_id = f"b{len(conv.boards) + 1}"
+        instance = self._add_instance(conv, board, level, ui, results, failed, options, state)
+        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False, board=instance)
+        self._start_prefetch(conv, list(instance.sources.values()))
+
+    def _add_instance(self, conv: Conversation, board, level: Level, ui: UiResult, results, failed, options, state, *,
+                      key: Any = None, title: str = "") -> BoardInstance:
+        """A new Board instance under the next `b<n>`; beyond `max_board_instances` the oldest
+        one other than the Explorer is dropped, and its clicks and Controls answer "too old"."""
+        assert self._boards is not None
+        conv.board_counter += 1
+        instance_id = f"b{conv.board_counter}"
         sources = conv.actions.board_sources(level, ui.sources, ui.drills)
         instance = BoardInstance(
             instance_id, board, level.surface_id, results, sources, level=level, failed=dict(failed),
             options=options, state=state, defaults=dict(state),
             deps=panel_dependencies(board, layout_components(board, self._boards.pipeline)),
-            panel_sources=panel_sources(ui.messages),
+            panel_sources=panel_sources(ui.messages), key=key, title=title,
         )
         conv.boards[instance_id] = instance
+        while len(conv.boards) > conv.max_board_instances:
+            victim = next((i for i, b in conv.boards.items() if b.board.name != EXPLORER), None)
+            if victim is None or victim == instance_id:
+                break
+            del conv.boards[victim]
+            conv.dropped_boards.add(victim)
+            log.info("board instance dropped: instance=%s", victim)
         log.info("board opened: board=%s instance=%s failed=%d", board.name, instance_id, len(failed))
-        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False, board=instance)
-        self._start_prefetch(conv, list(sources.values()))
+        return instance
+
+    async def _open_entity(self, conv: Conversation, resolved: Resolved, send, fail) -> None:
+        """A row click that opens an Entity Board (SPEC §18 slice 3), with no model call: a new
+        Level in the clicked tab's Turn, rendered at the default Controls with the key bound."""
+        src = resolved.source
+        assert src is not None and resolved.row is not None
+        board = self._boards.renderer.boards.get(src.spec.board) if self._boards is not None else None
+        if board is None or self._boards is None:
+            await fail(UNKNOWN_BOARD)
+            return
+        if conv.busy:
+            await fail(BUSY_ERROR)
+            return
+        async with conv.lock:
+            row = resolved.row
+            key = key_value(src.spec.result.rows[row][src.spec.key_column], board.key_type)
+            prefetcher = self._drills.prefetcher if self._drills is not None else None
+            if prefetcher is not None:
+                await prefetcher.take(conv.id, src.id, row)  # a running render is waited for: it fills the cache
+            renderer = self._boards.renderer
+            try:
+                options, state, bound = await renderer.defaults(board)
+                outcomes = await renderer.outcomes(board, bound, key=key)
+            except OptionsError as e:
+                log.warning("board options failed: board=%s query=%s", board.name, e)
+                await fail(ENTITY_FAILED)
+                return
+            label = src.spec.labels[row]
+            title = f"{board.title} · {label}"  # plain text everywhere: shown as written (issue 9)
+            level = conv.actions.new_level(resolved.level.turn, label)
+            results, failed = instance_results(outcomes, conv.store.reserve_id)
+            try:
+                ui = build_board(board, results, failed, self._boards.pipeline, level.surface_id, conv.actions.ids,
+                                 options, state, title=title)
+            except UiError:
+                log.error("board build failed: board=%s", board.name)
+                conv.actions.surfaces.pop(level.surface_id, None)
+                conv.actions.levels[level.turn] = level.level - 1
+                await fail(ENTITY_FAILED)
+                return
+            instance = self._add_instance(conv, board, level, ui, results, failed, options, state, key=key, title=title)
+        await send(level, ui, Tab("board", title, f"Opened {title}"), model_run=False, board=instance)
+        self._start_prefetch(conv, list(instance.sources.values()))
 
     async def _controls(self, conv: Conversation, action: dict[str, Any], reply, fail) -> None:
         """A Control change: re-query the Board instance in place (SPEC §18 slice 2). Logs name
@@ -534,6 +610,9 @@ class ExplorerExecutor(AgentExecutor):
             await fail("The action is malformed.")
             return
         seq = context["seq"]
+        if context["board"] in conv.dropped_boards:
+            await fail(TOO_OLD)
+            return
         instance = conv.boards.get(context["board"])
         if instance is None or self._boards is None:
             await fail(UNKNOWN_BOARD)
@@ -564,14 +643,14 @@ class ExplorerExecutor(AgentExecutor):
             changed = {n for n in state if state[n] != instance.state[n]}
             queries, panels = changed_panels(board, instance.deps, changed)
             bound = bound_values(board, instance.options, state)
-            outcomes = await self._boards.renderer.outcomes(board, bound, only=queries) if queries else {}
+            outcomes = await self._boards.renderer.outcomes(board, bound, only=queries, key=instance.key) if queries else {}
             new_results, new_failed = instance_results(outcomes, conv.store.reserve_id)
             results = {**{n: r for n, r in instance.results.items() if n not in queries}, **new_results}
             failed = {**{n: f for n, f in instance.failed.items() if n not in queries}, **new_failed}
             assert instance.level is not None
             try:
                 ui = build_board(board, results, failed, self._boards.pipeline, instance.surface_id, conv.actions.ids,
-                                 instance.options, state)
+                                 instance.options, state, title=instance.title)
             except UiError:
                 log.error("board rebuild failed: board=%s seq=%d", instance.id, seq)
                 await fail(BOARD_UPDATE_FAILED)
@@ -615,10 +694,22 @@ class ExplorerExecutor(AgentExecutor):
             return  # never while a model run of the Conversation runs or waits
         jobs = [
             (src.drill, row, src.drill.values(src.spec.result.rows[row]))
-            for src in sources if src.drill is not None
+            for src in sources if src.drill is not None and not src.spec.boards  # an Entity Board wins
             for row in src.spec.rows[: prefetcher.rows]
         ]
-        prefetcher.start(conv.id, jobs)
+        boards: list[tuple[str, int, Any]] = []
+        if self._boards is not None and self._boards.prefetch_rows > 0:
+            renderer = self._boards.renderer
+            for src in sources:
+                board = renderer.boards.get(src.spec.board) if src.spec.boards else None
+                if board is None:
+                    continue
+                for row in src.spec.rows[: self._boards.prefetch_rows]:
+                    if row in src.spec.boards:
+                        key = key_value(src.spec.result.rows[row][src.spec.key_column], board.key_type)
+                        run = functools.partial(renderer.prefetch, board, key, timeout_ms=prefetcher.timeout_ms)
+                        boards.append((src.id, row, run))
+        prefetcher.start(conv.id, jobs, boards)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         raise NotImplementedError("cancel is not supported")

@@ -27,6 +27,7 @@ import {
   DRILL_HINT_CHART,
   clickable,
   dispatchRow,
+  instant,
   type ActionProp,
 } from '../../actions.js';
 
@@ -638,7 +639,7 @@ export class A2uiVegaChartElement extends A2uiLitElement<
     const effectiveHeight = this.resolvedHeight;
     const action = this.resolvedAction;
     return html`
-      ${action ? html`<p class="visual-hint">${action.drillable ? DRILL_HINT_CHART : ASK_HINT_CHART}</p>` : nothing}
+      ${action ? html`<p class="visual-hint">${instant(action) ? DRILL_HINT_CHART : ASK_HINT_CHART}</p>` : nothing}
       <div
         id="chart-container"
         class="vega-chart-container"

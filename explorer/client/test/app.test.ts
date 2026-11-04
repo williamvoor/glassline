@@ -509,3 +509,62 @@ function deepQuery(root: Element | ShadowRoot, sel: string): Element | null {
 
 /** The element is the active element of its own root (document or shadow root). */
 const isFocused = (el: Element) => (el.getRootNode() as Document | ShadowRoot).activeElement === el;
+
+// --- Entity Boards (SPEC §18 slice 3) -------------------------------------------------------------------
+
+const ENTITY_SID = 'turn-0-2-abc';
+
+const entityReply = (): AskEvent => ({
+  kind: 'final', contextId: 'ctx-board', prose: '',
+  a2ui: [
+    {version: 'v0.9', createSurface: {surfaceId: ENTITY_SID, catalogId: EXPLORER_CATALOG_ID}},
+    {version: 'v0.9', updateComponents: {surfaceId: ENTITY_SID, components: [
+      {id: 'root', component: 'Column', children: ['board_heading', 'board_controls', 'board_layout']},
+      {id: 'board_heading', component: 'Text', text: 'Buyer · Dept A', variant: 'h2'},
+      {id: 'board_controls', component: 'Text', text: 'controls'},
+      {id: 'board_layout', component: 'Column', children: ['total']},
+      {id: 'total', component: 'Text', text: 'Total 5'},
+    ]}},
+    {version: 'v0.9', updateDataModel: {surfaceId: ENTITY_SID, path: '/controls', value: {big: false}}},
+  ],
+  metadata: {
+    [LEVEL_KEY]: {turn: 0, level: 2, label: 'Dept A', surfaceId: ENTITY_SID},
+    [TAB_KEY]: {id: 't2', kind: 'board', title: 'Buyer · Dept A'},
+    [LOG_KEY]: {kind: 'board', tag: 'NEW TAB · NO MODEL', text: 'Opened Buyer · Dept A'},
+    [BOARD_KEY]: {id: 'b2', controls: [{name: 'big', kind: 'toggle'}]},
+  },
+});
+
+describe('explorer-app Entity Boards', () => {
+  it('turns a row click\'s running tab into the Board\'s tab and attaches its Controls', async () => {
+    const sent: {name: string; context: unknown; surfaceId: string}[] = [];
+    const base = controlsAgent(seq => ({reply: {kind: 'final', contextId: 'ctx-board', prose: '', a2ui: [],
+      metadata: {[IN_PLACE_KEY]: {board: 'b2', seq}, [LOG_KEY]: {kind: 'controls', tag: 'IN PLACE · NO MODEL', text: 'Large only set to on'}}}}));
+    const connector = async () => {
+      const c = await base.connector();
+      return {...c, async *act(action: UiAction, contextId?: string, viewing?: string) {
+        sent.push({name: action.name, context: action.context, surfaceId: action.surfaceId});
+        if (action.name === 'drill') {
+          yield entityReply();
+          return;
+        }
+        yield* c.act(action, contextId, viewing);
+      }};
+    };
+    const app = await mount(connector);
+    const surface = (app as unknown as {processor: MessageProcessor<ComponentApi>}).processor.model.surfacesMap.get(BOARD_SID)!;
+    await surface.dispatchAction({event: {name: 'drill', context: {source: 'v1', row: 0}, userMessage: 'Dept A'}}, 'by_buyer');
+    await settle(app);
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer', 'Buyer · Dept A']);
+    expect(logTexts(app)).toEqual(['Opened Explorer', 'Opened Buyer · Dept A']);
+    expect(q(app, '.canvas .ask-instead')).toBeNull();
+    expect(surfaceText(app)).toContain('Total 5');
+    expect(texts(app, '.canvas .examples button')).toEqual([]); // examples belong to the Explorer only
+
+    const entityModel = (app as unknown as {processor: MessageProcessor<ComponentApi>}).processor.model.surfacesMap.get(ENTITY_SID)!.dataModel;
+    entityModel.set('/controls/big', true);
+    await settle(app);
+    expect(base.sent).toEqual([{seq: 1, values: {big: true}, surfaceId: ENTITY_SID, contextId: 'ctx-board'}]);
+    expect(logTexts(app)).toEqual(['Opened Explorer', 'Opened Buyer · Dept A', 'Large only set to on']);
+  });
+});

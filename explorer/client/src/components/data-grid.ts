@@ -12,6 +12,8 @@ import {
   DRILL_HINT_ROW,
   clickable,
   dispatchRow,
+  instant,
+  instantRow,
   type ActionProp,
 } from '../actions.js';
 
@@ -73,11 +75,13 @@ export class ExplorerDataGrid extends A2uiLitElement<typeof DataGridApi> {
     const rows = props.rows ?? [];
     const action = props.action;
     const align = (c: Column) => (c.align === 'end' ? 'text-align:right' : 'text-align:left');
-    const rowClass = action ? (action.drillable ? 'clickable drillable' : 'clickable askable') : '';
-    const askTag = action && !action.drillable ? html`<span class="ask-tag" aria-hidden="true">Ask</span>` : nothing;
+    // Per row (SPEC §18 slice 3): a row that opens an Entity Board is instant even when the rest ask.
+    const rowClass = (index: number) => (instantRow(action!, index) ? 'clickable drillable' : 'clickable askable');
+    const askTag = (index: number) =>
+      instantRow(action!, index) ? nothing : html`<span class="ask-tag" aria-hidden="true">Ask</span>`;
     const last = columns.length - 1;
     return html`${action
-        ? html`<p class="visual-hint">${action.drillable ? DRILL_HINT_ROW : ASK_HINT_ROW}</p>`
+        ? html`<p class="visual-hint">${instant(action) ? DRILL_HINT_ROW : ASK_HINT_ROW}</p>`
         : nothing}<table class="data-grid">
       ${props.caption ? html`<caption>${props.caption}</caption>` : nothing}
       <thead>
@@ -89,7 +93,7 @@ export class ExplorerDataGrid extends A2uiLitElement<typeof DataGridApi> {
         ${rows.map((row, index) =>
           clickable(action, index)
             ? html`<tr
-                class=${rowClass}
+                class=${rowClass(index)}
                 tabindex="0"
                 @click=${() => this.activate(action!, index, row)}
                 @keydown=${(e: KeyboardEvent) => {
@@ -99,7 +103,7 @@ export class ExplorerDataGrid extends A2uiLitElement<typeof DataGridApi> {
                   }
                 }}
               >
-                ${columns.map((c, i) => html`<td style=${align(c)}>${cell(row[i] ?? '', c, index)}${i === last ? askTag : nothing}</td>`)}
+                ${columns.map((c, i) => html`<td style=${align(c)}>${cell(row[i] ?? '', c, index)}${i === last ? askTag(index) : nothing}</td>`)}
               </tr>`
             : html`<tr>
                 ${columns.map((c, i) => html`<td style=${align(c)}>${cell(row[i] ?? '', c, index)}</td>`)}

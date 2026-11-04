@@ -4,8 +4,12 @@
 // label rides along as the client-only `userMessage`, for the confirmation; the app strips it.
 import {z} from 'zod';
 
+// `boards` (SPEC §18 slice 3): rows whose click opens an Entity Board; they dispatch `drill` too.
 export const ActionPropSchema = z
-  .object({source: z.string(), rows: z.array(z.number().int()), drillable: z.boolean()})
+  .object({
+    source: z.string(), rows: z.array(z.number().int()), drillable: z.boolean(),
+    boards: z.array(z.number().int()).optional(),
+  })
   .strict();
 
 export type ActionProp = z.infer<typeof ActionPropSchema>;
@@ -19,10 +23,20 @@ export function clickable(action: ActionProp | undefined, row: unknown): row is 
   return !!action && typeof row === 'number' && action.rows.includes(row);
 }
 
+/** True when a click on `row` needs no model: a Drill-down, or an Entity Board. */
+export function instantRow(action: ActionProp, row: number): boolean {
+  return action.drillable || !!action.boards?.includes(row);
+}
+
+/** True when any clickable row needs no model, for the hint line above the Visual. */
+export function instant(action: ActionProp): boolean {
+  return action.drillable || !!action.boards?.length;
+}
+
 export function dispatchRow(context: ActionContext, action: ActionProp, row: number, label: string) {
   // web_core copies `userMessage` from the event (not the payload) into the dispatched action.
   return context.dispatchAction({
-    event: {name: action.drillable ? 'drill' : 'ask', context: {source: action.source, row}, userMessage: label},
+    event: {name: instantRow(action, row) ? 'drill' : 'ask', context: {source: action.source, row}, userMessage: label},
   });
 }
 

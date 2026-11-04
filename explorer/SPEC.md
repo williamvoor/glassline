@@ -1702,6 +1702,124 @@ no new ADR.
   - `tabs.test.ts`: merging in-place entries.
   - `app.test.ts`: in-place, superseded and busy replies.
 
+**Slice 3 scope (fixed 2026-11-04, before building).** Its decisions fall under ADR 0028, so no
+new ADR. The user settled three gaps (2026-11-04), recorded under "Decisions" below.
+- **In, Board files:**
+  - `key`, `key_type` and `key_columns` load. All three or none. `key` follows the Control name
+    rule and doesn't equal a Control name. `key_type` is one of `text`, `int`, `float`, `date`,
+    `bool`. `key_columns` is a non-empty list of distinct column names (`[a-z_][a-z0-9_]*`).
+  - The key is a typed placeholder of the Board's queries, cast like a Control (`int` as
+    `bigint`). At least one query must use it, or it's a startup error. It isn't bound in a
+    Board's `drill_sql`. There, `:<key>` is a row placeholder like any other, so the key may also
+    be an output column (an Entity Board's tables usually show it).
+  - `explorer.toml` can't have a key. Two Boards' `key_columns` can't overlap. Both are load
+    errors naming the file and key.
+  - The startup check's `LIMIT 0` runs bind the key to NULL, beside the Controls' runs.
+  - `open_board` is rejected for a keyed Board ("This Board opens from a row.").
+- **In, Macros** (`MacroContext.entity`, column → Board name, and `MacroContext.own_board`):
+  - The **key column** of a clickable Visual is the first column, in Result column order, that
+    is in some Board's `key_columns`, skipping the Board being built (no self-link).
+  - Its **Board rows** are the clickable rows whose key value fits `key_type`: a `str` for
+    `text`, a whole number for `int`, a number for `float`, an ISO date string for `date`, a
+    `bool` for `bool`. NULL or unfitting values fall back.
+  - With at least one Board row, the action gains `boards: [int]`, and the source records the
+    Board and the key column.
+    - In answers, `drill_sql` and its arguments are then ignored, without a check and without
+      counting toward `MAX_DRILLS_PER_SURFACE`. The other rows fall back to an Ask.
+    - In Board mode, the `drill_sql` is checked as before (the startup check covers it) and
+      serves the other rows only.
+    - With no Board row, the Visual behaves as before.
+  - `action.boards` is left out when empty, so existing fixtures don't change.
+- **In, `Timeline`** as in "New Visual Macros", plus:
+  - Colour groups fold by row count (most rows first, ties by label).
+  - The confirmation label is the lane, with " · <start>" added when the lane repeats.
+  - The bar cut is reported as "Showing 30 of N bars".
+  - With no drawable bar, it's a macro error in answers and "No rows" in Board mode.
+  - `start` and `end` must be date or timestamp columns, checked in answers and by
+    `check_columns`.
+  - Today comes from `MacroContext.today` (a callable, `date.today` by default), so tests fix it.
+- **In, server:**
+  - **Routing.** A `drill` action on a row in the source's `boards` resolves to kind `board` and
+    opens the Entity Board. It is rejected while a model run is busy, like a Drill-down, and runs
+    under the Conversation lock.
+  - **Opening.**
+    - It takes the prefetch (`Prefetcher.take`): a held render is used, a running one is waited
+      for, a queued one is cancelled. Then the Board renders at its default Controls with the
+      key bound, through the cache, and gets an instance.
+    - The new Level is in the clicked tab's Turn.
+    - Its tab is `kind: "board"`, titled "<title> · <row label>", with log text "Opened <title> ·
+      <row label>" and the tag "NEW TAB · NO MODEL". The heading shows the same title.
+    - A failed option query or Surface build fails the action ("The Board couldn't be shown. You
+      can retry, or ask the agent instead."), and takes back its Level.
+  - **Instances.**
+    - IDs come from a per-Conversation counter, `b<n>`, never reused.
+    - Beyond `MAX_BOARD_INSTANCES`, the oldest instance other than the Explorer is dropped.
+    - Clicks on a dropped instance's Visuals and its `controls` actions answer `TOO_OLD`.
+  - **Controls on an Entity Board** re-query with the key still bound (the cache key includes it).
+  - **The Board pair** is queued for a viewed Entity Board even at its defaults, or with no
+    Controls. Its `board` field is the title with the row label.
+  - **Prefetch** (`BOARD_PREFETCH_ROWS`, default 1):
+    - For a clickable Visual with Board rows, the Board of each of its first
+      `BOARD_PREFETCH_ROWS` clickable rows that is a Board row is prefetched. Its Drill query is
+      never prefetched.
+    - A Board prefetch is one job of the existing `Prefetcher` (its semaphore, its
+      `MAX_PREFETCHED` count, and `take`).
+    - The job renders the Board's options and queries one at a time, each with
+      `DRILL_PREFETCH_TIMEOUT_MS`, on a low-priority permit of the Board semaphore, which is
+      granted only while no user render waits. Successful queries fill the cache, as any render
+      does.
+- **In, prompt:** the Dataset context gains a `### Boards` section between Glossary and Schema,
+  only when the Dataset has Entity Boards. It has one line per Entity Board, in file name order:
+  "Rows with a `supplier_abn` or `abn` column open the Supplier Board." `instructions.md`'s
+  Clicks section says such Visuals need no `drill_sql`. The P6 cap is 3,200, and the test is
+  raised to match.
+- **In, harness:** `effort_check.surface_summary` counts a Visual with `boards` rows as
+  drillable.
+- **In, catalog and client:**
+  - `action.boards?: number[]` on `VegaChart` and `DataGrid`, in the agent catalog JSON and the
+    client's `ActionPropSchema` together (ADR 0002).
+  - A row in `boards` dispatches `drill`. Its hint is the Drill-down hint, not "Ask".
+  - The reply's `explorerTab.kind` is `board`, so the running tab, opened as a Drill-down, takes
+    the Board's kind, and its Controls are attached from `explorerBoard`.
+  - VegaChart sets no `mark.cursor` on a `layer` spec, because the Macro sets it on the bar
+    layer.
+- **Stub:**
+  - A `buyer` Entity Board, keyed `buyer` (`text`), with `key_columns = ["buyer"]`. It has a
+    summary Metric, a Timeline of the buyer's contracts, and a table of its suppliers.
+  - The Explorer's buyer Treemap and the Drill-down rows (which have a `buyer` column) open it.
+  - The fixture answer has no `buyer` column, so its Drill-down tests are unchanged.
+- **Deferred:**
+  - The Control and Entity Board templates for `bootstrap/templates/` move to slice 4 (the user,
+    2026-11-04).
+  - B-M and Board scenarios stay in slice 4.
+- **Criteria covered:**
+  - In full: B9, B11, B15 and B17.
+  - In part:
+    - B1 (key errors and `key_columns` overlap);
+    - B4 (the key in the cache key);
+    - B8 (an Entity Board at its defaults);
+    - B18 (the Visual index counts `Timeline`);
+    - B20 (an Entity Board tab in screenshots);
+    - B21 (`MAX_BOARD_INSTANCES`, a prefetch yielding its permit).
+- **Tests:**
+  - `test_boards.py`: key loading and errors; overlap; the key at NULL in `LIMIT 0`; the cache
+    key; the low-priority permit.
+  - `test_macros.py`: `boards` rows, the first key column, self-link skip, NULL and unfitting
+    keys, `drill_sql` ignored in answers and kept in Board mode; Timeline (B15) and its
+    `check_columns`.
+  - `test_executor.py` (or a new `test_entity_executor.py`):
+    - opening, its tab and log, its Level and title;
+    - busy, a failure taking back its Level;
+    - Controls with the key, the pair at defaults;
+    - `MAX_BOARD_INSTANCES` and `TOO_OLD`;
+    - prefetch held, then used with no query;
+    - `open_board` rejecting a keyed Board.
+  - `test_prompt.py`: the Boards lines, a pure context with no Entity Boards, and the 3,200 cap.
+  - `test_effort_check.py`: `boards` counts as drillable.
+  - Client: `vegachart.test.ts` (a Timeline layer's bar click and cursor; a `boards` row
+    dispatches `drill`), `data-grid.test.ts` (a `boards` row), and `app.test.ts` (a drill reply
+    of kind `board` attaches Controls).
+
 ### Speed targets
 
 These are the measured bar in B-M, read like §17's bar, with p90 beside the median:
@@ -2033,10 +2151,11 @@ for a rejected action. The context keys are only `board`, `seq` and `values`.
   - The Board opens in a new tab titled "<title> · <row label>".
   - When a Result has key columns for several Boards, the first such column in the Result's
     column order decides.
-  - It takes precedence over the Visual's Drill query, which is then neither checked nor
-    prefetched.
-- **Per row.** A row whose key value is NULL can't open the Board. It falls back to the Drill
-  query if there is one, or to an Ask. The component's `action` gains `boards: [int]`, the rows
+  - It takes precedence over the Visual's Drill query. In answers the Drill query is then neither
+    checked nor prefetched. On a Board it is checked and serves rows with no key value, but it
+    is never prefetched (the user, 2026-11-04; see slice 3's scope).
+- **Per row.** A row whose key value is NULL can't open the Board. On a Board it falls back to
+  the Drill query if there is one, or to an Ask. In an answer it falls back to an Ask. The component's `action` gains `boards: [int]`, the rows
   that open a Board, beside `rows` and `drillable`.
 - **Prefetch.** Only the first clickable row's Board is prefetched (`BOARD_PREFETCH_ROWS`, default
   1).
@@ -2052,7 +2171,9 @@ for a rejected action. The context keys are only `board`, `seq` and `values`.
   output tokens of a Drill query that would be ignored. That raises the P6 cap from 3,000 to
   3,200 characters. In the harness's Drill query rate, a Visual that opens an Entity Board counts
   as drillable.
-- **Depth.** An Entity Board's Visuals can open other Entity Boards, but not their own Board.
+- **Depth.** An Entity Board's Visuals can open other Entity Boards, but not their own Board. Its
+  own `key_columns` are skipped, so the next key column in the Result decides (the user,
+  2026-11-04).
   Entity Board → Entity Board chains are unlimited without the model. This deliberately widens
   §15's "only one level without the model", because every step is a reviewed Board, not a
   model-written query.
@@ -2174,7 +2295,7 @@ Conversation.
 | `client/src/app.ts`, `client/src/tabs.ts` (new), `client/index.html` | tab strip, investigation log, `open_board` on load, in-place and superseded replies |
 | `client/src/controls.ts` (new) | `/controls` subscription and diff, seq, debounce, revert on busy |
 | `client/test/app.test.ts`, `levels.test.ts` | §15 A15 and §16 L2–L4, L6 rewritten on purpose for tabs (the Breadcrumb is gone; the cases carry over to tabs) |
-| `bootstrap/templates/explorer.toml` (new, 1a) | the Explorer template: totals Metrics, a share `Treemap`, a trend `LineChart`, a top-N table with share bars; slots only, no SQL or names. Slices 2 and 3 add Control and Entity Board templates |
+| `bootstrap/templates/explorer.toml` (new, 1a) | the Explorer template: totals Metrics, a share `Treemap`, a trend `LineChart`, a top-N table with share bars; slots only, no SQL or names. The Control and Entity Board templates come in slice 4 (the user, 2026-11-04) |
 | `datasets/austender/boards/` (4) | austender's Boards, drafted by the bootstrap tool (Wonder) and reviewed by a person; none are written by hand |
 | `agent/tests/snapshots/*.sha256` | regenerated on purpose (new Macros; Entity Board lines) |
 | `../CONTEXT.md` | the terms above; Breadcrumb retired; Action covers in-place changes |
@@ -2231,6 +2352,12 @@ Conversation.
 - **Entity Boards win over Drill queries** for key columns. An entity is better shown whole than
   as one more table. The trade-off is that the answer's filters are not carried over, which the
   Board's `scope` line states. A NULL key falls back per row.
+- **Slice 3 gaps, settled by the user (2026-11-04).**
+  - A Visual that opens an Entity Board ignores its `drill_sql` in answers, so a broken one costs
+    no Repair, and its rows with no key fall back to an Ask. On a Board the `drill_sql` is
+    checked and serves those rows.
+  - Self-links: a Board's own `key_columns` are skipped, and the next key column decides.
+  - The Control and Entity Board templates move to slice 4, beside the drafting they serve.
 - **New Visuals are Macros over `VegaChart` where Vega can draw them**, so they need no new
   client component. The bar cell is a `DataGrid` prop, because a proportion bar belongs next to
   the number it shows.
@@ -2385,6 +2512,30 @@ Every finding was taken unless noted:
 - **Screenshots** (stub app at 1440 and 390 px, light and dark: the Explorer with its Controls
   Card, a pending re-query with the layout dimmed, and the settled reply): no console errors and
   no horizontal overflow.
+
+### Build notes, slice 3 (2026-11-04)
+
+- **Refuter: PASS-WITH-NOTES.** Every finding was taken except the one deferral below. Each fix
+  has a regression test that failed first.
+  - **Major:** the click's `Prefetcher.take` had no test that would fail without it. A click
+    during a running Board prefetch now waits for it and runs no query twice (checked by
+    mutation).
+  - **Major:** "a Board's Drill query is never prefetched" had no test. A Board Visual with Board
+    rows and a `drill_sql` now gets no Drill prefetch (checked by mutation).
+  - `BoardSemaphore` lost a wake-up. A low waiter stayed blocked when a user waiter took one of
+    two freed permits, and when a user waiter was cancelled. A user waiter now notifies on
+    leaving.
+  - A `date` key must be a real date (`2024-13-45` falls back), and an `int` key from a float
+    must be below 2^53.
+  - The `boards` CLI skips Entity Boards ("not timed"). It can't render them without a key, and
+    the startup check covers them. B-M times them in slice 4.
+  - A failed option query on an Entity Board fails the click and takes no Level (test added).
+- **Deferred:** with `MAX_BOARD_INSTANCES=1`, two instances live until the next open, because the
+  newest instance is never its own victim.
+- **Noted, as specified:** the first key column in a Result decides, even when all of its values
+  are NULL and a later key column has values. Those rows fall back.
+- Option and range queries take no placeholders, the key included, so the option cache stays
+  keyed by Board alone.
 
 ### Fix, issue 9 (2026-11-04)
 
