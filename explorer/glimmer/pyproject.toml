@@ -1,0 +1,22 @@
+[project]
+name = "glimmer-server"
+version = "0.1.0"
+description = "Local HTTP sidecar that samples Muse Glimmer on Fireworks' serverless training sampler (explorer SPEC §19, ADR 0031)"
+requires-python = "==3.13.*"
+dependencies = [
+    # Same pins as glimmer-tune/trainer: the sampler path (`_submit`, `deployment_sampler`) is
+    # private SDK surface, so a pin change must recheck it.
+    "fireworks-ai[training]==1.2.30",
+    "fireworks-training-cookbook @ git+https://github.com/fw-ai/cookbook@57968a2237b663be33078d2747a28463983ae134#subdirectory=training",
+    "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
