@@ -1415,6 +1415,8 @@ This corrects "Grammar baselines: dropped" (Run 2 preparation). `SamplingParams`
 
 ## Run 3: Brief → macro Surface, for the explorer split (draft, 2026-11-04)
 
+**Moot (2026-11-05):** the user stopped the explorer split (`../docs/issues/11.md`), so the A2 measurement that would trigger run 3 won't happen.
+
 Status: **draft, not approved. Run 3 happens only if the explorer's Stage A2 asks for it**
 (explorer SPEC §19, ADR 0031 proposed). The explorer tries base Glimmer first.
 

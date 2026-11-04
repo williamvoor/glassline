@@ -1,5 +1,7 @@
 # Glimmer server
 
+**Stopped (2026-11-05).** The explorer split was stopped after this server measured 31–117 s to the first token on the training sampler (`../../docs/issues/11.md`). The code is kept and works; nothing in the agent calls it.
+
 A local sidecar that samples Muse Glimmer on Fireworks' serverless training sampler. The explorer agent uses it to write Surfaces (SPEC §19, ADR 0031 and 0042). Spec: `../specs/glimmer-server/SPEC.md`.
 
 It is a separate `uv` project because the Fireworks training SDK's pins don't fit the agent's environment (ADR 0015).

@@ -1,6 +1,6 @@
 # Glimmer server (SPEC §19, Stage A1, first slice)
 
-Status: **building** (2026-11-05, the user asked for it). The user chose **option (a)** for s225 (ADR 0042). §19 and ADR 0031 are still draft/proposed. Stage 0, the paper check on speed, has not been run. This slice is only the server, so it is useful whatever Stage 0 shows. The agent client, Brief, grammar builder and fallback are later slices. Where this file is silent, `explorer/SPEC.md` §19 applies.
+Status: **built and stopped** (2026-11-05). The server was built and committed (`c67e396`), then the split was stopped: the server measured 31–117 s to the first token (`docs/issues/11.md`). The code is kept, and nothing in the agent calls it. The user chose **option (a)** for s225 (ADR 0042). §19 and ADR 0031 are still draft/proposed. Stage 0, the paper check on speed, has not been run. This slice is only the server, so it is useful whatever Stage 0 shows. The agent client, Brief, grammar builder and fallback are later slices. Where this file is silent, `explorer/SPEC.md` §19 applies.
 
 ## Why
 
