@@ -2998,3 +2998,178 @@ rerun check below catches that.
   against a regression.
 - **No new ADR.** ADR 0030 already holds the decision that an A/B picks the default. This adds
   its procedure and gate as a dated note.
+
+## 22. Amendment: visual polish for Boards and answers (2026-11-05)
+
+Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round. Amends §16 (look and feel) and §18 (Boards,
+Controls). Decision: ADR 0043. The user chose the scope (2026-11-05): the five polish items, a
+Metric sparkline without a change figure, a `weight` argument on the Visual Macros, and the
+Controls as chips. ADR 0026 holds: the agent still sends structure, never colours, fonts or Vega
+`config`. ADR 0001 holds: the sparkline is drawn from a stored Result.
+
+Built in six steps, one at a time, each with its tests green before the next.
+
+### Step 1: chart config and spec polish (client)
+
+All in `client/src/vendor/vegachart/vegaChart.ts`. It applies to every Vega-Lite chart. A full
+Vega spec (the Treemap) gets only the config keys that Vega reads.
+
+- **Config** (`themedChartConfig`, from the tokens):
+  - `bar.cornerRadiusEnd: 3`.
+  - `axis.domain: false`, `axis.ticks: false`.
+  - Gridlines on value axes only, in `--line`, dashed `[2, 3]`: `axisQuantitative.grid: true`,
+    and `grid: false` for `axisTemporal`, `axisBand` and `axisPoint`. They're keyed on the
+    scale type, not the screen side, so a horizontal bar chart's gridlines run along its value
+    axis. (Amended after review, 2026-11-05: the draft's `axisX`/`axisY` put them through the
+    categories of horizontal bars and Timelines.)
+  - Axis labels in `--mono`, 11 px, `--muted`. Axis titles in `--muted`, weight normal.
+  - The legend label font is `--mono`.
+  - `rect.stroke: --panel`, `rect.strokeWidth: 2`, `rect.cornerRadius: 3`, so Treemap tiles
+    are separated by the card's colour in both schemes. The radius applies from step 1. The
+    agent's explicit `stroke: white` wins over the config until step 5 drops it.
+  - Rounded bar ends need no guard for stacks: Vega-Lite rounds one clip group per stack, so
+    only the outer end is rounded (checked 2026-11-05). `BarChart` rejects negative values, so
+    rounding at the zero line doesn't arise.
+- **Area under a single-series line** (`withArea`, a new pure function). A unit spec whose mark
+  is `line` and that has no `color` encoding becomes a two-layer spec:
+  - first an `area` mark with no tooltip, at 22 % opacity, filled with a vertical linear
+    gradient from `--chart-1` at the top to `--panel` at the bottom, so it fades out towards the
+    axis (Vega gradient stops take a colour, not an opacity);
+  - then the original line (its points, cursor and tooltip unchanged).
+  - The encoding and data move to the top level, shared by both layers.
+  - A multi-series line (with `color`) is unchanged. So is a line with any negative y value,
+    because an area to zero would misread there. So is a line whose data isn't inline
+    (`data.values`), because its values can't be checked, and one whose y isn't quantitative.
+- **Hover fade** (`withHover`, a new pure function). A unit spec whose mark is `bar`, that has no
+  `params` and no `opacity` encoding, gets the param
+  `{name: "explorer_hover", select: {type: "point", on: "pointerover", clear: "pointerout"}}`.
+  It also gets `opacity: {condition: {param: "explorer_hover", empty: true, value: 1}, value: 0.45}`.
+  Lines and full Vega specs are unchanged.
+- **Clicks.** The click handler ignores `area` items, as it ignores `line` items.
+- **Tooltip.** The embed call passes `tooltip: {theme: "explorer"}`. `client/index.html` styles
+  `#vg-tooltip-element.explorer-theme` from the tokens: `--panel` background, a `--line-strong`
+  border, 6 px radius, a soft shadow (a fixed translucent black, which works in both schemes),
+  `--sans` 12 px, keys in `--muted`, values in `--mono`.
+  The element lives in `document.body`, so the `:root` tokens reach it.
+- Order in the render path: `withCursor` first (it reads the unit spec's `mark`, which `withArea`
+  moves into a layer), then `withHover` and `withArea`, then `transformSpec`. (Amended during the
+  build, 2026-11-05: the draft had `withCursor` after them, which would have lost the points'
+  pointer.)
+- §16's L8 test changes with this step: axis titles are `--muted`, no longer `--fg`.
+
+### Step 2: Metric as a KPI tile, with an optional sparkline (agent and client)
+
+- **Look** (`client/index.html`). The label stays the uppercase mono caption above the value.
+  The value, the Metric's `h2`, becomes `--mono` 34 px, weight 600, with tabular figures and
+  `letter-spacing: -0.03em`.
+- **`Metric(..., trend="")`**, a new optional argument: the ID of a stored Result (a query name
+  in a Board).
+  - Its first column orders the points. Its `column` column (the same name as the Metric's) is
+    the y.
+  - The Metric's Card gets a `VegaChart` between the value and the SQL: height 48, a line plus
+    the gradient area (the server writes `mark: line`; step 1 adds the area), no axes, no
+    tooltip and not clickable.
+  - Rows whose y isn't a number are dropped. With fewer than 2 points the sparkline is left out.
+  - A `trend` naming an unknown Result, or a Result without the column, is a `MacroError` in an
+    answer.
+  - In a Board, the startup check (`check_columns`) reports an unknown `trend` query, or a
+    missing or non-numeric column.
+  - If the trend query fails at render, the Metric is drawn without the sparkline, because the
+    headline number is still right. The Metric's SQL details show the Metric's own query only.
+- **Re-queries.** `panel_dependencies` lists the `trend` query, so a Control change re-sends the
+  Metric when its trend reruns.
+- The Metric docstring gains the `trend` line, so the prompt snapshots change (one deliberate
+  update).
+
+### Step 3: Card hierarchy (client CSS)
+
+- **Visual titles.** The `h4` that is the first Text of a Card becomes a mono uppercase label:
+  `--mono` 11.5 px, weight 600, `letter-spacing: 0.08em`, `--muted`. Model-written `h4`s
+  elsewhere (in prose) keep the current style.
+- **Cards**:
+  - padding `14px 16px`
+  - at rest, shadow `0 1px 2px` with 4 % ink and `0 1px 3px` with 6 % ink (light mode)
+  - on hover, shadow `0 2px 8px` with 8 % ink, as a 150 ms transition with no movement
+  - in dark mode, no shadow; on hover the border is `--line-strong`
+  - under `prefers-reduced-motion`, no transition
+- **SQL details summary** in `--faint`, so it recedes on small cards.
+
+### Step 4: proportions (agent and bootstrap)
+
+- **`weight: int = 1`**, a new optional argument on `BarChart`, `LineChart`, `Treemap`,
+  `Timeline`, `DataTable` and `Metric`. It sets the returned Card's `weight`.
+  - A value outside 1–3 is a `MacroError` in an answer and a startup error in a Board.
+  - A replaced panel (no rows, failed, undrawable) keeps the weight, so the row's proportions
+    don't jump.
+- **Bootstrap guidance** (`bootstrap/server/src/explorer_bootstrap/prompts/boards.md`, rules for
+  the layout): one line saying that a Row of two Visuals may weight the wider one 2 (a trend next
+  to a share), and that weights are 1–3.
+- `bootstrap/templates/explorer.toml` shows it on its trend slot.
+- Existing Board files aren't rewritten. They are bootstrap-only, and a re-draft picks it up.
+
+### Step 5: DataGrid bars and Treemap (client CSS and agent)
+
+- **DataGrid share bars.** Height 4 px, track `--soft`, fill `--chart-1`, 2 px radius. The width
+  is animated from 0 over 300 ms on first render; there is no animation under
+  `prefers-reduced-motion`.
+- **Treemap** (`_treemap_parts`):
+  - The explicit `stroke: white` and `strokeWidth` are dropped, so the config's `rect` keys
+    from step 1 apply.
+  - The "Other" tile gets `fillOpacity: 0.55`, so the aggregate reads as different. That's an
+    opacity, not a colour.
+  - Tiles get `hover: {fillOpacity: 0.85}` (Other: 0.45) and `update` restores them.
+  - The Treemap fixture is regenerated.
+
+### Step 6: Controls as chips (agent)
+
+- `controls_components`: a `choice` or `multi` Control with at most `CHIPS_MAX = 24` options
+  (counting "All") gets `displayStyle: "chips"`. Longer lists keep the list. `filterable` is
+  unchanged.
+- `client/index.html` maps the chip variables to tokens:
+  - border `--line-strong`
+  - selected chip `--primary` background with `--on-primary` text
+  - mono 12 px
+
+### Criteria → tests
+
+| # | Criterion | Test |
+|---|---|---|
+| P1 | Config has the `bar`, `axis`, `axisX`, `axisY`, `rect` and legend keys from the tokens, with fallbacks | `client/test/vegachart.test.ts` |
+| P2 | `withArea`: a single-series line becomes the area plus the line, the area first and without a tooltip; multi-series, negative y and non-line specs are unchanged | `vegachart.test.ts` |
+| P3 | `withHover`: added to a bar unit spec only; skipped with existing `params` or an `opacity` encoding; full Vega unchanged | `vegachart.test.ts` |
+| P4 | A click on an `area` or `line` item dispatches nothing and a click on a point dispatches its row (stubbed embed); in real Vega-Lite the layered line's points keep `_row` and the pointer and the area has no tooltip | `vegachart.test.ts` |
+| P5 | The embed is called with `tooltip.theme === "explorer"`; `index.html` has the tooltip rule using tokens only | `vegachart.test.ts`, `client/test/index-html.test.ts` |
+| P6 | `Metric(trend=...)` adds a VegaChart built from the stored rows (ordered by the first column, y = `column`), not clickable, height 48; fewer than 2 points means no chart; unknown Result or column is a MacroError | `agent/tests/test_macros.py` |
+| P7 | Board: an unknown `trend` query or a bad column is a startup problem; a failing trend query draws the Metric without the sparkline; `panel_dependencies` includes the trend query | `agent/tests/test_boards.py` |
+| P8 | `weight` sets the Card's weight for all six Macros; default 1; 0 and 4 are errors; a replaced panel keeps it | `test_macros.py`, `test_boards.py` |
+| P9 | The prompt docstrings mention `trend` and `weight`; the prefix is still byte-identical across requests; snapshots updated once | `agent/tests/test_prompt.py` |
+| P10 | `boards.md` and `explorer.toml` carry the weight guidance; the template test still passes | `test_boards.py`, bootstrap tests |
+| P11 | Card, title, Metric value, share-bar, chip and reduced-motion rules exist and use tokens, in light and dark | `index-html.test.ts` |
+| P12 | The Treemap spec has no `stroke` colour, Other has `fillOpacity` 0.55, and tiles have a hover; fixture current | `test_macros.py` |
+| P13 | ChoicePicker gets `displayStyle: "chips"` up to `CHIPS_MAX` options and not above; strict validation passes | `test_boards.py`, `agent/tests/test_ui.py` |
+| P14 | Suites and build pass. Screenshots of the Explorer Board, light and dark, 1440 px and 390 px, checked by eye | `uv run pytest`, `npm test`, `npm run build`, screenshots |
+
+### Decisions
+
+- **The client reshapes the agent's chart spec.** It adds the area and the hover, rather than
+  the Macros sending them. Why: they are look, not meaning (ADR 0026), and the gradient's colour
+  is a token. See ADR 0043.
+- **No change figure on the Metric.** The last period is often partial (the user, 2026-11-05),
+  so a delta would mislead.
+- **No hover fade on lines.** A line has one item per series, so fading points looks broken.
+  Lines get the area and the tooltip.
+- **Cards don't move on hover.** A lift under the pointer makes a bar harder to click.
+- **Not in scope:**
+  - the Treemap's "Click a bar or point" hint wording (it should say tile; a separate fix)
+  - per-tile Treemap colours
+  - a theme switch
+  - new catalog components
+- **Existing Board files aren't hand-edited** to add weights or trends. They come from the
+  bootstrap.
+
+### Test command
+
+```bash
+cd explorer/agent && uv run pytest
+cd explorer/client && npm test && npm run build
+```
