@@ -597,7 +597,7 @@ def _register_visual(
 
 def _card(children: list[Any]) -> Card:
     """Every Visual is a Card holding its title, the Visual and its SQL (SPEC §16)."""
-    return Card(child=Column(children=children))
+    return Card(child=Column(children=children), weight=1)
 
 
 def _no_rows(result: StoredResult, title: str) -> _PanelReplaced:
@@ -1271,15 +1271,11 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
     if _ctx().board and not 0 <= row < result.row_count:
         raise _no_rows(result, _fill(label, markdown=False))
     value = _row(result, row)[column]
-    return Card(
-        child=Column(
-            children=[
-                Text(text=_fill(label, markdown=False), variant="caption"),
-                Text(text=_format(result, value, column, format), variant="h2"),
-                _sql_details(result),
-            ]
-        )
-    )
+    return _card([
+        Text(text=_fill(label, markdown=False), variant="caption"),
+        Text(text=_format(result, value, column, format), variant="h2"),
+        _sql_details(result),
+    ])
 
 
 def _row(result: StoredResult, index: int) -> dict[str, Any]:

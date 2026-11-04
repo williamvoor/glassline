@@ -53,6 +53,7 @@
         {
           "component": "Card",
           "id": "top",
+          "weight": 1.0,
           "child": "top__column_1"
         },
         {
@@ -153,6 +154,7 @@
         {
           "component": "Card",
           "id": "chart",
+          "weight": 1.0,
           "child": "chart__column_1"
         },
         {
@@ -227,6 +229,7 @@
         {
           "component": "Card",
           "id": "table",
+          "weight": 1.0,
           "child": "table__column_1"
         },
         {

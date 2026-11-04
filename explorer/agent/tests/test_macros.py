@@ -207,6 +207,16 @@ def test_metric_shape(ctx):
     assert (texts[1]["text"], texts[1]["variant"]) == ("$3,441,812,603", "h2")
 
 
+@pytest.mark.parametrize("name, args", [
+    ("Metric", dict(result_id="r1", column="value", label="L")),
+    ("BarChart", dict(result_id="r1", x="supplier", y="value", title="T")),
+    ("DataTable", dict(result_id="r1", title="T")),
+])
+def test_visual_cards_share_a_row_evenly(ctx, name, args):
+    # Without a weight a Card in a Row keeps its natural width and leaves blank space to its right.
+    assert root(expand(name, **args))["weight"] == 1
+
+
 def test_cite_fills_placeholders_and_escapes_markdown(ctx):
     comps = expand("Cite", template="**{r1[1].supplier}** received {r1[1].value|currency_m} over {r1[1].contracts} contracts.")
     assert comps == [{"id": "m", "component": "Text",
