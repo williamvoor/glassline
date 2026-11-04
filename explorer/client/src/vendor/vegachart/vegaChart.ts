@@ -93,18 +93,38 @@ export function themedChartConfig(token: (name: string) => string): Record<strin
   const category = ['--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5', '--chart-6']
     .map(token)
     .filter(Boolean);
+  const mono = token('--mono');
   return {
     ...d,
     font: t('--sans', d.font),
+    // SPEC §22 step 1: no domain or tick lines, dashed horizontal gridlines only, quiet mono labels.
     axis: {
       ...d.axis,
+      domain: false,
+      ticks: false,
       domainColor: t('--line', d.axis.domainColor),
       gridColor: t('--line', d.axis.gridColor),
+      gridDash: [2, 3],
       tickColor: t('--line', d.axis.domainColor),
       labelColor: t('--muted', d.axis.labelColor),
-      titleColor: t('--fg', d.axis.titleColor),
+      labelFontSize: 11,
+      ...(mono ? {labelFont: mono} : {}),
+      titleColor: t('--muted', d.axis.titleColor),
+      titleFontWeight: 'normal',
     },
-    legend: {...d.legend, labelColor: t('--muted', d.legend.labelColor), titleColor: t('--fg', d.legend.titleColor)},
+    // Gridlines follow the value axis, whichever side it is on (a horizontal bar's is the bottom).
+    // Time axes (a line's x, the Timeline) get none: the dashed lines read as values, not dates.
+    axisQuantitative: {grid: true},
+    axisTemporal: {grid: false},
+    axisBand: {grid: false},
+    axisPoint: {grid: false},
+    bar: {cornerRadiusEnd: 3},
+    // Full Vega rects (treemap tiles) are separated by the card's colour in both schemes.
+    rect: {stroke: t('--panel', '#ffffff'), strokeWidth: 2, cornerRadius: 3},
+    legend: {
+      ...d.legend, labelColor: t('--muted', d.legend.labelColor), titleColor: t('--fg', d.legend.titleColor),
+      ...(mono ? {labelFont: mono} : {}),
+    },
     title: {...d.title, color: t('--fg', d.title.color)},
     range: {category: category.length ? category : CHART_COLORS},
     mark: {color: category[0] ?? CHART_COLORS[0]}, // a single series isn't coloured by `range`
@@ -114,12 +134,86 @@ export function themedChartConfig(token: (name: string) => string): Record<strin
   };
 }
 
-function pageChartConfig(): Record<string, unknown> {
+function pageToken(): (name: string) => string {
   const style = getComputedStyle(document.documentElement);
-  return themedChartConfig(name => style.getPropertyValue(name).trim());
+  return name => style.getPropertyValue(name).trim();
+}
+
+function pageChartConfig(): Record<string, unknown> {
+  return themedChartConfig(pageToken());
+}
+
+/** Explorer (SPEC §22): the gradient under a single-series line, from the line's colour (top) to
+ * the card's (bottom), drawn at low opacity so it fades out towards the axis. */
+export interface AreaColors {
+  line: string;
+  card: string;
+}
+
+export const AREA_OPACITY = 0.22;
+
+function pageAreaColors(): AreaColors {
+  const token = pageToken();
+  return {line: token('--chart-1') || CHART_COLORS[0]!, card: token('--panel') || '#ffffff'};
+}
+
+/**
+ * Explorer (SPEC §22): a single-series line unit spec becomes a layer of a gradient `area` (no
+ * tooltip) under the original line. Unchanged: other marks, layered or full Vega specs, lines with
+ * a `color` encoding (one gradient can't follow several series) and lines with a negative y (an
+ * area to zero would misread).
+ */
+export function withArea(vegaSpec: Record<string, unknown>, colors: AreaColors): Record<string, unknown> {
+  const mark = vegaSpec['mark'];
+  const base = isPlainObject(mark) ? mark : typeof mark === 'string' ? {type: mark} : null;
+  const encoding = vegaSpec['encoding'];
+  if (!base || base['type'] !== 'line' || !isPlainObject(encoding) || encoding['color'] !== undefined) return vegaSpec;
+  const y = encoding['y'];
+  if (!isPlainObject(y) || y['type'] !== 'quantitative' || typeof y['field'] !== 'string') return vegaSpec;
+  const field = y['field'].replace(/\\(.)/g, '$1');
+  const data = vegaSpec['data'];
+  const values = isPlainObject(data) && Array.isArray(data['values']) ? data['values'] : null;
+  if (!values || values.some(v => isPlainObject(v) && typeof v[field] === 'number' && v[field] < 0)) return vegaSpec;
+  const {mark: _mark, ...rest} = vegaSpec;
+  const area = {
+    mark: {
+      type: 'area', opacity: AREA_OPACITY, interpolate: base['interpolate'],
+      color: {
+        gradient: 'linear', x1: 1, x2: 1, y1: 1, y2: 0,
+        stops: [{offset: 0, color: colors.card}, {offset: 1, color: colors.line}],
+      },
+    },
+    encoding: {tooltip: null},
+  };
+  if (area.mark.interpolate === undefined) delete area.mark.interpolate;
+  return {...rest, layer: [area, {mark: base}]};
+}
+
+/**
+ * Explorer (SPEC §22): bars fade except the one under the pointer. Only a bar unit spec without
+ * `params` or an `opacity` encoding gets it.
+ */
+export const HOVER_PARAM = 'explorer_hover';
+export const HOVER_FADED_OPACITY = 0.45;
+
+export function withHover(vegaSpec: Record<string, unknown>): Record<string, unknown> {
+  const mark = vegaSpec['mark'];
+  const type = isPlainObject(mark) ? mark['type'] : mark;
+  const encoding = vegaSpec['encoding'];
+  if (type !== 'bar' || vegaSpec['params'] !== undefined || !isPlainObject(encoding) || encoding['opacity'] !== undefined) {
+    return vegaSpec;
+  }
+  return {
+    ...vegaSpec,
+    params: [{name: HOVER_PARAM, select: {type: 'point', on: 'pointerover', clear: 'pointerout'}}],
+    encoding: {...encoding, opacity: {condition: {param: HOVER_PARAM, empty: true, value: 1}, value: HOVER_FADED_OPACITY}},
+  };
 }
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/** vega-tooltip adds `<theme>-theme` to its element in `document.body` (SPEC §22). */
+export const TOOLTIP_THEME = 'explorer';
 
 /** Result returned by a Vega embed function. */
 export interface VegaEmbedResult {
@@ -749,8 +843,10 @@ export class A2uiVegaChartElement extends A2uiLitElement<
         ? Math.max(this.resolvedHeight, facetSize.totalEstimatedHeight)
         : this.resolvedHeight;
       const action = this.resolvedAction;
+      // The cursor first: it reads the unit spec's `mark`, which `withArea` moves into a layer.
       const transformedSpec = transformSpec(
-        withCursor(vegaSpec, action), containerHeight, effectiveWidth, facetSize, pageChartConfig(),
+        withArea(withHover(withCursor(vegaSpec, action)), pageAreaColors()),
+        containerHeight, effectiveWidth, facetSize, pageChartConfig(),
       );
 
       this.applyHostWidth(this.useFallbackWidth ? effectiveWidth : null);
@@ -772,7 +868,8 @@ export class A2uiVegaChartElement extends A2uiLitElement<
       container.appendChild(wrapper);
 
       const embed = this.embedFn ?? A2uiVegaChartElement.defaultEmbedFn;
-      const result = await embed(wrapper, transformedSpec, {actions: false, renderer: 'svg'});
+      // The tooltip theme names a class styled from the tokens in index.html (SPEC §22).
+      const result = await embed(wrapper, transformedSpec, {actions: false, renderer: 'svg', tooltip: {theme: TOOLTIP_THEME}});
 
       if (abortController.signal.aborted) {
         result?.finalize?.();
@@ -783,8 +880,9 @@ export class A2uiVegaChartElement extends A2uiLitElement<
       if (action) {
         // Explorer (SPEC §15): a click on a mark with a clickable `_row` dispatches its action.
         result?.view?.addEventListener?.('click', (_event, item) => {
-          // A line item's datum is one of its points; only a point names the row clicked.
-          if ((item as {mark?: {marktype?: string}} | null)?.mark?.marktype === 'line') return;
+          // A line or area item's datum is one of its points; only a point names the row clicked.
+          const marktype = (item as {mark?: {marktype?: string}} | null)?.mark?.marktype;
+          if (marktype === 'line' || marktype === 'area') return;
           const row = item?.datum?.['_row'];
           if (clickable(action, row)) {
             void dispatchRow(this.context, action, row, markLabel(vegaSpec, item!.datum!));

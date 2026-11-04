@@ -254,6 +254,14 @@
       explorer-app .a2ui-text h2 { margin: 2px 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
       explorer-app a2ui-basic-button button:hover:not(:disabled) { border-color: var(--fg); }
 
+      /* Chart tooltips (SPEC §22): vega-tooltip's element lives in body; the class beats its defaults */
+      #vg-tooltip-element.explorer-theme {
+        padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg);
+        box-shadow: 0 4px 14px rgb(0 0 0 / 0.12); font: 12px/1.45 var(--sans);
+      }
+      #vg-tooltip-element.explorer-theme td.key { padding-right: 10px; color: var(--muted); }
+      #vg-tooltip-element.explorer-theme td.value { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
       /* Visual hints and DataGrid (SPEC §16) */
       .visual-hint { margin: 0 0 6px; font: 12px/1.4 var(--mono); color: var(--muted); }
       table.data-grid { border-collapse: collapse; width: 100%; font-size: 14px; }

@@ -120,3 +120,26 @@ describe('branding', () => {
     expect(indexHtml).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />');
   });
 });
+
+// SPEC §22 step 1 (P5): the chart tooltip is styled from the tokens, with no fixed colours.
+describe('chart tooltip', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+  const rules = [...style.matchAll(/#vg-tooltip-element\.explorer-theme[^{]*\{([^}]*)\}/g)];
+
+  it('has themed rules for the box, keys and values', () => {
+    expect(rules.length).toBeGreaterThanOrEqual(3);
+    const box = rules[0]![1]!;
+    for (const prop of ['background', 'border', 'color', 'font']) expect(box, prop).toMatch(new RegExp(`${prop}[^;]*var\\(--`));
+  });
+
+  it('uses no hex colours (the shadow is a fixed translucent black, fine in both schemes)', () => {
+    for (const [, decls] of rules) expect(decls).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+
+  it('greys the keys and sets the values in mono', () => {
+    const key = style.match(/#vg-tooltip-element\.explorer-theme td\.key\s*\{([^}]*)\}/)?.[1] ?? '';
+    const value = style.match(/#vg-tooltip-element\.explorer-theme td\.value\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(key).toMatch(/color:\s*var\(--muted\)/);
+    expect(value).toMatch(/font-family:\s*var\(--mono\)/);
+  });
+});

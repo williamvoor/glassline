@@ -21,3 +21,8 @@ Changes by the explorer project:
   `_label` when present; a full Vega spec (`isFullVega`) gets a numeric width
   (`FULL_VEGA_FALLBACK_WIDTH`) when the container is unmeasured, since only Vega-Lite accepts
   'container'; and the themed config gives text marks the card colour (`text.fill` from `--panel`).
+- Polish (explorer SPEC §22): the themed config also sets rounded bar ends, no axis domain or tick
+  lines, dashed y gridlines only, mono axis and legend labels, and card-coloured rect strokes. Before
+  rendering, `withArea` layers a gradient area under a single-series line and `withHover` gives bar
+  unit specs a hover fade (both skip specs they can't safely change), clicks on `area` items are
+  ignored like `line` items, and the embed passes `tooltip: {theme: 'explorer'}`.
