@@ -49,6 +49,7 @@ def test_single_validator_and_oracle_differ_as_designed(dev_rows, validator):
     assert out["single"]["per_sample"][0] == 0.0 and out["single"]["per_sample"][1] == pytest.approx(1.0)
     assert out["single"]["gallery_f1_blind"] == pytest.approx(sum(out["single"]["per_sample"]) / 3)
     assert out["candidate_pass"] == pytest.approx(4 / 6)
+    assert [(r["id"], r["picked_sample"], r["covered"]) for r in out["picked"]] == [(i, 2, True) for i in ids]
     assert out["layer_pass"]["mechanical"] == pytest.approx(4 / 6)
     assert "| t | 3 |" in markdown({"t": out}) and "$1.50" in markdown({"t": out})
 

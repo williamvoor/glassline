@@ -123,6 +123,8 @@ def analyse(
             "reasoning_p50": _pct(reasoning_toks, 0.5), "reasoning_p95": _pct(reasoning_toks, 0.95),
         },
         "cost_usd": cost_usd,
+        # Per row, so paired comparisons (and any number above) trace back to a candidate.
+        "picked": [{k: r[k] for k in ("id", "family", "picked_sample", "covered", "slot_f1_blind")} for r in picked_rows],
         "beats_s225": None,  # the decision is the user's; the table shows the interval
     }
 

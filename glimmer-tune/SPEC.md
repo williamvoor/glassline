@@ -1529,11 +1529,16 @@ only because the repo has no remote.
    - `python -m a2ui_eval.phase1 report` reports single, validator best-of-n and oracle best-of-n.
    - Calibration finding: every `33_financial-data-grid` dev reference overflows 80 px at 375 px. The test pins this as a known reference failure, and the rule is not loosened.
    - Sampling settings come from the model cards. Glimmer: temperature 1.0, top_p 0.95, top_k 64. Spark Open: temperature 1.0, top_p 1.0. Baseten takes only `n=1` and doesn't enforce structured outputs for Spark Open, so Spark Open runs without a grammar.
-   Phase 1 itself is the teacher ceiling on gallery dev. This stops for a decision. ❗️ The 2026-11-03
+   Phase 1 itself is the teacher ceiling on gallery dev.
+4. **Phase 1 result (2026-11-04, $10.13):** neither teacher clearly beats s225 (`docs/phase1-teacher-ceiling-20261104.md`).
+   - Spark Open at effort low, validator best-of-8: 0.555. Paired against s225 that is +0.032 (−0.114 to +0.231).
+   - Glimmer base + 3 + grammar: 0.486, which is −0.037 against s225.
+   - The oracle best-of-8 scores about 0.68 for both.
+   - **Waiting for the user's decision.** This stops for a decision. ❗️ The 2026-11-03
    Spark Open baseline scored 0.290 on gallery, so Glimmer best-of-8 is the likelier teacher.
    Best-of-8 must be reported twice: chosen by the validator only, and the oracle (chosen against
    the reference).
-4. Run 3 (the explorer-split draft above) and v2-run1 both need SFT before the free cut-off
+5. Run 3 (the explorer-split draft above) and v2-run1 both need SFT before the free cut-off
    (jobs started before 2026-12-01 Pacific).
 
 ## 2c-2 and 2c-3 outline
