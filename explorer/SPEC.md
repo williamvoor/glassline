@@ -2616,6 +2616,8 @@ Status: **draft, not approved. Nothing is built yet.** Decision: ADR 0031 (propo
 §2 (request flow), §5 (where `drill_sql` comes from), §6 (prompt layers) and §7 (settings).
 New term in `../CONTEXT.md`: **Glimmer server**. **Brief** is already defined there (ADR 0014).
 
+**Update 2026-11-05.** The user chose two Glimmer setups, **s225 alone** (macros from the prompt alone) and **base + 3 + grammar** (ADR 0042, accepted). A2 therefore has three arms. The Glimmer server is being built as the first A1 slice (`specs/glimmer-server/SPEC.md`). Stage 0 has not been run.
+
 The user settled these choices (2026-11-04):
 - Glimmer runs on Fireworks' **serverless training sampler**, behind a small sidecar (the Glimmer
   server). The public inference API doesn't serve Muse Glimmer.
