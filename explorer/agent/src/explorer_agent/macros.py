@@ -1104,9 +1104,17 @@ def _parse_formats(result: StoredResult, spec: str) -> dict[str, str]:
     return formats
 
 
+def _text_columns(result: StoredResult, columns: list[str]) -> list[str]:
+    """The non-numeric columns, leaving out Board key columns unless nothing else is left: a key
+    is for opening a Board, not for reading (SPEC §18)."""
+    text = [c for c in columns if not result.is_numeric(c)]
+    return [c for c in text if c not in _ctx().entity] or text
+
+
 def _row_label(cells: list[str], result: StoredResult, shown: list[str]) -> str:
     """A table row's label: the text columns' cells joined with " · ", at most 80 characters."""
-    text = [cell for cell, c in zip(cells, shown, strict=True) if not result.is_numeric(c)] or cells[:1]
+    keep = set(_text_columns(result, shown))
+    text = [cell for cell, c in zip(cells, shown, strict=True) if c in keep] or cells[:1]
     label = " · ".join(text)
     return label if len(label) <= ROW_LABEL_MAX else label[: ROW_LABEL_MAX - 1] + "…"
 
@@ -1135,7 +1143,10 @@ def _table_parts(
     ctx = _ctx()
     visual = ctx.visuals
     ctx.visuals += 1
-    shown = [_column(result, c.strip()) for c in columns.split(",") if c.strip()] or result.columns
+    shown = [_column(result, c.strip()) for c in columns.split(",") if c.strip()]
+    if not shown:  # all but Board key columns, unless a key is the only text column
+        keep = set(_text_columns(result, result.columns))
+        shown = [c for c in result.columns if c in keep or result.is_numeric(c)]
     formats = _parse_formats(result, format)
     cap = ctx.table_row_cap
     rows = result.rows[:cap]
@@ -1189,7 +1200,7 @@ def DataTable(
     Args:
         result_id: ID of a stored query result, e.g. "r1".
         title: Table title, plain text.
-        columns: Optional comma-separated columns to show, in order (default: all).
+        columns: Optional comma-separated columns to show, in order (default: all but columns listed under Boards).
         format: Optional comma-separated column:format pairs, e.g. "value:currency_compact,share:fraction_pct". currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
         clickable: Rows can be clicked to explore them (default true); false turns it off.
         drill_sql: Optional SQL for the next level of detail below a clicked row: one SELECT with :column placeholders naming columns of this result (WHERE region IS NOT DISTINCT FROM :region). It runs without you when a row is clicked.

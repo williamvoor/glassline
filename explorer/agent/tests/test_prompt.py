@@ -211,7 +211,7 @@ def _clicks_example_sql() -> str:
 # SPEC §17 D1
 def test_clicks_require_drill_sql():
     text = " ".join(instructions().split())
-    assert "Give each chart or table whose rows have detail below them a `drill_sql`" in text
+    assert "Give each other chart or table whose rows have detail below them a `drill_sql`" in text
     assert "When they have a meaningful next level of detail" not in text  # the optional wording is gone
     assert text.count('drill_sql="') == 1
 
@@ -302,4 +302,7 @@ def test_entity_boards_add_stable_lines_between_glossary_and_schema():
 
 
 def test_clicks_say_a_board_column_needs_no_drill_sql():
-    assert "opens that\n  Board on a click, so it needs no `drill_sql`" in instructions()
+    # The exception leads the rule: placed after the example, Spark still wrote ignored drill_sql
+    # for Board rows (manual check 5, 2026-11-04).
+    text = " ".join(instructions().split())
+    assert text.index("give its charts and tables no `drill_sql`") < text.index("Give each other chart or table")

@@ -65,6 +65,38 @@ def test_rows_with_a_key_value_open_the_board_and_the_first_key_column_decides()
     assert (ctx.sources[0].board, ctx.sources[0].key_column) == ("supplier", "supplier")
 
 
+def _named_suppliers() -> ResultStore:
+    rows = [{"supplier_name": f"S{i}", "supplier_key": f"name:s{i}", "value": 10.0 - i} for i in range(2)]
+    return _store(["supplier_name", "supplier_key", "value"], ["text", "text", "numeric"], rows)
+
+
+def grid_of(components: list[dict]) -> dict:
+    return next(c for c in components if c["component"] == "DataGrid")
+
+
+def test_a_table_hides_board_key_columns_by_default_and_still_opens_the_board():
+    # A key is for navigation, not reading: `name:s0` and ABNs showed in answers and tab titles.
+    with macro_context(_named_suppliers(), entity={"supplier_key": "supplier"}, key_types=KEY_TYPES) as ctx:
+        comps = expand("DataTable", result_id="r1", title="Suppliers")
+    assert [c["key"] for c in grid_of(comps)["columns"]] == ["supplier_name", "value"]
+    assert action_of(comps)["boards"] == [0, 1]
+    assert ctx.sources[0].labels == {0: "S0", 1: "S1"}
+
+
+def test_a_listed_key_column_shows_but_stays_out_of_the_row_label():
+    with macro_context(_named_suppliers(), entity={"supplier_key": "supplier"}, key_types=KEY_TYPES) as ctx:
+        comps = expand("DataTable", result_id="r1", title="Suppliers", columns="supplier_name,supplier_key,value")
+    assert [c["key"] for c in grid_of(comps)["columns"]] == ["supplier_name", "supplier_key", "value"]
+    assert ctx.sources[0].labels == {0: "S0", 1: "S1"}
+
+
+def test_a_key_column_that_is_the_only_text_column_stays_in_table_and_label():
+    with macro_context(_suppliers(), entity={"supplier": "supplier"}, key_types=KEY_TYPES) as ctx:
+        comps = expand("DataTable", result_id="r1", title="Suppliers", columns="supplier,value")
+    assert [c["key"] for c in grid_of(comps)["columns"]] == ["supplier", "value"]
+    assert ctx.sources[0].labels[0] == "S0"
+
+
 def test_a_null_key_falls_back_and_in_answers_drill_sql_is_ignored_unchecked():
     store = _suppliers()
     entity = {"buyer": "buyer"}

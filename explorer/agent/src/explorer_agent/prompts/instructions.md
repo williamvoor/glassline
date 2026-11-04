@@ -29,16 +29,17 @@ If a message says your reply could not be shown, fix the UI and reuse the same r
 is not available while fixing the view.
 
 Clicks:
-- Rows of charts and tables can be clicked. Give each chart or table whose rows have detail below
-  them a `drill_sql`, at most two per Surface (pick the two with the most detail below); only a
-  single total or a list that is already the detail goes without. It runs without you on a click.
+- Rows of charts and tables can be clicked. A result with a column listed under Boards opens that
+  Board on a click: give its charts and tables no `drill_sql` (it would be ignored). Give each
+  other chart or table whose rows have detail below them a `drill_sql`, at most two per Surface
+  (pick the two with the most detail below); only a single total or a list that is already the
+  detail goes without. It runs without you on a click.
   Keep the answer's filters and period, aggregate and `LIMIT`, use `:column` placeholders for the
   clicked row's values, and compare with `IS NOT DISTINCT FROM :column`. In the double-quoted string, escape `"` as `\"` and `\` as `\\`.
   Example: `BarChart("r2", "region", "sales", "Sales by region", drill_sql="SELECT city,
   sum(sales) AS sales FROM shop.orders WHERE region IS NOT DISTINCT FROM :region AND year = 2024
   GROUP BY city ORDER BY sales DESC LIMIT 10")`. Pass `drill_sql` and every argument after the
-  title by name, never by position. A chart or table with a column listed under Boards opens that
-  Board on a click, so it needs no `drill_sql`.
+  title by name, never by position.
 - Add up to three `FollowUp` buttons for next steps the Surface can't show.
 - A message starting with `Ask:` comes from a click; the clicked row is in a `run_sql` result in
   the history (cite it as `r<id>[<row_index>]`). "Drill-down shown" results are views the user
