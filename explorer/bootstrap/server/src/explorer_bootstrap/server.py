@@ -9,15 +9,18 @@ import asyncio
 import copy
 import logging
 import re
+import shutil
 import uuid
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import psycopg
-from psycopg_pool import AsyncConnectionPool
+from psycopg.conninfo import conninfo_to_dict
+from psycopg_pool import AsyncConnectionPool, PoolTimeout
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
@@ -26,7 +29,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from explorer_agent.config import SCHEMA_NAME, ConfigError, Dataset, load_dataset
 from explorer_agent.schema import SchemaCatalog
-from explorer_agent.sql import SqlRunner
+from explorer_agent.sql import NO_TABLES_PREFIX, SqlRunner, StartupError
 
 from explorer_bootstrap.boards import (
     board_files_problems,
@@ -40,10 +43,20 @@ from explorer_bootstrap.claims import verify_claims
 from explorer_bootstrap.draft import Completion, DraftError, estimate_cost, run_draft
 from explorer_bootstrap.draft_schema import claim_problems
 from explorer_bootstrap.drafts import FILE_NAMES, DraftFileError, draft_dataset, new_draft, validate_files
+from explorer_bootstrap.export import NAME as EXPORT_NAME
 from explorer_bootstrap.export import ExportError, export_dataset
 from explorer_bootstrap.report import OverlayDriftError, build_report
 from explorer_bootstrap.settings import ALLOWED_MODELS, SettingsError, load_draft_settings
-from explorer_bootstrap.stats import visible_schemas
+from explorer_bootstrap.registry import (
+    RegistryError,
+    kind_of,
+    read_entries,
+    reload_agent,
+    unused_connections,
+    workspace_dir,
+    write_entries,
+)
+from explorer_bootstrap.stats import open_report_pool, visible_schemas
 
 log = logging.getLogger(__name__)
 
@@ -163,8 +176,20 @@ def _comments(raw: Any) -> list[dict[str, Any]] | None:
     return out
 
 
+@dataclass
+class _Conn:
+    """The login the server works with. In Settings mode it is chosen at runtime (D2)."""
+
+    pool: AsyncConnectionPool | None
+    database: dict[str, str]
+    dsn_env: str | None = None
+
+
+OpenPool = Callable[[str], Awaitable[tuple[AsyncConnectionPool, dict[str, str]]]]
+
+
 def build_app(
-    pool: AsyncConnectionPool,
+    pool: AsyncConnectionPool | None,
     *,
     database: dict[str, str],
     env: Mapping[str, str],
@@ -174,8 +199,21 @@ def build_app(
     repo_root: Path,
     ui_dir: Path | None = None,
     completion: Completion | None = None,
+    data_dir: Path | None = None,
+    agent_url: str = "",
+    client_origin: str = "",
+    open_pool: OpenPool | None = None,
+    reload: Callable[[], Awaitable[tuple[int, Any]]] | None = None,
 ) -> ASGIApp:
+    """`data_dir` turns on Settings mode (explorer/specs/workspaces/SPEC.md phase 2): no login
+    until `POST /api/connect`, exports into the data directory, and the Workspace routes."""
     state = _State()
+    conn = _Conn(pool, database)
+    settings_mode = data_dir is not None
+    regen: dict[str, str | None] = {"name": None}  # D5: the next export goes back into this Workspace
+
+    async def reload_now() -> tuple[int, Any]:
+        return await (reload() if reload is not None else reload_agent(agent_url))
     # Phase 3: a validate stores its text, then checks and previews it; overlapping ones (the UI's
     # debounce can fire again during a preview) must not finish out of order, nor race an export.
     boards_lock = asyncio.Lock()
@@ -185,10 +223,10 @@ def build_app(
 
     async def connection(_request: Request) -> JSONResponse:
         try:
-            schemas = await visible_schemas(pool)
+            schemas = await visible_schemas(conn.pool)
         except psycopg.Error as e:
             return _err(_db_message(e), 500)
-        return JSONResponse({**database, "schemas": schemas})
+        return JSONResponse({**conn.database, "schemas": schemas})
 
     async def list_dataset_names(_request: Request) -> JSONResponse:
         return JSONResponse({"datasets": list_datasets(datasets_root)})
@@ -214,11 +252,11 @@ def build_app(
                 return _err("schemas must be a comma-separated list of schema names")
         else:
             try:
-                schemas = [s["name"] for s in await visible_schemas(pool)]
+                schemas = [s["name"] for s in await visible_schemas(conn.pool)]
             except psycopg.Error as e:
                 return _err(_db_message(e), 500)
         try:
-            objects = await SchemaCatalog(pool, schemas).objects()
+            objects = await SchemaCatalog(conn.pool, schemas).objects()
         except psycopg.Error as e:
             return _err(_db_message(e), 500)
         by_schema: dict[str, list[dict[str, Any]]] = {s: [] for s in sorted(set(schemas))}
@@ -254,7 +292,7 @@ def build_app(
             ):
                 return _err("schemas must be a non-empty list of schema names")
         try:
-            built = await build_report(pool, schemas, database=database, dataset=dataset,
+            built = await build_report(conn.pool, schemas, database=conn.database, dataset=dataset,
                                        timeout_ms=timeout_ms)
         except OverlayDriftError as e:
             return _err(str(e))
@@ -293,12 +331,17 @@ def build_app(
             settings = await settings_for(request)
         except SettingsError as e:
             return _err(str(e))
+        if settings_mode:
+            assert conn.pool is not None
+            problem = await read_only_check(conn.pool, list(state.report["schemas"]))
+            if problem:
+                return _err(problem, 403)
         run = _Run(id=uuid.uuid4().hex[:12])
         report_now = state.report
 
         async def go() -> None:
             try:
-                runner = SqlRunner(pool, report_now["schemas"], timeout_ms, settings.sql_row_cap)
+                runner = SqlRunner(conn.pool, report_now["schemas"], timeout_ms, settings.sql_row_cap)
                 args, usage = await run_draft(report_now, runner, settings, completion=completion,
                                               on_event=run.events.append)
                 draft = new_draft(report_now, args, model=settings.model, effort=settings.effort, usage=usage)
@@ -354,7 +397,7 @@ def build_app(
             for c in claims
         ]
         try:
-            runner = SqlRunner(pool, state.draft["report"]["schemas"], timeout_ms,
+            runner = SqlRunner(conn.pool, state.draft["report"]["schemas"], timeout_ms,
                                load_draft_settings(env).sql_row_cap)
         except SettingsError as e:
             return _err(str(e))
@@ -402,6 +445,8 @@ def build_app(
                 boards = [{"name": b["name"], "toml": b["toml"]} for b in state.boards["boards"]]
                 board_problems = [*state.boards["set_problems"],
                                   *(p for ps in state.boards["problems"].values() for p in ps)]
+        if settings_mode:
+            return await settings_export(body, boards, board_problems)
         try:
             result = export_dataset(state.draft, str(body.get("name") or ""), str(body.get("target") or ""),
                                     datasets_root, force=force, boards=boards, board_problems=board_problems)
@@ -427,7 +472,7 @@ def build_app(
         assert state.draft is not None and state.boards is not None
         settings = load_draft_settings(env)
         dataset = draft_dataset(state.draft)
-        runner = boards_runner(pool, dataset, timeout_ms, settings.sql_row_cap)
+        runner = boards_runner(conn.pool, dataset, timeout_ms, settings.sql_row_cap)
         files = state.boards["boards"]
         check = await check_boards(files, dataset, runner, settings.max_entity_boards)
         if preview:
@@ -466,7 +511,7 @@ def build_app(
 
         async def go() -> None:
             try:
-                runner = boards_runner(pool, dataset, timeout_ms, settings.sql_row_cap)
+                runner = boards_runner(conn.pool, dataset, timeout_ms, settings.sql_row_cap)
                 result = await run_boards(draft_now, runner, settings, completion=completion,
                                           on_event=run.events.append)
                 state.boards = await boards_state(result.files, result.check, dataset, runner,
@@ -509,27 +554,221 @@ def build_app(
                 return _err(str(e))
             return JSONResponse(state.boards)
 
+    def needs_login(handler):
+        async def wrapped(request: Request):
+            if conn.pool is None:
+                return _err("choose a connection first", 409)
+            return await handler(request)
+        return wrapped
+
+    # --- Settings mode (explorer/specs/workspaces/SPEC.md phase 2) ------------------------------
+
+    async def read_only_check(on: AsyncConnectionPool, schemas: list[str]) -> str | None:
+        """The agent's read-only check (S2): None when the login is read-only."""
+        try:
+            await SqlRunner(on, tuple(schemas), timeout_ms, 1).check_privileges()
+        except StartupError as e:
+            if str(e).startswith(NO_TABLES_PREFIX):
+                return None  # the report says so; not a write right
+            return "this login can write or administer the database; use a read-only role"
+        return None
+
+    async def connections(_request: Request) -> JSONResponse:
+        assert data_dir is not None
+        try:
+            names = unused_connections(env, data_dir)
+        except RegistryError as e:
+            return _err(str(e), e.status)
+        return JSONResponse({"connections": names, "current": conn.dsn_env})
+
+    async def connect(request: Request) -> JSONResponse:
+        assert data_dir is not None
+        if state.running:
+            return _err("a draft is running; wait for it to finish", 409)
+        name = ((await _body(request)) or {}).get("dsn_env")
+        try:
+            allowed = unused_connections(env, data_dir)
+        except RegistryError as e:
+            return _err(str(e), e.status)
+        if not isinstance(name, str) or name not in allowed:
+            return _err("choose one of the connections Settings lists")
+        regen["name"] = None
+        return await use_connection(name)
+
+    async def use_connection(name: str) -> JSONResponse:
+        opener = open_pool or default_open
+        try:
+            new_pool, label = await opener(env.get(name, "").strip())
+        except (ValueError, PoolTimeout, psycopg.Error):
+            return _err(f"cannot connect with {name} (check it and that the database is running)", 502)
+        regen["name"] = None  # a new login is never the regenerate target's until regenerate says so
+        old = conn.pool
+        conn.pool = conn.dsn_env = None
+        state.report = state.draft = state.boards = None
+        if old is not None and old is not pool:
+            await old.close()
+        try:
+            visible = await visible_schemas(new_pool)
+            problem = await read_only_check(new_pool, [s["name"] for s in visible])
+        except psycopg.Error as e:
+            await new_pool.close()
+            return _err(_db_message(e), 500)
+        if problem:
+            await new_pool.close()
+            return _err(problem, 403)
+        conn.pool, conn.database, conn.dsn_env = new_pool, label, name  # only a checked login (refuter F6)
+        return JSONResponse({**label, "dsn_env": name, "schemas": visible})
+
+    async def default_open(dsn: str) -> tuple[AsyncConnectionPool, dict[str, str]]:
+        p = open_report_pool(dsn, timeout_ms)
+        try:
+            await p.open(wait=True, timeout=10)
+        except BaseException:
+            await p.close()
+            raise
+        info = conninfo_to_dict(dsn)
+        return p, {"host": str(info.get("host") or "localhost"), "name": str(info.get("dbname") or "")}
+
+    def listing() -> list[dict[str, Any]]:
+        assert data_dir is not None
+        return [{"name": e.get("name"), "dsn_env": e.get("dsn_env"), "kind": kind_of(e, data_dir, repo_root)}
+                for e in read_entries(data_dir)]
+
+    async def workspaces(_request: Request) -> JSONResponse:
+        try:
+            return JSONResponse({"workspaces": listing(), "agent": agent_url})
+        except RegistryError as e:
+            return _err(str(e), e.status)
+
+    async def delete_workspace(request: Request) -> JSONResponse:
+        assert data_dir is not None
+        name = request.path_params["name"]
+        try:
+            entries = read_entries(data_dir)
+            entry = next((e for e in entries if e.get("name") == name), None)
+            if entry is None:
+                return _err("no such Workspace", 404)
+            target = workspace_dir(data_dir, name)
+            write_entries(data_dir, [e for e in entries if e is not entry])
+        except RegistryError as e:
+            return _err(str(e), e.status)
+        status, body = await reload_now()
+        if status not in (200, 0):  # 409: a run in progress; anything else: it may still be mounted
+            write_entries(data_dir, entries)
+            if status == 409:
+                detail = (body or {}).get("error") if isinstance(body, dict) else None
+                return _err(f"the agent can't reload now ({detail or 'a model run is in progress'}); "
+                            "try again when it has finished", 409)
+            return _err(f"the agent's reload failed (HTTP {status}); nothing was deleted", 502)
+        shutil.rmtree(target, ignore_errors=True)  # its Dataset (data kind) or only its Conversations
+        log.info("workspace deleted: %s", name)
+        return JSONResponse({"deleted": name, "reloaded": status == 200, "workspaces": listing()})
+
+    async def regenerate(request: Request) -> JSONResponse:
+        assert data_dir is not None
+        if state.running:
+            return _err("a draft is running; wait for it to finish", 409)
+        name = request.path_params["name"]
+        regen["name"] = None  # set again only when this regenerate succeeds (refuter F2)
+        try:
+            entry = next((e for e in read_entries(data_dir) if e.get("name") == name), None)
+        except RegistryError as e:
+            return _err(str(e), e.status)
+        if entry is None:
+            return _err("no such Workspace", 404)
+        if kind_of(entry, data_dir, repo_root) != "data":
+            return _err("a repo Dataset is regenerated with regen_dataset.sh, not from Settings", 400)
+        dsn_env = str(entry.get("dsn_env") or "")
+        if not env.get(dsn_env, "").strip():
+            return _err(f"{dsn_env} is not set", 400)
+        connected = await use_connection(dsn_env)
+        if connected.status_code != 200:
+            return connected
+        try:
+            dataset = load_dataset(workspace_dir(data_dir, name) / "dataset")
+        except ConfigError as e:
+            return _err(str(e))
+        assert conn.pool is not None
+        try:
+            built = await build_report(conn.pool, list(dataset.allowed_schemas), database=conn.database,
+                                       dataset=dataset, timeout_ms=timeout_ms)
+        except OverlayDriftError as e:
+            return _err(str(e))
+        except psycopg.Error as e:
+            return _err(_db_message(e), 500)
+        state.report = built.to_dict()
+        regen["name"] = name
+        return JSONResponse(state.report)
+
+    async def settings_export(body: dict[str, Any], boards: list[dict[str, Any]] | None,
+                              board_problems: list[str]) -> JSONResponse:
+        """D3: the draft becomes a Workspace in the data directory, then the agent reloads."""
+        assert data_dir is not None and state.draft is not None
+        name = regen["name"] or str(body.get("name") or "")
+        if not EXPORT_NAME.fullmatch(name):
+            return JSONResponse({"reasons": ["the Workspace name must be lowercase letters, digits and underscores, "
+                                             "starting with a letter"]}, status_code=422)
+        try:
+            entries = read_entries(data_dir)
+            if regen["name"] is None and any(e.get("name") == name for e in entries):
+                return _err(f"a Workspace named {name} already exists", 409)
+            root = workspace_dir(data_dir, name)
+        except RegistryError as e:
+            return _err(str(e), e.status)
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            result = export_dataset(state.draft, "dataset", "toml", root, force=regen["name"] is not None,
+                                    boards=boards, board_problems=board_problems)
+        except ExportError as e:
+            if regen["name"] is None and not any(root.iterdir()):
+                root.rmdir()
+            return JSONResponse({"reasons": e.reasons}, status_code=422)
+        if regen["name"] is None:
+            write_entries(data_dir, [*entries, {"name": name, "dataset_dir": str(result.dest.resolve()),
+                                                "dsn_env": conn.dsn_env}])
+        status, _ = await reload_now()
+        log.info("workspace exported: %s regenerate=%s reload=%s", name, regen["name"] is not None, status)
+        regen["name"] = None
+        return JSONResponse({"path": f"workspaces/{name}/dataset", "workspace": name, "overwrote": result.overwrote,
+                             "backup": result.backup.name if result.backup else None, "reloaded": status == 200})
+
+    async def reload_route(_request: Request) -> JSONResponse:
+        status, body = await reload_now()
+        out: dict[str, Any] = {"reloaded": status == 200, "status": status}
+        if status == 409 and isinstance(body, dict):
+            out["error"] = body.get("error")
+        return JSONResponse(out)
+
     async def no_ui(_request: Request) -> PlainTextResponse:
         return PlainTextResponse("The UI isn't built: run `npm ci && npm run build` in explorer/bootstrap/ui.\n")
 
     routes = [
-        Route("/api/connection", connection),
+        Route("/api/connection", needs_login(connection)),
         Route("/api/datasets", list_dataset_names),
         Route("/api/models", list_models),
-        Route("/api/schema", dump_schema),
-        Route("/api/report", report, methods=["POST"]),
+        Route("/api/schema", needs_login(dump_schema)),
+        Route("/api/report", needs_login(report), methods=["POST"]),
         Route("/api/estimate", estimate, methods=["POST"]),
-        Route("/api/draft", start_draft, methods=["POST"]),
+        Route("/api/draft", needs_login(start_draft), methods=["POST"]),
         Route("/api/draft", current_draft, methods=["GET"]),
         Route("/api/draft/{run_id}/events", draft_events),
-        Route("/api/claims/verify", verify, methods=["POST"]),
+        Route("/api/claims/verify", needs_login(verify), methods=["POST"]),
         Route("/api/validate", validate, methods=["POST"]),
-        Route("/api/export", export, methods=["POST"]),
+        Route("/api/export", needs_login(export), methods=["POST"]),
         Route("/api/boards/estimate", boards_estimate, methods=["POST"]),
-        Route("/api/boards/draft", start_boards, methods=["POST"]),
+        Route("/api/boards/draft", needs_login(start_boards), methods=["POST"]),
         Route("/api/boards", current_boards, methods=["GET"]),
-        Route("/api/boards/validate", validate_boards, methods=["POST"]),
+        Route("/api/boards/validate", needs_login(validate_boards), methods=["POST"]),
     ]
+    if settings_mode:
+        routes += [
+            Route("/api/connections", connections),
+            Route("/api/connect", connect, methods=["POST"]),
+            Route("/api/workspaces", workspaces),
+            Route("/api/workspaces/{name}/delete", delete_workspace, methods=["POST"]),
+            Route("/api/workspaces/{name}/regenerate", regenerate, methods=["POST"]),
+            Route("/api/reload", reload_route, methods=["POST"]),
+        ]
     if ui_dir is not None and (ui_dir / "index.html").is_file():
         routes.append(Mount("/", StaticFiles(directory=ui_dir, html=True)))
     else:
@@ -541,4 +780,7 @@ def build_app(
 
     app = Starlette(routes=routes, exception_handlers={Exception: server_error})
     app.state.bootstrap = state
-    return _Guard(app, port)
+    guarded: ASGIApp = _Guard(app, port)
+    if client_origin:  # D7: the explorer client calls this server directly; outside the guard
+        guarded = CORSMiddleware(guarded, allow_origins=[client_origin], allow_methods=["*"], allow_headers=["*"])
+    return guarded

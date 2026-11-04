@@ -131,6 +131,39 @@
       explorer-app .saved-list .open-saved { border: 0; padding: 0; color: var(--accent); text-align: left; flex: 1 1 100%; overflow-wrap: anywhere; }
       explorer-app .saved-date { color: var(--muted); font-size: 0.85em; }
       explorer-app .notice { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
+      /* Settings (Workspaces SPEC phase 2): the bootstrap views, from explorer/bootstrap/ui/index.html */
+      explorer-app [hidden] { display: none !important; } /* Settings stays mounted while hidden */
+      explorer-app .settings-toggle { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
+      explorer-app .settings-toggle.selected { background: var(--accent-soft); border-color: var(--accent-line); }
+      explorer-app .settings-page { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 64px; background: var(--canvas); }
+      explorer-settings { display: block; max-width: 1200px; margin: 0 auto; --ok: #15803d; --warn: #b45309; --bad: var(--error); --muted-ink: var(--muted); }
+      explorer-settings .steps { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0 0 16px; padding: 0; }
+      explorer-settings .steps li { padding: 2px 10px; border-radius: 999px; color: var(--muted); }
+      explorer-settings .steps li.current { background: var(--accent); color: var(--on-accent); }
+      explorer-settings .steps li button { border: 0; background: none; color: inherit; padding: 0; cursor: pointer; }
+      explorer-settings table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+      explorer-settings caption { text-align: left; font-weight: 600; padding: 4px 0; }
+      explorer-settings th, explorer-settings td { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+      explorer-settings .mono, explorer-settings code, explorer-settings textarea { font-family: var(--mono); font-size: 13px; }
+      explorer-settings textarea { width: 100%; box-sizing: border-box; }
+      explorer-settings textarea.invalid { outline: 2px solid var(--bad); }
+      explorer-settings .muted { color: var(--muted); }
+      explorer-settings .missing, explorer-settings .error, explorer-settings .errors, explorer-settings .refused, explorer-settings .warn { color: var(--bad); }
+      explorer-settings .ok { color: var(--ok); }
+      explorer-settings .badge { display: inline-block; border-radius: 10px; padding: 0 8px; font-size: 12px; border: 1px solid currentColor; }
+      explorer-settings .badge.ok, explorer-settings .state-verified { color: var(--ok); }
+      explorer-settings .badge.warn, explorer-settings .state-needs-review, explorer-settings .state-edited { color: var(--warn); }
+      explorer-settings .state-failed, explorer-settings .state-error, explorer-settings .state-not-checked { color: var(--bad); }
+      explorer-settings .summary { display: flex; flex-wrap: wrap; gap: 32px; } explorer-settings .summary dt { color: var(--muted); } explorer-settings .summary dd { margin: 0; font-size: 1.2rem; }
+      explorer-settings .summary .over { color: var(--bad); }
+      explorer-settings .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+      explorer-settings button { padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
+      explorer-settings button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      explorer-settings button:disabled { opacity: .5; }
+      explorer-settings [role=tab][aria-selected=true] { font-weight: 700; border-bottom: 2px solid var(--accent); }
+      explorer-settings .claim { margin: 12px 0; } explorer-settings .claim.dismissed { opacity: .6; }
+      explorer-settings label.schema { display: block; }
+      explorer-settings .connections { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 
       explorer-app .empty { padding: 48px 0 24px; color: var(--muted); }
       explorer-app .empty h2 { margin: 0 0 6px; color: var(--fg); font-size: 28px; letter-spacing: -0.02em; }

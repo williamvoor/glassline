@@ -391,3 +391,9 @@ def test_workspace_mode_refuses_a_data_directory_in_the_repo():
     assert done.returncode == 1 and done.stderr.strip().startswith("explorer: EXPLORER_DATA_DIR must be outside")
     assert not (REPO / "explorer" / "tmpdata").exists()
 
+
+
+def test_w3_a_relative_data_directory_is_refused():
+    """Refuter (phase 2) F9: the agent and the bootstrap server run from different directories."""
+    with pytest.raises(ConfigError, match="absolute"):
+        data_dir("data/explorer", REPO)

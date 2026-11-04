@@ -19,6 +19,7 @@ import {
   BOARD_CHANGED, DATA_CHANGED, httpApi, parseRoute, pickWorkspace, routeHash,
   type SavedSummary, type SavedView, type WorkspaceApi, type WorkspaceInfo,
 } from './workspaces.js';
+import './settings/settings.js';
 
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
@@ -32,6 +33,7 @@ export const IN_PLACE_KEY = 'explorerInPlace';
 export const SUPERSEDED_KEY = 'explorerSuperseded';
 export const CONTROLS = 'controls';
 const EXPLORER_KEY = 'explorer';
+const SETTINGS_HASH = '#/settings';
 
 type TabKind = 'board' | 'question' | 'drill' | 'ask';
 
@@ -142,6 +144,8 @@ export class ExplorerApp extends LitElement {
   @state() private listOpen = false;
   @state() private saved: SavedSummary[] = [];
   @state() private listError?: string;
+  @state() private settingsOpen = false; // #/settings (Workspaces SPEC phase 2)
+  @state() private settingsMounted = false; // once opened, kept (hidden), so a draft survives closing it
   private routeWritten?: string; // the hash this app wrote last: its own change is not a navigation
   private onHash = () => {
     if (window.location.hash !== this.routeWritten) void this.followRoute();
@@ -192,6 +196,11 @@ export class ExplorerApp extends LitElement {
 
   /** Opens what the hash names: a Workspace, or a saved Conversation in it. */
   private async followRoute() {
+    if (window.location.hash === SETTINGS_HASH) {
+      this.settingsOpen = this.settingsMounted = true; // the investigation stays as it is behind it
+      return;
+    }
+    this.settingsOpen = false;
     const route = parseRoute(window.location.hash);
     const ws = pickWorkspace(this.workspaces, route.workspace);
     if (!ws) {
@@ -213,8 +222,44 @@ export class ExplorerApp extends LitElement {
     }
   }
 
+  private openSettings() {
+    this.settingsOpen = this.settingsMounted = true;
+    this.routeWritten = SETTINGS_HASH;
+    if (window.location.hash !== SETTINGS_HASH) window.history.replaceState(null, '', SETTINGS_HASH);
+  }
+
+  private closeSettings() {
+    this.settingsOpen = false;
+    if (this.workspace) {
+      this.setRoute(this.contextId);
+      return;
+    }
+    // Opened at #/settings: no Workspace was picked yet (refuter F4).
+    this.routeWritten = '';
+    window.history.replaceState(null, '', window.location.pathname);
+    void this.followRoute();
+  }
+
+  /** Settings changed the Workspace list: reload the picker; a deleted current one goes. */
+  private async workspacesChanged() {
+    try {
+      this.workspaces = await this.workspaceApi.list();
+    } catch {
+      return;
+    }
+    if (this.workspace && !this.workspaces.some(w => w.name === this.workspace!.name && w.status === 'available')) {
+      // The current Workspace was deleted: the next one, behind Settings, which stays open (refuter F1).
+      const next = pickWorkspace(this.workspaces, undefined);
+      this.workspace = next;
+      this.connection = undefined;
+      this.info = undefined;
+      if (next) this.newConversation();
+      else this.reset();
+    }
+  }
+
   private setRoute(conversation?: string) {
-    if (!this.workspaceMode || !this.workspace) return;
+    if (!this.workspaceMode || !this.workspace || this.settingsOpen) return;
     const hash = routeHash({workspace: this.workspace.name, conversation});
     this.routeWritten = hash;
     if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
@@ -222,7 +267,9 @@ export class ExplorerApp extends LitElement {
 
   private switchWorkspace(name: string) {
     const ws = this.workspaces.find(w => w.name === name && w.status === 'available');
-    if (!ws || ws.name === this.workspace?.name) return;
+    if (!ws) return;
+    if (this.settingsOpen) this.closeSettings();
+    if (ws.name === this.workspace?.name) return;
     this.workspace = ws;
     this.connection = undefined;
     this.info = undefined;
@@ -787,6 +834,11 @@ export class ExplorerApp extends LitElement {
         ${this.info?.description ? html`<span class="dataset">${this.info.description}</span>` : nothing}
       </div>
       ${this.renderPicker()}
+      ${this.workspaceMode
+        ? html`<button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
+            aria-pressed=${this.settingsOpen ? 'true' : 'false'}
+            @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings())}>Settings</button>`
+        : nothing}
       <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
         New conversation
       </button>
@@ -986,10 +1038,16 @@ export class ExplorerApp extends LitElement {
   }
 
   override render() {
+    const settings = this.settingsMounted
+      ? html`<main class="settings-page" ?hidden=${!this.settingsOpen}>
+          <explorer-settings ?hidden=${!this.settingsOpen} @workspaces-changed=${() => void this.workspacesChanged()}></explorer-settings>
+        </main>`
+      : nothing;
     const tab = this.tab(this.selected);
     return html`
       ${this.renderHeader()}
-      <div class="shell">
+      ${settings}
+      <div class="shell" ?hidden=${this.settingsOpen}>
         ${this.renderSidebar()}
         <main class="canvas">
           ${this.renderBanner()} ${this.renderTabStrip()} ${tab && !tab.closed ? this.renderTab(tab) : this.renderEmpty()}

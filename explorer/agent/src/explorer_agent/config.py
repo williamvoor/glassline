@@ -367,7 +367,10 @@ class WorkspaceListing:
 def data_dir(raw: str, repo_root: Path) -> Path:
     """`EXPLORER_DATA_DIR`, resolved, created 0700 if missing, refused inside the repo (W3):
     saved Conversations hold questions and model history."""
-    path = Path(raw).expanduser().resolve()
+    expanded = Path(raw).expanduser()
+    if not expanded.is_absolute():  # the agent and the bootstrap server run from different directories
+        raise ConfigError("EXPLORER_DATA_DIR must be an absolute path (or start with ~)")
+    path = expanded.resolve()
     root = repo_root.resolve()
     if path == root or path.is_relative_to(root):
         raise ConfigError("EXPLORER_DATA_DIR must be outside the repo (saved Conversations hold questions)")

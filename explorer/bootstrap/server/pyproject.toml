@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "explorer-agent",
+    "httpx==0.28.1",
     "python-dotenv>=1.2.4",
     "starlette==1.10.0",
     "uvicorn==0.54.0",

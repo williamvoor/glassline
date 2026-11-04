@@ -56,7 +56,25 @@ else
   WAIT_TICKS=100
 fi
 AGENT_PID=$!
-trap 'kill "$AGENT_PID" 2>/dev/null || true; wait "$AGENT_PID" 2>/dev/null || true' EXIT INT TERM
+BOOTSTRAP_PID=""
+trap 'kill "$AGENT_PID" $BOOTSTRAP_PID 2>/dev/null || true; wait "$AGENT_PID" $BOOTSTRAP_PID 2>/dev/null || true' EXIT INT TERM
+
+# Workspace mode: Settings (the explorer's #/settings) talks to the bootstrap server (ADR 0041).
+BOOTSTRAP_PORT="${BOOTSTRAP_PORT:-8765}"
+BOOTSTRAP_URL="http://127.0.0.1:${BOOTSTRAP_PORT}"
+if [ "$WORKSPACES" = 1 ]; then
+  if curl -sf "$BOOTSTRAP_URL/api/connections" >/dev/null; then
+    echo "a bootstrap server in Settings mode is already on $BOOTSTRAP_URL; Settings will use it" >&2
+  elif curl -s "$BOOTSTRAP_URL/" >/dev/null; then
+    echo "something else is serving on $BOOTSTRAP_URL (an old bootstrap serve?); stop it, or set BOOTSTRAP_PORT" >&2
+    exit 1
+  else
+    (cd "$HERE/bootstrap/server" && BOOTSTRAP_ENV_FILE="${EXPLORER_ENV_FILE:-$HERE/../.env}" \
+      AGENT_PORT="$AGENT_PORT" CLIENT_ORIGIN="$CLIENT_ORIGIN" \
+      exec uv run python -m explorer_bootstrap serve --port "$BOOTSTRAP_PORT") &
+    BOOTSTRAP_PID=$!
+  fi
+fi
 
 for _ in $(seq 1 "$WAIT_TICKS"); do
   if curl -sf "$AGENT_URL$READY_PATH" >/dev/null; then break; fi
@@ -67,4 +85,4 @@ curl -sf "$AGENT_URL$READY_PATH" >/dev/null || { echo "$MODE agent not ready at 
 echo "$MODE agent ready at $AGENT_URL; client at $CLIENT_ORIGIN"
 
 cd "$HERE/client"
-VITE_AGENT_URL="$AGENT_URL" VITE_WORKSPACES="$WORKSPACES" npm run dev
+VITE_AGENT_URL="$AGENT_URL" VITE_WORKSPACES="$WORKSPACES" VITE_BOOTSTRAP_URL="$BOOTSTRAP_URL" npm run dev

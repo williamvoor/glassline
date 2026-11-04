@@ -389,6 +389,27 @@ async def _serve(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         load_draft_settings(env)  # fail now on a bad BOOTSTRAP_* setting, not on the first draft
     except SettingsError as e:
         raise _Fatal(str(e)) from None
+    raw_data = env.get("EXPLORER_DATA_DIR", "").strip()
+    if raw_data:
+        # Settings mode (explorer/specs/workspaces/SPEC.md phase 2): the login is chosen in Settings.
+        from explorer_agent.config import ConfigError as AgentConfigError, data_dir as resolve_data_dir
+
+        try:
+            data = resolve_data_dir(raw_data, REPO_ROOT)
+        except AgentConfigError as e:
+            raise _Fatal(str(e)) from None
+        agent_port = env.get("AGENT_PORT", "").strip() or "10002"
+        app = build_app(
+            None, database={}, env=env, port=args.port, timeout_ms=args.timeout_ms, datasets_root=DATASETS_ROOT,
+            repo_root=REPO_ROOT, ui_dir=None, completion=COMPLETION, data_dir=data,
+            agent_url=f"http://127.0.0.1:{agent_port}",
+            client_origin=env.get("CLIENT_ORIGIN", "").strip() or "http://127.0.0.1:5173",
+        )
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning"))
+        sys.stdout.write(f"bootstrap: http://127.0.0.1:{args.port}/ (Settings mode)\n")
+        sys.stdout.flush()
+        await server.serve()
+        return EXIT_OK
     pool, database = await _open(env, args.timeout_ms)
     try:
         app = build_app(

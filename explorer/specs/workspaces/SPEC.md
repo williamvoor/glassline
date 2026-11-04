@@ -1,6 +1,6 @@
 # Workspaces: several databases, saved Conversations, Settings
 
-Status: **approved** (2026-11-04, the user). Phase 1 built (2026-11-04, see "Build decisions, phase 1"); phase 2 not built. It came out of a grilling session with the
+Status: **approved** (2026-11-04, the user). Phase 1 built (2026-11-04) and phase 2 built (2026-11-05); see the "Build decisions" sections. Retiring `bootstrap/ui/` (G22) waits on the user (D8). It came out of a grilling session with the
 user on 2026-11-04. Where this file is silent, `explorer/SPEC.md` and `bootstrap/SPEC.md` apply.
 
 Decisions: ADR 0039 (Workspaces are sub-apps of one agent process), ADR 0040 (saved
@@ -396,6 +396,78 @@ above, it is a deliberate amendment, listed here.
     client never calls `/workspaces`, so single-Dataset mode makes no extra request.
   - **In-place entries:** a saved in-place Log entry carries `on_tab`, its Board's tab ID, so the
     reopened log selects the right tab.
+
+## Build decisions, phase 2 (2026-11-04, Claude, while building)
+
+- **D1 Settings mode.** The bootstrap server runs in Settings mode when `EXPLORER_DATA_DIR` is set.
+  It then starts with no database connection. `BOOTSTRAP_DATABASE_URL` is used only without
+  `EXPLORER_DATA_DIR` (the CLI and the old `serve`), which is unchanged.
+- **D2 Connections.** `GET /api/connections` lists the names of `*_DATABASE_URL` variables (from
+  the process environment plus the root `.env`) that no Workspace's `dsn_env` uses. It never lists
+  a value. `POST /api/connect {dsn_env}` opens that login.
+  - It runs the agent's read-only check over every schema the login can see. A login that can
+    write, a superuser or a login with CREATEROLE is refused with 403 (S2).
+  - Starting a draft runs the same check again, over the report's schemas.
+  - Connecting replaces any earlier connection and clears the report, draft and Boards.
+- **D3 Export in Settings mode.**
+  - **Name:** the export `name` is the Workspace name. It must match the export rule
+    (`[a-z][a-z0-9_]*`), which also satisfies the Workspace rule.
+  - **Target:** the comment target is always `toml`.
+  - **Files:** they go to `$EXPLORER_DATA_DIR/workspaces/<name>/dataset/` (`export_dataset` with
+    root `workspaces/<name>` and name `dataset`).
+  - **Registering:** the entry `{name, dataset_dir (absolute), dsn_env}` is appended with an atomic
+    write. A name already in the list is refused with 409 before anything is written, unless this
+    is a regenerate.
+  - **Reload:** the server then calls the agent's `POST /workspaces/reload` at
+    `http://127.0.0.1:<AGENT_PORT>`. The answer says whether the reload worked. A failed reload
+    doesn't undo the export, and Retry in the picker reloads again.
+- **D4 Workspaces in Settings.** `GET /api/workspaces` lists the list's entries with
+  `kind: "data"` (the Dataset is under the data directory) or `"repo"`. Deletion is
+  `POST /api/workspaces/<name>/delete` with a JSON body, because the guard needs JSON on every
+  non-GET.
+  - The server removes the entry (atomic rewrite), then reloads the agent. On 409 it puts the entry
+    back and answers 409 (a run in progress).
+  - Then it removes `$EXPLORER_DATA_DIR/workspaces/<name>/`. For a repo Dataset that folder holds
+    only the Conversations. The path is resolved and must sit inside `workspaces/`, so a repo
+    Dataset's files are never touched.
+  - Rewriting the list drops comments in it. Settings is its only writer.
+- **D5 Regenerate.** `POST /api/workspaces/<name>/regenerate` (data-directory Datasets only)
+  connects with the entry's `dsn_env` and reports on that Dataset. It marks the session so the next
+  export goes to the same folder with `force` (with a backup), without appending to the list. The
+  usual draft, review and Boards steps run in between, then the agent is reloaded.
+- **D6 Client.**
+  - **Location:** Settings is the `#/settings` route, opened by a "Settings" button in the header
+    (Workspace mode only). The bootstrap views are copied into `client/src/settings/` and talk to
+    `VITE_BOOTSTRAP_URL` (default `http://127.0.0.1:8765`).
+  - **Workspaces screen:** it adds a first screen, which lists the Workspaces with Delete (after a
+    confirmation naming what is deleted) and, for data-directory Datasets, Regenerate. It also has
+    "Add a Workspace", which offers the unused connection names.
+  - **Model calls:** starting a Dataset draft or a Boards draft asks for confirmation first,
+    naming the model and the cost ceiling (S5).
+  - **After export or delete:** the picker is refreshed.
+- **D7 CORS.** The bootstrap server allows the client's origin (`CLIENT_ORIGIN`, default
+  `http://127.0.0.1:5173`), outside its guard, as the agent does (B1).
+- **D10 Review fixes (phase 2 refuter, 2026-11-05).**
+  - **Names:** the approved text's `BOOTSTRAP_URL` is `VITE_BOOTSTRAP_URL` in the client, set by
+    `run.sh` from `BOOTSTRAP_PORT` (default 8765).
+  - **Data directory:** `EXPLORER_DATA_DIR` must be absolute (or start with `~`), because the agent
+    and the bootstrap server run from different directories.
+  - **Delete:** the folder is deleted only when the agent's reload answers 200, or the agent isn't
+    running. Any other answer puts the entry back and deletes nothing.
+  - **Reload:** Settings has "Reload the agent" (`POST /api/reload`), the retry for an export
+    whose reload failed. The picker's Retry covers only unavailable Workspaces.
+  - **Settings element:** once opened, it stays mounted (hidden) while closed, so a draft
+    survives switching back to the explorer.
+  - **Regenerate:** the target is cleared by any new connection and set only by a regenerate that
+    succeeds. Its "Re-run report" regenerates again.
+- **D9 Test files.**
+  - **Server:** S1–S4 live in `bootstrap/server/tests/test_settings.py`, not `test_server.py`. S3's
+    reload runs a real agent Workspace registry in process.
+  - **Client:** S5 is `client/test/settings.test.ts`. The copied views keep their own tests, ported
+    from `bootstrap/ui/test/` to `client/test/settings/`.
+- **D8 Retiring `bootstrap/ui/`.** `run.sh` starts the bootstrap server in Workspace mode. The old
+  UI is removed only after the user confirms, because it has uncommitted README edits from another
+  session.
 
 ## Test command
 
