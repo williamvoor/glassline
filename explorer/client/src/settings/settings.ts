@@ -1,5 +1,5 @@
 // <explorer-settings>: the bootstrap workflow inside the explorer (specs/workspaces/SPEC.md phase 2,
-// ADR 0041, D6). Adapted from explorer/bootstrap/ui/src/app.ts: a Workspaces screen first, then
+// ADR 0041, D6). Adapted from the retired explorer/bootstrap/ui (app.ts): a Workspaces screen first, then
 // connect, report, draft, review, Boards and export, against the bootstrap server at
 // VITE_BOOTSTRAP_URL. Every model call asks for confirmation first, naming the model and the
 // cost ceiling.

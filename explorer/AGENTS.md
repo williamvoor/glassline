@@ -48,7 +48,7 @@ UPDATE_FIXTURES=1 uv run pytest tests/test_ui.py        # regenerates client/tes
 # client/  (the interop test starts the stub agent, so `uv` must be on the PATH)
 npm install && npm test && npm run build
 
-# bootstrap/server/ and bootstrap/ui/: see their READMEs
+# bootstrap/server/: see its README (its browser UI is the client's Settings)
 ./run.sh            # stub agent + client on http://127.0.0.1:5173
 ./run.sh --real     # real agent; settings from ../.env
 ```

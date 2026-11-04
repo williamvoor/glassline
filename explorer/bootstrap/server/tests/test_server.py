@@ -229,17 +229,15 @@ async def test_estimate(ro_pool, tmp_path):
                    "max_calls": 5, "first_call_usd": round(first, 4), "run_ceiling_usd": round(first * 5, 4)}
 
 
-async def test_serves_the_built_ui(ro_pool, tmp_path):
-    ui = tmp_path / "dist"
-    ui.mkdir()
-    (ui / "index.html").write_text("<bootstrap-app></bootstrap-app>", encoding="utf-8")
+async def test_points_to_settings_now_that_the_browser_ui_is_retired(ro_pool, tmp_path):
+    # Workspaces G22: explorer/bootstrap/ui is retired; its views live in the explorer's Settings.
     root = tmp_path / "datasets"
     root.mkdir()
     app = build_app(ro_pool, database=DB, env={}, port=PORT, timeout_ms=2000, datasets_root=root,
-                    repo_root=tmp_path, ui_dir=ui)
+                    repo_root=tmp_path)
     async with _client(app) as client:
         r = await client.get("/")
-        assert r.status_code == 200 and "<bootstrap-app>" in r.text
+        assert r.status_code == 200 and "#/settings" in r.text and "bootstrap/ui" not in r.text
         assert (await client.get("/api/connection")).status_code == 200
 
 

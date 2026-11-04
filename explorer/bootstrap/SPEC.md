@@ -437,6 +437,10 @@ No imports from `explorer/client`, no component library, no router, no code edit
 `127.0.0.1` only, serves the API under `/api` and the built UI (`ui/dist`) at `/` (one origin:
 no CORS). In development the Vite dev server proxies `/api` to it.
 
+> **2026-11-05:** `ui/` is retired (Workspaces SPEC G22). Its views are the explorer client's
+> Settings (`#/settings`), and `/` now answers with a pointer to it. The `ui/` test commands below
+> are historical.
+
 - **Request guard** (a page on another site must not drive the tool): every `/api` request must
   have a `Host` of `127.0.0.1:<port>` or `localhost:<port>` (DNS rebinding), and every `POST`
   must be `Content-Type: application/json` (so a cross-site request needs a CORS preflight,

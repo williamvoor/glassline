@@ -31,7 +31,6 @@ from explorer_bootstrap.stats import QUERY_CANCELED, open_report_pool
 REPO_ROOT = Path(__file__).resolve().parents[5]  # genUI/
 ENV_FILE = REPO_ROOT / ".env"
 DATASETS_ROOT = REPO_ROOT / "explorer" / "datasets"
-UI_DIST = REPO_ROOT / "explorer" / "bootstrap" / "ui" / "dist"
 # Tests set this to a stub (explorer_agent.testing.stub_model); None means litellm.acompletion.
 COMPLETION: Completion | None = None
 URL_VAR = "BOOTSTRAP_DATABASE_URL"
@@ -416,7 +415,7 @@ async def _serve(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         agent_port = env.get("AGENT_PORT", "").strip() or "10002"
         app = build_app(
             None, database={}, env=env, port=args.port, timeout_ms=args.timeout_ms, datasets_root=DATASETS_ROOT,
-            repo_root=REPO_ROOT, ui_dir=None, completion=COMPLETION, data_dir=data,
+            repo_root=REPO_ROOT, completion=COMPLETION, data_dir=data,
             agent_url=f"http://127.0.0.1:{agent_port}",
             client_origin=env.get("CLIENT_ORIGIN", "").strip() or "http://127.0.0.1:5173",
         )
@@ -429,7 +428,7 @@ async def _serve(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     try:
         app = build_app(
             pool, database=database, env=env, port=args.port, timeout_ms=args.timeout_ms,
-            datasets_root=DATASETS_ROOT, repo_root=REPO_ROOT, ui_dir=UI_DIST, completion=COMPLETION,
+            datasets_root=DATASETS_ROOT, repo_root=REPO_ROOT, completion=COMPLETION,
         )
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning"))
         sys.stdout.write(f"bootstrap: http://127.0.0.1:{args.port}/ (database {database['name']} on "

@@ -9,7 +9,7 @@ export class ApiError extends Error {
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
-// Copied from explorer/bootstrap/ui/src/api.ts for the explorer's Settings (Workspaces SPEC phase 2,
+// Copied from the retired explorer/bootstrap/ui (api.ts) for the explorer's Settings (Workspaces SPEC phase 2,
 // D6); the Settings-mode routes are added at the end.
 
 export interface SettingsWorkspace {

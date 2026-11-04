@@ -23,8 +23,7 @@ from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
-from starlette.routing import Mount, Route
-from starlette.staticfiles import StaticFiles
+from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from explorer_agent.config import SCHEMA_NAME, ConfigError, Dataset, load_dataset
@@ -197,7 +196,6 @@ def build_app(
     timeout_ms: int,
     datasets_root: Path,
     repo_root: Path,
-    ui_dir: Path | None = None,
     completion: Completion | None = None,
     data_dir: Path | None = None,
     agent_url: str = "",
@@ -738,7 +736,12 @@ def build_app(
         return JSONResponse(out)
 
     async def no_ui(_request: Request) -> PlainTextResponse:
-        return PlainTextResponse("The UI isn't built: run `npm ci && npm run build` in explorer/bootstrap/ui.\n")
+        # Workspaces G22: the browser UI is the explorer's Settings now.
+        return PlainTextResponse(
+            "This is the bootstrap API. Its browser UI is the explorer's Settings (#/settings): set\n"
+            "EXPLORER_DATA_DIR and run explorer/run.sh --real. The CLI (report, draft, verify, boards,\n"
+            "export) still works on its own.\n"
+        )
 
     routes = [
         Route("/api/connection", needs_login(connection)),
@@ -767,10 +770,7 @@ def build_app(
             Route("/api/workspaces/{name}/regenerate", regenerate, methods=["POST"]),
             Route("/api/reload", reload_route, methods=["POST"]),
         ]
-    if ui_dir is not None and (ui_dir / "index.html").is_file():
-        routes.append(Mount("/", StaticFiles(directory=ui_dir, html=True)))
-    else:
-        routes.append(Route("/", no_ui))
+    routes.append(Route("/", no_ui))
 
     async def server_error(_request: Request, exc: Exception) -> JSONResponse:
         log.warning("request failed: %s", type(exc).__name__)  # the class only: messages may quote SQL
