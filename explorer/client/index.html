@@ -117,6 +117,20 @@
       explorer-app .canvas > * { max-width: 1120px; margin-left: auto; margin-right: auto; }
       explorer-app .banner { margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
       explorer-app .banner button { margin-left: 8px; padding: 2px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); }
+      /* Workspaces (specs/workspaces/SPEC.md phase 1) */
+      explorer-app .workspaces { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      explorer-app .workspace { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
+      explorer-app .workspace.selected { background: var(--accent-soft); border-color: var(--accent-line); }
+      explorer-app .workspace.unavailable { color: var(--faint); border-style: dashed; }
+      explorer-app .workspace .reason { font-size: 0.85em; }
+      explorer-app .retry-workspace, explorer-app .open-current, explorer-app .saved-list button { padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
+      explorer-app .saved-toggle { margin: 8px 16px 0; padding: 4px 0; border: 0; background: none; color: var(--accent); text-align: left; cursor: pointer; }
+      explorer-app .saved-list { margin: 4px 16px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); max-height: 40vh; overflow: auto; }
+      explorer-app .saved-list ol { list-style: none; margin: 0 0 8px; padding: 0; }
+      explorer-app .saved-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--line); }
+      explorer-app .saved-list .open-saved { border: 0; padding: 0; color: var(--accent); text-align: left; flex: 1 1 100%; overflow-wrap: anywhere; }
+      explorer-app .saved-date { color: var(--muted); font-size: 0.85em; }
+      explorer-app .notice { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
 
       explorer-app .empty { padding: 48px 0 24px; color: var(--muted); }
       explorer-app .empty h2 { margin: 0 0 6px; color: var(--fg); font-size: 28px; letter-spacing: -0.02em; }

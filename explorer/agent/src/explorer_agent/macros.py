@@ -50,6 +50,7 @@ TIMELINE_SORTS = ("result", "start", "end")
 NO_ROWS = "No rows"
 PANEL_FAILED = "This panel couldn't load: {reason}"
 PANEL_UNDRAWABLE = "This panel couldn't be drawn from its rows."
+RERUN_FAILED = "This query no longer runs: {reason}"
 DRILL_ERROR_PREFIX = "drill: "
 
 
@@ -95,6 +96,10 @@ class MacroContext:
     key_types: Mapping[str, str] = field(default_factory=dict)  # Board name -> key_type
     own_board: str = ""
     today: Callable[[], dt.date] = dt.date.today  # Timeline's today line, per request
+    # Rebuilding a saved Level (Workspaces B10): Macros are lenient as in Board mode, and a saved
+    # Result whose re-run failed draws its error and SQL. Result ID -> (reason, sql).
+    rebuild: bool = False
+    rerun_failed: Mapping[str, tuple[str, str]] = field(default_factory=dict)
 
 
 _context: ContextVar[MacroContext | None] = ContextVar("explorer_macro_context", default=None)
@@ -134,7 +139,7 @@ def _captured(func: Callable[..., Any]) -> Callable[..., Any]:
             return e.card
         except Exception as e:
             ctx = _context.get()
-            if ctx is not None and ctx.board and isinstance(e, MacroError):
+            if ctx is not None and (ctx.board or ctx.rebuild) and isinstance(e, MacroError):
                 # A data-dependent error (negative bars, ...): only this panel is lost (SPEC §18).
                 # The message can quote a value, so only the macro's name is logged.
                 log.warning("board panel could not be drawn: macro=%s", func.__name__)
@@ -159,6 +164,12 @@ def _result(result_id: str) -> StoredResult:
     store = ctx.store
     if ctx.board and result_id in ctx.failed:
         raise _PanelReplaced(_card([Text(text=PANEL_FAILED.format(reason=ctx.failed[result_id] or "query error"))]))
+    if result_id in ctx.rerun_failed:
+        reason, sql = ctx.rerun_failed[result_id]
+        raise _PanelReplaced(_card([
+            Text(text=RERUN_FAILED.format(reason=reason or "query error"), variant="caption"),
+            SqlDetails(sql=sql, summary=result_id),
+        ]))
     result = store.get(result_id)
     if result is None:
         valid = ", ".join(store.ids()) or "none yet: call run_sql first"
@@ -1341,6 +1352,8 @@ def _fill(template: str, *, markdown: bool, on_error: Callable[[Exception], None
         except MacroError as e:
             if on_error is None:
                 raise
+            if _ctx().rebuild:
+                return "—"  # a saved Level's data no longer fits (Workspaces B10)
             on_error(e)
             return m.group(0)
 

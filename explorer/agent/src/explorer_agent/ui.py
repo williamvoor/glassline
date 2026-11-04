@@ -73,6 +73,10 @@ class UiResult:
     sources: list[SourceSpec] = field(default_factory=list)
     drills: list[DrillSpec] = field(default_factory=list)
     follow_ups: list[FollowUpSpec] = field(default_factory=list)
+    # What a saved Level keeps (Workspaces B7): the reply this was built from (None when the UI
+    # was not built from a reply) and the Drill Visuals it ignored.
+    reply: str | None = None
+    ignore_drills: frozenset[int] = frozenset()
 
 
 # `$ref`s in a component schema that the merged catalog doesn't carry in its own $defs.
@@ -212,11 +216,13 @@ class UiPipeline:
         ids: IdAllocator | None = None,
         ignore_drills: Iterable[int] = (),
         board: Mapping[str, Any] | None = None,
+        rerun_failed: Mapping[str, tuple[str, str]] | None = None,
     ) -> UiResult:
         """`ids` reserves action source and Follow-up IDs (the Conversation's); `ignore_drills`
         rebuilds with those Visuals' drill arguments ignored. `board` builds a Board's layout in
         Board mode (SPEC §18): `{"failed": {query: sqlstate}}`, with `store`
-        looking Results up by query name."""
+        looking Results up by query name. `rerun_failed` rebuilds a saved Level (Workspaces
+        B10): lenient Macros, and those Results' errors drawn in place."""
         # Any SDK error here comes from what the model wrote (syntax, dangling references, bad
         # macro arguments, duplicate surfaces), so it goes back to the model as a UiError.
         try:
@@ -230,6 +236,8 @@ class UiPipeline:
         prose: FilledProse | None = None
         try:
             board_args = {"board": True, **board} if board is not None else {}
+            if rerun_failed is not None:
+                board_args.update(rebuild=True, rerun_failed=dict(rerun_failed))
             with self._context(store, ids, ignore_drills, **board_args) as ctx:
                 prose = fill_prose(prose_raw)
                 prose_ok = not ctx.errors
@@ -257,6 +265,7 @@ class UiPipeline:
             return UiResult(
                 prose=prose.text, messages=messages, bare_numbers=bare,
                 sources=list(ctx.sources), drills=list(ctx.drills), follow_ups=list(ctx.follow_ups),
+                reply=reply, ignore_drills=frozenset(ignore_drills),
             )
         except UiError as e:
             if prose is not None and prose_ok and prose.text:

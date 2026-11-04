@@ -1,6 +1,6 @@
 # Workspaces: several databases, saved Conversations, Settings
 
-Status: **approved** (2026-11-04, the user), not built. It came out of a grilling session with the
+Status: **approved** (2026-11-04, the user). Phase 1 built (2026-11-04, see "Build decisions, phase 1"); phase 2 not built. It came out of a grilling session with the
 user on 2026-11-04. Where this file is silent, `explorer/SPEC.md` and `bootstrap/SPEC.md` apply.
 
 Decisions: ADR 0039 (Workspaces are sub-apps of one agent process), ADR 0040 (saved
@@ -310,6 +310,92 @@ They go into `explorer/.env.example` with placeholders.
 - The user approved G15–G20, including G18's simple rule: a Board that changed in any way drops
   the saved Tab's old version, with no per-query diff.
 - The user approved retiring `explorer/bootstrap/ui/` once Settings covers it (G22).
+
+## Build decisions, phase 1 (2026-11-04, Claude, while building)
+
+These settle points the approved text leaves open. Where one reads differently from the text
+above, it is a deliberate amendment, listed here.
+
+- **B1 Routing.** The prefix router strips `/w/<name>` before calling the sub-app, so each sub-app
+  keeps its A2A routes at `/` and `/.well-known/agent-card.json`. Only the card `url` carries the
+  prefix. `build_app` gains `cors` (off for sub-apps: one CORS middleware wraps the router, since
+  two would duplicate the header) and `saved` (the conversation routes, below). That replaces the
+  `agent_card_url` and `rpc_url` options named in "Startup and reload" step 5.
+- **B2 Per-Workspace settings.** A Workspace's Settings come from `load_settings` over the process
+  environment, with `DATABASE_URL` taken from `dsn_env`, `DATASET_DIR` set to the absolute Dataset
+  path, and the G14 overrides applied. `prompt_cache_key` is `explorer-<workspace name>`, or
+  `<PROMPT_CACHE_KEY>-<workspace name>` when that variable is set, so two Workspaces never share one.
+- **B3 Model rule.** The global `MODEL` has no allowlist in code today, and W1 forbids changing
+  single-Dataset mode. A Workspace `model` override must be `meta/muse-spark-1.3` or
+  `meta/muse-wonder-1.0`. `reasoning_effort` must be a non-empty string, and the two SQL limits
+  must be positive integers.
+- **B4 Reasons.** Reasons are fixed strings, plus the `ConfigError` text for "dataset invalid: …".
+  That text names files and keys, never env values. A login with superuser, CREATEROLE or write
+  rights gives "login can write". A malformed DSN gives "`<dsn_env>` is malformed".
+- **B5 Reload.** It also answers 409 while a Workspace whose entry or Dataset files *changed* is
+  running, not only a removed one, because rebuilding drops its in-memory Conversations. Change
+  detection compares the entry and a SHA-256 over the Dataset directory's files.
+- **B6 Level IDs.** A Level is named `<turn>-<level>` (Turn 0 is the Explorer Board). Saved Levels
+  keep their surface IDs and the Conversation keeps its surface tag. The client starts a fresh
+  processor on open, so no surface ID clashes.
+- **B7 What a Level saves.**
+  - **Answer or Ask:** the model's final reply text, the Drill Visuals it ignored, and the Result
+    IDs the reply names. These are the `r<n>` tokens in the reply that the Conversation held when
+    it was built, including pinned Board Results.
+  - **Give-up:** a reply that never passed the checks (step limit, timeout, model failure) saves
+    no reply text. It reopens as "This answer couldn't be completed when it was asked."
+  - **Drill-down:** the Drill query, its view arguments, its title and its bound values.
+  - **Board:** the Board name, the key, the wire-form Control values and the file hash.
+  - **Saved as view text:** a Drill-down's bound values and an Entity Board's key identify the
+    clicked row. They're saved like the tab title that already shows them (G12). P1 is about the
+    rows of Results, which are never saved.
+- **B8 Results.** A Result row is inserted once (IDs never repeat), with the hash of the rows it had
+  then. A re-run compares against that first hash. A re-run Result goes into the store under its
+  saved ID (`ResultStore.put`), and the ID counter moves past it.
+- **B9 Re-run Results the model names.** On a resumed Conversation, when a final reply names a
+  saved Result the store no longer holds, that Result is re-run before the reply is built. This
+  avoids a Repair that can't run SQL.
+- **B10 Rebuild leniency.** A rebuild uses the Board-mode rule for Macros: a Macro whose data no
+  longer fits (a row index past the end, negative bars) draws "This panel couldn't be drawn from
+  its rows." A Result whose query fails draws "This query no longer runs: <reason>" with its SQL.
+  A prose `Cite` of a failed Result shows "—". A rebuild never raises a Repair.
+- **B11 Level response.** `GET …/levels/<level>` answers
+  `{prose, a2ui, changed, failed_results, board_changed, board, tab}`:
+  - `board` is `{id, controls}` for a Board Level, as `explorerBoard`;
+  - `tab` is the saved tab `{id, kind, title}`;
+  - `board_changed` is G18's flag, and then `a2ui` is empty.
+  - `POST …/levels/<level>/defaults` (a JSON POST, so the guard covers it) renders the current
+    Board at its defaults in place of the saved Level, and saves it. That's the button behind
+    "This Board has changed since."
+- **B12 View.** The agent saves Tabs and Log entries (tab entries and in-place entries, in order)
+  and each Board Level's Control values. It can't see closed Tabs or the selected Tab, so the client
+  sends them as message metadata `explorerView: {closed: [tab ids], selected: tab id}`. The agent
+  saves the latest. A close or select not followed by a message isn't saved. Saving a view also
+  bumps `updated_at`.
+- **B13 When it's saved.** From the first typed question, or the first Action other than
+  `open_board`, every completed Level, Control change and view update writes the whole
+  Conversation (one transaction, on one writer thread per Workspace). The write is scheduled after
+  `updater.complete`.
+- **B14 Loading.** `Conversations.get_or_load(id)` checks memory, then the store (off the event
+  loop). A loaded Conversation has its history, counters, Tabs, Levels and surface map back, with
+  no Results and no action sources. Those come back as each Level is rebuilt. A context ID neither
+  place holds still starts a new Conversation marked `unknown_context`.
+- **B16 Request protection (refuter review).** The Host check covers every method, not only POST and
+  DELETE, because the GET routes return saved questions and re-run rows. That matches the bootstrap
+  server's guard, which the approved text names. Only POST, PUT and PATCH also need a JSON body.
+- **B17 Saved errors.** A tool error in the saved history keeps its SQLSTATE only, with the message
+  "the error message is not saved". Postgres quotes row values in its messages, and P1 covers
+  them.
+- **B18 Board Control drift.** A Board Level also saves the option values its choice and multi
+  indexes named (`shown`). If the current options give other values for those indexes, the Level is
+  a "Board has changed" (G18), not a silent pick of another option.
+- **B15 Single-Dataset mode** builds no store and no routes, and the client shows no picker. Its
+  code path is the same `build_workspace` with `saved=None`.
+  - **Client mode:** the client's mode is set at build time by `VITE_WORKSPACES=1`. `run.sh --real`
+    sets it when `EXPLORER_DATA_DIR` is in the environment or the root `.env`. Without it the
+    client never calls `/workspaces`, so single-Dataset mode makes no extra request.
+  - **In-place entries:** a saved in-place Log entry carries `on_tab`, its Board's tab ID, so the
+    reopened log selects the right tab.
 
 ## Test command
 

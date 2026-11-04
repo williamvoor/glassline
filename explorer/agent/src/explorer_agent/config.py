@@ -328,3 +328,166 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         max_board_instances=_positive_int(env, "MAX_BOARD_INSTANCES"),
         board_prefetch_rows=_non_negative_int(env, "BOARD_PREFETCH_ROWS"),
     )
+
+
+# --- Workspaces (specs/workspaces/SPEC.md, phase 1) ----------------------------------------------
+
+WORKSPACE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")  # fullmatch; the URL segment
+ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]*")
+WORKSPACE_KEYS = frozenset({"name", "dataset_dir", "dsn_env", "model", "reasoning_effort", "sql_timeout_ms", "sql_row_cap"})
+# B3: a Workspace's `model` override, per the repo's model rules.
+WORKSPACE_MODELS = ("meta/muse-spark-1.3", "meta/muse-wonder-1.0")
+WORKSPACES_FILE = "workspaces.toml"
+
+
+class WorkspaceUnavailable(Exception):
+    """A Workspace that fails a check. The message is its reason: it never holds a DSN."""
+
+
+@dataclass(frozen=True)
+class WorkspaceEntry:
+    """One valid `[[workspace]]` entry. `overrides` are environment-style (G14)."""
+
+    name: str
+    dataset_dir: Path
+    dsn_env: str
+    overrides: Mapping[str, str]
+    raw: Mapping[str, object]  # the entry as written, for change detection on reload
+
+
+@dataclass(frozen=True)
+class WorkspaceListing:
+    """A list position: a valid entry, or the reason it fails (W2). `name` is as written."""
+
+    name: str
+    entry: WorkspaceEntry | None
+    error: str | None = None
+
+
+def data_dir(raw: str, repo_root: Path) -> Path:
+    """`EXPLORER_DATA_DIR`, resolved, created 0700 if missing, refused inside the repo (W3):
+    saved Conversations hold questions and model history."""
+    path = Path(raw).expanduser().resolve()
+    root = repo_root.resolve()
+    if path == root or path.is_relative_to(root):
+        raise ConfigError("EXPLORER_DATA_DIR must be outside the repo (saved Conversations hold questions)")
+    if not path.exists():  # an existing directory keeps its mode (refuter F9)
+        path.mkdir(parents=True, mode=0o700)
+        path.chmod(0o700)
+    elif not path.is_dir():
+        raise ConfigError("EXPLORER_DATA_DIR is not a directory")
+    return path
+
+
+def _override(entry: Mapping[str, object], key: str) -> str | None:
+    if key not in entry:
+        return None
+    value = entry[key]
+    if key == "model":
+        if value not in WORKSPACE_MODELS:
+            raise ConfigError(f"model must be one of {', '.join(WORKSPACE_MODELS)}")
+        return str(value)
+    if key == "reasoning_effort":
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError("reasoning_effort must be a non-empty string")
+        return value.strip()
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{key} must be a positive integer")
+    return str(value)
+
+
+def _workspace_entry(item: object, repo_root: Path) -> WorkspaceEntry:
+    if not isinstance(item, dict):
+        raise ConfigError("an entry must be a table")
+    unknown = sorted(set(item) - WORKSPACE_KEYS)
+    if unknown:
+        raise ConfigError(f"unknown key {unknown[0]}")
+    name = item.get("name")
+    if not isinstance(name, str) or not WORKSPACE_NAME.fullmatch(name):
+        raise ConfigError("name must match [a-z0-9][a-z0-9_-]*")
+    dataset = item.get("dataset_dir")
+    if not isinstance(dataset, str) or not dataset.strip():
+        raise ConfigError("dataset_dir is required")
+    dsn_env = item.get("dsn_env")
+    if not isinstance(dsn_env, str) or not ENV_NAME.fullmatch(dsn_env):
+        raise ConfigError("dsn_env must be an environment variable name")
+    path = Path(dataset).expanduser()
+    overrides = {}
+    for key, env_key in (("model", "MODEL"), ("reasoning_effort", "REASONING_EFFORT"),
+                         ("sql_timeout_ms", "SQL_TIMEOUT_MS"), ("sql_row_cap", "SQL_ROW_CAP")):
+        value = _override(item, key)
+        if value is not None:
+            overrides[env_key] = value
+    return WorkspaceEntry(name, (path if path.is_absolute() else repo_root / path).resolve(), dsn_env, overrides,
+                          dict(item))
+
+
+def load_workspace_list(path: Path, repo_root: Path) -> list[WorkspaceListing]:
+    """The Workspace list in file order. A bad entry fails alone (W2); a file that isn't TOML
+    raises ConfigError. A missing file is an empty list."""
+    if not path.is_file():
+        return []
+    try:
+        data = tomllib.loads(_read_text(path, "workspace list"))
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path} is not valid TOML: {e}") from None
+    extra = sorted(set(data) - {"workspace"})
+    if extra:
+        raise ConfigError(f"{path}: unknown key {extra[0]}")
+    items = data.get("workspace", [])
+    if not isinstance(items, list):
+        raise ConfigError(f"{path}: workspace must be an array of tables ([[workspace]])")
+    out: list[WorkspaceListing] = []
+    seen: set[str] = set()
+    for i, item in enumerate(items, 1):
+        written = item.get("name") if isinstance(item, dict) else None
+        label = written if isinstance(written, str) and written else f"#{i}"
+        try:
+            entry = _workspace_entry(item, repo_root)
+        except ConfigError as e:
+            out.append(WorkspaceListing(label, None, f"invalid entry: {e}"))
+            continue
+        if entry.name in seen:
+            out.append(WorkspaceListing(label, None, "invalid entry: duplicate name"))
+            continue
+        seen.add(entry.name)
+        out.append(WorkspaceListing(entry.name, entry))
+    return out
+
+
+def workspace_settings(env: Mapping[str, str], entry: WorkspaceEntry, explorer_root: Path) -> Settings:
+    """A Workspace's Settings (B2): the process environment, with its login from `dsn_env`, its
+    Dataset path, its overrides and its own `prompt_cache_key`. Raises WorkspaceUnavailable."""
+    dsn = env.get(entry.dsn_env, "").strip()
+    if not dsn:
+        raise WorkspaceUnavailable(f"`{entry.dsn_env}` not set")
+    try:
+        check_dsn(dsn)
+    except ValueError:
+        raise WorkspaceUnavailable(f"`{entry.dsn_env}` is malformed") from None
+    base = env.get("PROMPT_CACHE_KEY", "").strip()
+    local = {**env, **entry.overrides, "DATABASE_URL": dsn, "DATASET_DIR": str(entry.dataset_dir),
+             "PROMPT_CACHE_KEY": f"{base}-{entry.name}" if base else f"explorer-{entry.name}"}
+    try:
+        return load_settings(local, explorer_root)
+    except ConfigError as e:
+        raise WorkspaceUnavailable(f"dataset invalid: {e}") from None
+
+
+@dataclass(frozen=True)
+class ProcessSettings:
+    """What Workspace mode reads for the process itself; the rest is per Workspace (B2)."""
+
+    agent_host: str
+    agent_port: int
+    client_origin: str
+    log_level: str
+
+
+def process_settings(env: Mapping[str, str]) -> ProcessSettings:
+    return ProcessSettings(
+        agent_host=env.get("AGENT_HOST", "").strip() or "127.0.0.1",
+        agent_port=_positive_int(env, "AGENT_PORT"),
+        client_origin=env.get("CLIENT_ORIGIN", "").strip() or "http://127.0.0.1:5173",
+        log_level=env.get("LOG_LEVEL", "").strip() or "INFO",
+    )

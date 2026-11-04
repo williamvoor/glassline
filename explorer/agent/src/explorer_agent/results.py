@@ -97,6 +97,30 @@ class ResultStore:
             self._results.popitem(last=False)
         return result
 
+    def put(self, result_id: str, *, sql: str, purpose: str, columns: list[str], column_types: list[str],
+            rows: list[dict[str, Any]], truncated: bool) -> StoredResult:
+        """A re-run saved Result under its saved ID (Workspaces B8). The counter moves past it, so
+        no later Result gets that ID."""
+        result = StoredResult(
+            id=result_id, sql=sql, purpose=purpose, columns=list(columns), column_types=list(column_types),
+            rows=[{k: to_json_safe(v) for k, v in row.items()} for row in rows], truncated=truncated,
+        )
+        number = int(result_id[1:]) if result_id[:1] == "r" and result_id[1:].isdigit() else 0
+        self._next = max(self._next, number + 1)
+        self._results[result_id] = result
+        self._results.move_to_end(result_id)
+        while len(self._results) > self._max:
+            self._results.popitem(last=False)
+        return result
+
+    @property
+    def next_number(self) -> int:
+        return self._next
+
+    @next_number.setter
+    def next_number(self, value: int) -> None:
+        self._next = max(self._next, value)
+
     def reserve_id(self) -> str:
         """The next Result ID, for a Result kept outside the store (a Board's, SPEC §18), so the
         Conversation's one counter never issues an ID twice."""

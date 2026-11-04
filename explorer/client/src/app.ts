@@ -9,12 +9,16 @@ import {provide} from '@lit/context';
 import {Context} from '@a2ui/lit/v0_9';
 import '@a2ui/lit/v0_9';
 import type {A2uiMessage, ComponentApi, MessageProcessor} from '@a2ui/web_core/v0_9';
-import {connect, type AgentConnection, type AgentInfo, type AskEvent, type UiAction} from './a2a.js';
+import {connect, type AgentConnection, type AgentInfo, type AskEvent, type UiAction, type ViewState} from './a2a.js';
 import {createProcessor} from './catalog.js';
 import {boardRow} from './actions.js';
 import {renderSafeMarkdown} from './markdown.js';
 import {BoardControls, type ControlDecl, type WireValues} from './controls.js';
 import {addInPlace, closeTab, logOrder, openTab, selectTab, type InPlaceEntry, type TabState} from './tabs.js';
+import {
+  BOARD_CHANGED, DATA_CHANGED, httpApi, parseRoute, pickWorkspace, routeHash,
+  type SavedSummary, type SavedView, type WorkspaceApi, type WorkspaceInfo,
+} from './workspaces.js';
 
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
@@ -48,6 +52,12 @@ interface Tab extends TabState {
   viewing?: string; // explorerViewing when it was sent; Retry sends it again
   // An Ask from this tab waiting for the user's OK, or (`board`) an Entity Board row's choice (SPEC §20).
   confirm?: {label: string; action: UiAction; board?: boolean};
+  // A tab of a saved Conversation (Workspaces phase 1): its Level is fetched when first shown.
+  savedLevel?: string;
+  loaded?: boolean;
+  loading?: boolean;
+  dataChanged?: boolean; // its Results re-ran with different rows
+  boardChanged?: boolean; // its Board file changed since: shown with a button, not the old version
 }
 
 /** The Explorer Board's load (SPEC §18): its tab exists only once it is `shown`. `none`: the
@@ -116,9 +126,26 @@ export class ExplorerApp extends LitElement {
   private ticker?: ReturnType<typeof setInterval>;
 
   agentUrl = import.meta.env.VITE_AGENT_URL ?? 'http://127.0.0.1:10002';
+  /** Workspace mode (specs/workspaces/SPEC.md): run.sh builds the client with VITE_WORKSPACES=1. */
+  workspaceMode = import.meta.env.VITE_WORKSPACES === '1';
+  /** Replaceable in tests. */
+  workspaceApi: WorkspaceApi = httpApi(this.agentUrl);
+  /** Replaceable in tests. */
+  confirmFn: (message: string) => boolean = message => window.confirm(message);
   /** Replaceable in tests. */
   connector: () => Promise<AgentConnection> = () =>
-    connect(this.agentUrl, this.processor.getRendererCapabilities({versions: ['v0.9']}));
+    connect(this.workspace?.url ?? this.agentUrl, this.processor.getRendererCapabilities({versions: ['v0.9']}),
+            undefined, () => this.viewState());
+
+  @state() private workspaces: WorkspaceInfo[] = [];
+  @state() private workspace?: WorkspaceInfo;
+  @state() private listOpen = false;
+  @state() private saved: SavedSummary[] = [];
+  @state() private listError?: string;
+  private routeWritten?: string; // the hash this app wrote last: its own change is not a navigation
+  private onHash = () => {
+    if (window.location.hash !== this.routeWritten) void this.followRoute();
+  };
 
   override createRenderRoot() {
     // Light DOM, so page styles (index.html) reach the A2UI components.
@@ -127,13 +154,214 @@ export class ExplorerApp extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    if (this.workspaceMode) {
+      window.addEventListener('hashchange', this.onHash);
+      void this.startWorkspaces();
+      return;
+    }
     void this.connectionOnce().catch(() => {}); // load the card early for the header and examples
     this.openBoard();
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    window.removeEventListener('hashchange', this.onHash);
     this.stopTicker();
+  }
+
+  // Workspaces (specs/workspaces/SPEC.md phase 1) -------------------------------------------------
+
+  /** The closed tabs and the selected one, sent as `explorerView` (B12). */
+  private viewState(): ViewState | undefined {
+    if (!this.workspaceMode) return undefined;
+    const closed = this.tabs.filter(t => t.closed && t.id).map(t => t.id!);
+    const selected = this.viewing();
+    return {closed, ...(selected ? {selected} : {})};
+  }
+
+  private async startWorkspaces() {
+    try {
+      this.workspaces = await this.workspaceApi.list();
+      this.connectError = undefined;
+    } catch (e) {
+      this.connectError = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    await this.followRoute();
+  }
+
+  /** Opens what the hash names: a Workspace, or a saved Conversation in it. */
+  private async followRoute() {
+    const route = parseRoute(window.location.hash);
+    const ws = pickWorkspace(this.workspaces, route.workspace);
+    if (!ws) {
+      this.workspace = undefined;
+      this.board = 'none';
+      return;
+    }
+    const sameWorkspace = this.workspace?.name === ws.name;
+    if (sameWorkspace && route.conversation && route.conversation === this.contextId) return;
+    if (!sameWorkspace) {
+      this.workspace = ws;
+      this.connection = undefined; // each Workspace has its own A2A client, from its card
+      this.info = undefined;
+    }
+    if (route.conversation && route.workspace === ws.name) {
+      await this.openSaved(route.conversation);
+    } else if (!sameWorkspace || this.contextId) {
+      this.newConversation();
+    }
+  }
+
+  private setRoute(conversation?: string) {
+    if (!this.workspaceMode || !this.workspace) return;
+    const hash = routeHash({workspace: this.workspace.name, conversation});
+    this.routeWritten = hash;
+    if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
+  }
+
+  private switchWorkspace(name: string) {
+    const ws = this.workspaces.find(w => w.name === name && w.status === 'available');
+    if (!ws || ws.name === this.workspace?.name) return;
+    this.workspace = ws;
+    this.connection = undefined;
+    this.info = undefined;
+    this.listOpen = false;
+    this.newConversation(); // switching works like New conversation in the target Workspace
+  }
+
+  private async retryWorkspaces() {
+    try {
+      this.workspaces = await this.workspaceApi.reload();
+      this.connectError = undefined;
+    } catch (e) {
+      this.connectError = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    if (!this.workspace) await this.followRoute();
+  }
+
+  private async toggleList() {
+    this.listOpen = !this.listOpen;
+    if (this.listOpen) await this.refreshList();
+  }
+
+  private async refreshList() {
+    if (!this.workspace) return;
+    try {
+      this.saved = await this.workspaceApi.conversations(this.workspace);
+      this.listError = undefined;
+    } catch (e) {
+      this.listError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  private async deleteSaved(id: string) {
+    if (!this.workspace) return;
+    try {
+      await this.workspaceApi.remove(this.workspace, id);
+    } catch (e) {
+      this.listError = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    if (id === this.contextId) this.newConversation();
+    await this.refreshList();
+  }
+
+  private async deleteAllSaved() {
+    const ws = this.workspace;
+    if (!ws || !this.confirmFn(`Delete all saved conversations in ${ws.name}? This can't be undone.`)) return;
+    try {
+      await this.workspaceApi.removeAll(ws);
+    } catch (e) {
+      this.listError = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    this.newConversation();
+    await this.refreshList();
+  }
+
+  /** Reopens a saved Conversation: Tabs and Log entries from the saved view with no agent work,
+   * then the selected Tab's Level; the others when first shown (G17). */
+  private async openSaved(id: string) {
+    const ws = this.workspace;
+    if (!ws) return;
+    this.reset();
+    this.listOpen = false;
+    const processor = this.processor;
+    void this.connectionOnce().catch(() => {});
+    let view: SavedView | undefined;
+    try {
+      view = await this.workspaceApi.conversation(ws, id);
+    } catch (e) {
+      this.listError = e instanceof Error ? e.message : String(e);
+    }
+    if (processor !== this.processor) return;
+    if (!view) {
+      this.setRoute();
+      this.openBoard();
+      return;
+    }
+    this.contextId = view.id;
+    this.boardOpening = Promise.resolve();
+    const keyOf = (tabId: string | null | undefined) => {
+      const t = view!.tabs.find(x => x.id === tabId);
+      return t ? (t.kind === 'board' && t.level === '0-1' ? EXPLORER_KEY : `saved-${t.id}`) : undefined;
+    };
+    const seqs = new Map<string, number>();
+    const inPlace: InPlaceEntry[] = [];
+    for (const entry of view.log) {
+      if (entry.tab) {
+        seqs.set(entry.tab, entry.tab === view.tabs.find(t => keyOf(t.id) === EXPLORER_KEY)?.id ? 0 : ++this.seq);
+      } else if (entry.in_place) {
+        const tabKey = keyOf(entry.on_tab);
+        if (tabKey) inPlace.push({key: `log-${++this.seq}`, seq: this.seq, tabKey, tag: entry.tag ?? 'IN PLACE', text: entry.text ?? ''});
+      }
+    }
+    this.tabs = view.tabs.map(t => {
+      const key = keyOf(t.id)!;
+      return {
+        key, seq: seqs.get(t.id) ?? ++this.seq, closed: key === EXPLORER_KEY ? false : t.closed, isNew: false,
+        ...(key === EXPLORER_KEY ? {fixed: true} : {}),
+        id: t.id, kind: t.kind, title: t.title, log: {text: t.log.text ?? t.title, ...(t.log.tag ? {tag: t.log.tag} : {})},
+        startedAt: Date.now(), steps: [], savedLevel: t.level, ...(t.kind === 'question' ? {question: t.title} : {}),
+      };
+    });
+    this.inPlace = inPlace;
+    this.board = this.tabs.some(t => t.key === EXPLORER_KEY) ? 'shown' : 'none';
+    const wanted = keyOf(view.selected);
+    const first = this.tabs.find(t => !t.closed);
+    const key = wanted ?? first?.key;
+    this.setRoute(view.id);
+    if (key) this.select(key);
+  }
+
+  /** Fetches a saved tab's Level and renders it (B11). `defaults`: the current Board at its
+   * defaults, in place of a Board that changed. */
+  private async loadLevel(key: string, defaults = false) {
+    const tab = this.tab(key);
+    const ws = this.workspace;
+    const contextId = this.contextId;
+    if (!tab?.savedLevel || !ws || !contextId || tab.loading || (tab.loaded && !defaults)) return;
+    const processor = this.processor;
+    this.patch(key, {loaded: true, loading: true, error: undefined});
+    try {
+      const level = await this.workspaceApi.level(ws, contextId, tab.savedLevel, defaults);
+      if (processor !== this.processor) return;
+      if (level.a2ui.length) processor.processMessages(level.a2ui as unknown as A2uiMessage[]);
+      const surfaceId = surfaceIdOf(level.a2ui);
+      this.patch(key, {
+        loading: false, surfaceId, proseHtml: await renderSafeMarkdown(level.prose), dataChanged: level.changed,
+        boardChanged: level.board_changed,
+      });
+      if (surfaceId && level.board) {
+        this.controls.get(key)?.dispose();
+        this.attachControls(key, surfaceId, {[BOARD_KEY]: level.board}, processor);
+      }
+    } catch (e) {
+      if (processor !== this.processor) return;
+      this.patch(key, {loading: false, loaded: false, error: e instanceof Error ? e.message : String(e)});
+    }
   }
 
   private newProcessor(): MessageProcessor<ComponentApi> {
@@ -182,6 +410,7 @@ export class ExplorerApp extends LitElement {
     this.tabs = selectTab(this.tabs, this.selected, key); // from memory, no agent call; reopens a closed tab
     this.selected = key;
     this.logOpen = false;
+    void this.loadLevel(key); // a saved tab's Level, the first time it is shown
     void this.updateComplete.then(() => this.querySelector('.canvas')?.scrollTo?.({top: 0}));
   }
 
@@ -460,6 +689,7 @@ export class ExplorerApp extends LitElement {
           continue;
         }
         this.contextId = event.contextId;
+        this.setRoute(event.contextId); // reloading the page reopens this Conversation
         if (event.a2ui.length) processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
         await final(event);
       }
@@ -475,7 +705,7 @@ export class ExplorerApp extends LitElement {
     }
   }
 
-  private newConversation() {
+  private reset() {
     for (const ctrl of this.controls.values()) ctrl.dispose();
     this.controls.clear();
     this.inPlace = [];
@@ -485,6 +715,11 @@ export class ExplorerApp extends LitElement {
     this.processor = this.newProcessor();
     this.busy = false;
     this.stopTicker();
+  }
+
+  private newConversation() {
+    this.reset();
+    this.setRoute();
     this.openBoard();
     this.querySelector('textarea')?.focus();
   }
@@ -509,12 +744,49 @@ export class ExplorerApp extends LitElement {
 
   // rendering -----------------------------------------------------------------------------------
 
+  private renderPicker() {
+    if (!this.workspaceMode) return nothing;
+    return html`<div class="workspaces" role="group" aria-label="Workspaces">
+      ${this.workspaces.map(w => w.status === 'available'
+        ? html`<button type="button" class=${w.name === this.workspace?.name ? 'workspace selected' : 'workspace'}
+            aria-pressed=${w.name === this.workspace?.name ? 'true' : 'false'} title=${w.description}
+            @click=${() => this.switchWorkspace(w.name)}>${w.name}</button>`
+        : html`<span class="workspace unavailable" title=${w.reason ?? ''}>
+            <span class="name">${w.name}</span> <span class="reason">${w.reason ?? 'unavailable'}</span>
+            <button type="button" class="retry-workspace" @click=${() => void this.retryWorkspaces()}>Retry</button>
+          </span>`)}
+    </div>`;
+  }
+
+  private renderSaved() {
+    if (!this.workspaceMode || !this.workspace) return nothing;
+    return html`<button type="button" class="saved-toggle label" aria-expanded=${this.listOpen ? 'true' : 'false'}
+        @click=${() => void this.toggleList()}>Conversations</button>
+      ${this.listOpen
+        ? html`<div class="saved-list">
+            ${this.listError ? html`<p class="error" role="alert">${this.listError}</p>` : nothing}
+            ${this.saved.length
+              ? html`<ol>
+                  ${this.saved.map(c => html`<li>
+                    <button type="button" class="open-saved" @click=${() => void this.openSaved(c.id)}>${c.title}</button>
+                    <span class="saved-date">${new Date(c.updated_at).toLocaleString()}</span>
+                    <button type="button" class="delete-saved" aria-label=${`Delete ${c.title}`}
+                      @click=${() => void this.deleteSaved(c.id)}>Delete</button>
+                  </li>`)}
+                </ol>
+                <button type="button" class="delete-all" @click=${() => void this.deleteAllSaved()}>Delete all</button>`
+              : html`<p class="saved-empty">No saved conversations yet.</p>`}
+          </div>`
+        : nothing}`;
+  }
+
   private renderHeader() {
     return html`<header class="topbar">
       <div class="title">
         <h1>Explorer</h1>
         ${this.info?.description ? html`<span class="dataset">${this.info.description}</span>` : nothing}
       </div>
+      ${this.renderPicker()}
       <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
         New conversation
       </button>
@@ -597,6 +869,7 @@ export class ExplorerApp extends LitElement {
 
   private renderSidebar() {
     return html`<aside class="sidebar" aria-label="Investigation">
+      ${this.renderSaved()}
       ${this.renderLog()}
       <form class="composer" @submit=${this.onSubmit}>
         <label class="label" for="composer-box">Ask</label>
@@ -695,6 +968,13 @@ export class ExplorerApp extends LitElement {
     return html`<section class="tab-view" role="tabpanel">
       ${heading ? html`<h2 class="question">${tab.title}</h2>` : nothing}
       ${tab.running ? this.renderStatus(tab.steps, tab.startedAt) : nothing}
+      ${tab.loading ? html`<div class="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Loading…</div>` : nothing}
+      ${tab.dataChanged ? html`<div class="notice data-changed" role="note">${DATA_CHANGED}</div>` : nothing}
+      ${tab.boardChanged
+        ? html`<div class="notice board-changed" role="note">${BOARD_CHANGED}
+            <button type="button" class="open-current" @click=${() => void this.loadLevel(tab.key, true)}>Open the current Board</button>
+          </div>`
+        : nothing}
       ${this.renderActionBars(tab)}
       <div class=${['level-view', this.busy ? 'inert' : '', this.controls.get(tab.key)?.pending ? 'requery' : ''].filter(Boolean).join(' ')}>
         ${tab.proseHtml ? html`<div class="prose">${unsafeHTML(tab.proseHtml)}</div>` : nothing}

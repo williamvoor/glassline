@@ -9,11 +9,14 @@ executor only sends it. A Drill-down runs its Drill query here, with no model ca
 from __future__ import annotations
 
 import asyncio
+import copy
+import datetime as dt
 import functools
+import hashlib
 import logging
 import secrets
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -60,9 +63,19 @@ from explorer_agent.boards import (
     validate_values,
 )
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
-from explorer_agent.drill import Prefetcher, display_sql
-from explorer_agent.macros import key_value
-from explorer_agent.results import ResultStore, ResultView, StoredResult
+from explorer_agent.drill import DrillSpec, Prefetcher, display_sql
+from explorer_agent.macros import RERUN_FAILED, key_value
+from explorer_agent.results import ResultStore, ResultView, StoredResult, to_json_safe
+from explorer_agent.saved import (
+    STATE_VERSION,
+    Loaded,
+    SavedResult,
+    SavedStore,
+    Snapshot,
+    result_ids_in,
+    row_hash,
+    title_of,
+)
 from explorer_agent.sql import SqlFail
 from explorer_agent.ui import UiError, UiPipeline, UiResult
 
@@ -100,6 +113,37 @@ BOARD_BUILD_FAILED = "The Explorer couldn't be shown. You can still ask a questi
 ENTITY_FAILED = "The Board couldn't be shown. You can retry, or ask the agent instead."
 KEYED_BOARD = "This Board opens from a row."
 MAX_BOARD_INSTANCES = 10
+VIEW_KEY = "explorerView"  # request metadata: {closed: [tab IDs], selected: tab ID} (Workspaces B12)
+GAVE_UP = "This answer couldn't be completed when it was asked."
+REBUILD_FAILED = "This answer couldn't be shown again."
+MAX_VIEW_TABS = 1000
+
+
+def _drill_view(spec: DrillSpec) -> dict[str, Any]:
+    return {"sql": spec.sql, "names": list(spec.names), "drill_as": spec.drill_as, "drill_x": spec.drill_x,
+            "drill_y": spec.drill_y, "title": spec.title}
+
+
+def _now() -> str:
+    return dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds")
+
+
+def chosen_values(board: Any, options: Mapping[str, Any], state: Mapping[str, Any]) -> dict[str, list[Any]]:
+    """The option values a choice or multi Control's indexes name (refuter F5): a saved index is
+    only meaningful against the options it was chosen from."""
+    out: dict[str, list[Any]] = {}
+    for c in board.controls:
+        if c.kind not in ("choice", "multi") or c.name not in options:
+            continue
+        values = options[c.name].values
+        v = state.get(c.name)
+        picked = [] if v is None else [v] if not isinstance(v, list) else v
+        out[c.name] = [to_json_safe(values[i]) if isinstance(i, int) and 0 <= i < len(values) else None for i in picked]
+    return out
+
+
+def level_id(level: Level) -> str:
+    return f"{level.turn}-{level.level}"
 
 
 @dataclass
@@ -128,6 +172,21 @@ class Conversation:
     pinned: dict[str, StoredResult] = field(default_factory=dict)  # the Board pair's Results, for its model run
     board_rows_to_model: int = 5
     board_pair_max_chars: int = 6000
+    # Saving (Workspaces phase 1). `persist` turns on with the first typed question or Action
+    # other than open_board (B13); until then nothing is written.
+    persist: bool = False
+    title: str = ""
+    created_at: str = field(default_factory=_now)
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)  # Level ID -> what it was built from (B7)
+    log: list[dict[str, Any]] = field(default_factory=list)  # Log entries in order: tab and in-place
+    view: dict[str, Any] = field(default_factory=lambda: {"closed": [], "selected": None})
+    board_levels: dict[str, str] = field(default_factory=dict)  # Level ID -> its live Board instance ID
+    saved_results: dict[str, SavedResult] = field(default_factory=dict)  # as loaded from the store
+    written: set[str] = field(default_factory=set)  # Result IDs already in the store
+    reruns: dict[str, tuple[bool, tuple[str, str] | None]] = field(default_factory=dict)  # ID -> (changed, failure)
+    restore_results: Callable[[list[str]], Awaitable[None]] | None = field(default=None, repr=False)  # B9
+    unsaved: list[StoredResult] = field(default_factory=list)  # named by a reply, outside the store (pinned)
+    deleted: bool = False  # deleted from the store: never written again
 
     def __post_init__(self) -> None:
         self.actions = ActionState(self.surface_tag, self.max_action_sources, self.max_pending_pairs)
@@ -175,11 +234,14 @@ class _IssuedIds(UUIDGenerator):
 
 
 class Conversations:
-    """In-memory conversations by A2A context ID, least recently used evicted beyond the cap."""
+    """Conversations by A2A context ID, least recently used evicted beyond the cap. With a
+    `saved` store (Workspace mode) memory is a cache over it: an unknown or evicted ID is loaded
+    from the store (B14)."""
 
     def __init__(self, max_conversations: int = MAX_CONVERSATIONS, *, max_action_sources: int = MAX_ACTION_SOURCES,
                  max_pending_pairs: int = MAX_PENDING_PAIRS, board_rows_to_model: int = 5,
-                 board_pair_max_chars: int = 6000, max_board_instances: int = MAX_BOARD_INSTANCES) -> None:
+                 board_pair_max_chars: int = 6000, max_board_instances: int = MAX_BOARD_INSTANCES,
+                 saved: SavedStore | None = None) -> None:
         self._max = max_conversations
         self._by_id: OrderedDict[str, Conversation] = OrderedDict()
         self.id_generator = _IssuedIds()
@@ -187,6 +249,9 @@ class Conversations:
                         "board_rows_to_model": board_rows_to_model, "board_pair_max_chars": board_pair_max_chars,
                         "max_board_instances": max_board_instances}
         self.on_evict: Callable[[str], None] | None = None
+        self.on_load: Callable[[Conversation], None] | None = None  # set by the executor
+        self.saved = saved
+        self._loading: dict[str, asyncio.Future[Conversation | None]] = {}
 
     def get_or_create(self, context_id: str) -> Conversation:
         conv = self._by_id.get(context_id)
@@ -198,12 +263,109 @@ class Conversations:
             del self.id_generator.issued[context_id]
         else:
             conv.unknown_context = True
-        self._by_id[context_id] = conv
+        self._insert(conv)
+        return conv
+
+    def _insert(self, conv: Conversation) -> None:
+        self._by_id[conv.id] = conv
         while len(self._by_id) > self._max:
             old, _ = self._by_id.popitem(last=False)
             if self.on_evict is not None:
                 self.on_evict(old)
-        return conv
+
+    def held(self, context_id: str) -> Conversation | None:
+        return self._by_id.get(context_id)
+
+    async def load(self, context_id: str) -> Conversation | None:
+        """The Conversation in memory, or loaded from the store; None when neither holds it."""
+        conv = self._by_id.get(context_id)
+        if conv is not None:
+            self._by_id.move_to_end(context_id)
+            return conv
+        if self.saved is None or context_id in self.id_generator.issued:
+            return None
+        waiting = self._loading.get(context_id)
+        if waiting is not None:
+            return await asyncio.shield(waiting)
+        future: asyncio.Future[Conversation | None] = asyncio.get_running_loop().create_future()
+        self._loading[context_id] = future
+        try:
+            loaded = await self.saved.load(context_id)
+            conv = self._by_id.get(context_id)  # created meanwhile: keep that one
+            if conv is None and loaded is not None:
+                try:
+                    conv = restore(loaded, self._limits)
+                except (KeyError, TypeError, ValueError, AttributeError, IndexError):
+                    log.warning("saved conversation could not be read; treated as unknown")
+                    conv = None
+                    future.set_result(None)
+                    return None
+                if self.on_load is not None:
+                    self.on_load(conv)
+                self._insert(conv)
+                log.info("conversation loaded from the store: levels=%d", len(conv.records))
+            future.set_result(conv)
+            return conv
+        except BaseException as e:
+            future.set_exception(e)
+            future.exception()  # retrieved: no "never retrieved" warning when nobody waits
+            raise
+        finally:
+            del self._loading[context_id]
+
+    async def get_or_load(self, context_id: str) -> Conversation:
+        return await self.load(context_id) or self.get_or_create(context_id)
+
+    def forget(self, context_id: str) -> None:
+        """Drops a deleted Conversation from memory; an in-flight reply won't save it again."""
+        conv = self._by_id.pop(context_id, None)
+        if conv is not None:
+            conv.deleted = True
+            if self.on_evict is not None:
+                self.on_evict(context_id)
+
+    def forget_all(self) -> None:
+        for cid in list(self._by_id):
+            self.forget(cid)
+
+    @property
+    def running(self) -> bool:
+        return any(c.busy for c in self._by_id.values())
+
+
+def restore(loaded: Loaded, limits: Mapping[str, Any]) -> Conversation:
+    """A Conversation as saved: history, counters, Tabs, Levels and the surface map, with no
+    Results and no action sources (they come back as each Level is rebuilt, B14)."""
+    st = loaded.state
+    if st.get("version") != STATE_VERSION:
+        raise ValueError("unknown saved state version")
+    conv = Conversation(loaded.id, surface_tag=st["surface_tag"], **limits)
+    conv.history = list(st["history"])
+    conv.run_starts = list(st["run_starts"])
+    conv.persist = True
+    conv.title, conv.created_at = loaded.title, loaded.created_at
+    conv.records = dict(st["records"])
+    conv.log = list(st["log"])
+    conv.view = dict(st["view"])
+    conv.board_counter = st["board_counter"]
+    conv.board_opened = st["board_opened"]
+    conv.store.next_number = st["store_next"]
+    conv.saved_results = dict(loaded.results)
+    conv.written = set(loaded.results)
+    a = conv.actions
+    a.turns = st["turns"]
+    a.levels = {int(k): v for k, v in st["levels"].items()}
+    a.ids._v, a.ids._f = st["ids"]
+    for rec in conv.records.values():
+        level = Level(rec["turn"], rec["level"], rec["surface_id"], rec["label"])
+        a.surfaces[level.surface_id] = level
+        a.tabs[rec["tab"]["id"]] = level
+        if rec["kind"] == "board":
+            a.board_tabs.add(rec["tab"]["id"])
+    # Tab IDs are t<n> in issue order; a Level that failed after its tab was issued has none.
+    a.tabs = dict(sorted(a.tabs.items(), key=lambda kv: int(kv[0][1:])))
+    a.latest_tab = st["latest_tab"]
+    return conv
 
 
 StatusFn = Callable[[str], Awaitable[None]]
@@ -236,6 +398,28 @@ class BoardViews:
     renderer: BoardRenderer
     pipeline: UiPipeline
     prefetch_rows: int = 1  # BOARD_PREFETCH_ROWS: Entity Boards prefetched per clickable Visual
+    hashes: dict[str, str] = field(default_factory=dict)  # Board name -> SHA-256 of its file, at load
+
+    def __post_init__(self) -> None:
+        if not self.hashes:
+            self.hashes = {name: board_hash(b) for name, b in self.renderer.boards.items()}
+
+
+def board_hash(board: Any) -> str:
+    try:
+        return hashlib.sha256(board.path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+@dataclass
+class SavedViews:
+    """What saving and rebuilding need (Workspaces phase 1): the store, the SQL runner for
+    re-runs, and the UI pipeline that compiles a saved reply again."""
+
+    store: SavedStore
+    runner: Any
+    pipeline: UiPipeline
 
 
 def client_supports_catalog(metadata: dict[str, Any] | None) -> bool:
@@ -262,15 +446,20 @@ def action_of(message: Any) -> Any:
 
 class ExplorerExecutor(AgentExecutor):
     def __init__(self, answerer: Answerer, conversations: Conversations, card: AgentCard,
-                 drills: DrillDowns | None = None, model: str | None = None, boards: BoardViews | None = None):
+                 drills: DrillDowns | None = None, model: str | None = None, boards: BoardViews | None = None,
+                 saved: SavedViews | None = None):
         self._answerer = answerer
         self._boards = boards
         self._model = model
         self._conversations = conversations
         self._card = card
         self._drills = drills
+        self._saved = saved
+        self._writes: set[asyncio.Task[None]] = set()
         if drills is not None and drills.prefetcher is not None:
             conversations.on_evict = drills.prefetcher.forget
+        if saved is not None:
+            conversations.on_load = self._on_load
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task = context.current_task
@@ -288,14 +477,15 @@ class ExplorerExecutor(AgentExecutor):
         try:
             metadata = context.message.metadata if context.message else None
             ui_on = try_activate_a2ui_extension(context, self._card) is not None and client_supports_catalog(metadata)
-            conv = self._conversations.get_or_create(task.context_id)
+            conv = await self._conversations.get_or_load(task.context_id)
             viewing = (metadata or {}).get(VIEWING_KEY)
+            self._note_view(conv, (metadata or {}).get(VIEW_KEY))
 
             async def status(text: str) -> None:
                 await updater.update_status(TaskState.working, message=text_message(text))
 
             async def send(level: Level, ui: UiResult, tab: Tab, unknown: bool = False, *, model_run: bool = True,
-                           board: BoardInstance | None = None) -> None:
+                           board: BoardInstance | None = None, record: dict[str, Any] | None = None) -> None:
                 prose = f"{UNKNOWN_CONTEXT_PROSE}\n\n{ui.prose}" if unknown else ui.prose
                 parts = [Part(root=TextPart(text=prose))]
                 if ui_on:
@@ -313,7 +503,10 @@ class ExplorerExecutor(AgentExecutor):
                 meta[LOG_KEY] = {"kind": tab.kind, "tag": tag, "text": tab.text}
                 if board is not None:
                     meta[BOARD_KEY] = {"id": board.id, "controls": [{"name": c.name, "kind": c.kind} for c in board.board.controls]}
+                if self._saved is not None:
+                    self._record(conv, level, meta[TAB_KEY], meta[LOG_KEY], record, board)
                 await updater.complete(updater.new_agent_message(parts, metadata=meta))
+                self._save(conv)  # after the reply is sent (B13)
 
             async def reply(metadata: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> None:
                 """A final message that adds no Level: in place, or superseded."""
@@ -321,12 +514,20 @@ class ExplorerExecutor(AgentExecutor):
                 if ui_on:
                     parts += [create_a2ui_part(m) for m in messages or []]
                 await updater.complete(updater.new_agent_message(parts, metadata=metadata))
+                if LOG_KEY in metadata and self._saved is not None:  # a Control change: its in-place Log entry
+                    board_id = metadata[IN_PLACE_KEY]["board"]
+                    lid = next((k for k, v in conv.board_levels.items() if v == board_id), None)
+                    tab = conv.records[lid]["tab"]["id"] if lid in conv.records else None
+                    conv.log.append({"in_place": board_id, "on_tab": tab, **metadata[LOG_KEY]})
+                    self._save(conv)
 
             async def fail(text: str, **extra: Any) -> None:
                 await updater.complete(text_message(text, {ACTION_FAILED_KEY: True, **extra}))
 
             action = action_of(context.message)
             is_action = action is not _NOT_AN_ACTION
+            if not (isinstance(action, dict) and action.get("name") == OPEN_BOARD):
+                conv.persist = True  # anything beyond opening the Explorer is worth saving (B13)
             if not is_action:
                 await self._question(conv, context.get_user_input(), viewing, status, send, text_message, updater)
                 return
@@ -356,6 +557,8 @@ class ExplorerExecutor(AgentExecutor):
 
     async def _question(self, conv, text, viewing, status, send, text_message, updater) -> None:
         self._cancel_prefetch(conv)
+        if not conv.title:
+            conv.title = title_of(text)
         await self._model_run(conv, lambda: (conv.actions.new_turn(), text), viewing, status, send, text_message, updater,
                               action=False, tab=Tab("question", text, text))
 
@@ -376,7 +579,7 @@ class ExplorerExecutor(AgentExecutor):
 
         label = resolved.label
         await self._model_run(conv, start, viewing, status, send, text_message, updater, action=True,
-                              tab=Tab("ask", label, f"Ask: {label}"))
+                              tab=Tab("ask", label, f"Ask: {label}"), kind="ask")
 
     @staticmethod
     def _ask_result(conv: Conversation, source: ActionSource) -> StoredResult:
@@ -412,7 +615,7 @@ class ExplorerExecutor(AgentExecutor):
         log.info("board pair: board=%s results=%d", board.id, len(results))
 
     async def _model_run(self, conv, start, viewing, status, send, text_message, updater, *, action: bool,
-                         tab: Tab) -> None:
+                         tab: Tab, kind: str = "answer") -> None:
         conv.model_runs_waiting += 1
         try:
             async with conv.lock:  # overlapping messages on one context run one after the other
@@ -425,6 +628,8 @@ class ExplorerExecutor(AgentExecutor):
                 unknown = conv.unknown_context
                 try:
                     ui = await self._answerer(conv, text, status)
+                    # Before the pinned Results go; nothing is kept without a store (refuter F7).
+                    record = self._reply_record(conv, ui, kind) if self._saved is not None else None
                 except UiError as e:
                     lines = "\n".join(f"- {m}" for m in e.messages)
                     await updater.complete(
@@ -438,7 +643,7 @@ class ExplorerExecutor(AgentExecutor):
                 registered = conv.actions.register(level, ui.sources, ui.drills, ui.follow_ups)
         finally:
             conv.model_runs_waiting -= 1
-        await send(level, ui, tab, unknown)
+        await send(level, ui, tab, unknown, record=record)
         self._start_prefetch(conv, registered)
 
     # Drill-downs (no model) ----------------------------------------------------------------------
@@ -480,7 +685,8 @@ class ExplorerExecutor(AgentExecutor):
                 "drill-down: source=%s row=%d turn=%d level=%d prefetched=%s rows=%d",
                 src.id, resolved.row, level.turn, level.level, prefetched, result.row_count,
             )
-        await send(level, ui, Tab("drill", title, f"Drill-down: {title}"), model_run=False)
+        record = {"kind": "drill", "result": result.id, "title": title, "spec": _drill_view(spec)}
+        await send(level, ui, Tab("drill", title, f"Drill-down: {title}"), model_run=False, record=record)
 
     # Boards (no model) ----------------------------------------------------------------------------
 
@@ -531,11 +737,12 @@ class ExplorerExecutor(AgentExecutor):
             await fail(BOARD_BUILD_FAILED)
             return
         instance = self._add_instance(conv, board, level, ui, results, failed, options, state)
-        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False, board=instance)
+        await send(level, ui, Tab("board", board.title, f"Opened {board.title}"), model_run=False, board=instance,
+                   record=self._board_record(instance))
         self._start_prefetch(conv, list(instance.sources.values()))
 
     def _add_instance(self, conv: Conversation, board, level: Level, ui: UiResult, results, failed, options, state, *,
-                      key: Any = None, title: str = "") -> BoardInstance:
+                      key: Any = None, title: str = "", defaults: dict[str, Any] | None = None) -> BoardInstance:
         """A new Board instance under the next `b<n>`; beyond `max_board_instances` the oldest
         one other than the Explorer is dropped, and its clicks and Controls answer "too old"."""
         assert self._boards is not None
@@ -544,7 +751,7 @@ class ExplorerExecutor(AgentExecutor):
         sources = conv.actions.board_sources(level, ui.sources, ui.drills)
         instance = BoardInstance(
             instance_id, board, level.surface_id, results, sources, level=level, failed=dict(failed),
-            options=options, state=state, defaults=dict(state),
+            options=options, state=state, defaults=dict(state if defaults is None else defaults),
             deps=panel_dependencies(board, layout_components(board, self._boards.pipeline)),
             panel_sources=panel_sources(ui.messages), key=key, title=title,
         )
@@ -599,7 +806,8 @@ class ExplorerExecutor(AgentExecutor):
                 await fail(ENTITY_FAILED)
                 return
             instance = self._add_instance(conv, board, level, ui, results, failed, options, state, key=key, title=title)
-        await send(level, ui, Tab("board", title, f"Opened {title}"), model_run=False, board=instance)
+        await send(level, ui, Tab("board", title, f"Opened {title}"), model_run=False, board=instance,
+                   record=self._board_record(instance))
         self._start_prefetch(conv, list(instance.sources.values()))
 
     async def _controls(self, conv: Conversation, action: dict[str, Any], reply, fail) -> None:
@@ -681,6 +889,254 @@ class ExplorerExecutor(AgentExecutor):
         # `start` replaces the Conversation's prefetch, so the untouched panels' sources go too,
         # after the re-sent ones; rows already held are skipped.
         self._start_prefetch(conv, [*registered, *(s for s in instance.sources.values() if s not in registered)])
+
+    # saving and rebuilding (Workspaces phase 1) ------------------------------------------------
+
+    def _on_load(self, conv: Conversation) -> None:
+        conv.restore_results = functools.partial(self._restore_named, conv)
+
+    @staticmethod
+    def _note_view(conv: Conversation, view: Any) -> None:
+        """The client's closed and selected Tabs (B12). Unknown tab IDs are dropped."""
+        if not isinstance(view, dict):
+            return
+        tabs = conv.actions.tabs
+        closed, selected = view.get("closed"), view.get("selected")
+        if isinstance(closed, list):
+            conv.view["closed"] = list(dict.fromkeys(t for t in closed if isinstance(t, str) and t in tabs))[:MAX_VIEW_TABS]
+        if isinstance(selected, str) and selected in tabs:
+            conv.view["selected"] = selected
+
+    @staticmethod
+    def _reply_record(conv: Conversation, ui: UiResult, kind: str) -> dict[str, Any]:
+        """An answer or Ask Level as saved (B7): the reply, the Drill Visuals it ignored, and the
+        Result IDs it names that the Conversation held."""
+        if ui.reply is None:
+            return {"kind": kind, "reply": None}
+        view = conv.results
+        named = [(rid, view.get(rid)) for rid in result_ids_in(ui.reply)]
+        held = [(rid, r) for rid, r in named if r is not None]
+        conv.unsaved += [r for rid, r in held if conv.store.get(rid) is not r]
+        return {"kind": kind, "reply": ui.reply, "ignore_drills": sorted(ui.ignore_drills),
+                "results": [rid for rid, _ in held]}
+
+    def _board_record(self, instance: BoardInstance) -> dict[str, Any]:
+        name = instance.board.name
+        return {"kind": "board", "board": name, "key": to_json_safe(instance.key), "values": dict(instance.state),
+                "shown": chosen_values(instance.board, instance.options, instance.state),
+                "hash": self._boards.hashes.get(name, "") if self._boards is not None else "", "title": instance.title}
+
+    @staticmethod
+    def _record(conv: Conversation, level: Level, tab: dict[str, Any], log_entry: dict[str, Any],
+                record: dict[str, Any] | None, board: BoardInstance | None) -> None:
+        if record is None:
+            return
+        lid = level_id(level)
+        conv.records[lid] = {**record, "turn": level.turn, "level": level.level, "label": level.label,
+                             "surface_id": level.surface_id, "tab": dict(tab)}
+        conv.log.append({"tab": tab["id"], **log_entry})
+        if board is not None:
+            conv.board_levels[lid] = board.id
+
+    def _snapshot(self, conv: Conversation) -> Snapshot:
+        """The whole Conversation, built on the event loop from copies and references (B13)."""
+        for lid, iid in conv.board_levels.items():
+            instance = conv.boards.get(iid)
+            if instance is not None and lid in conv.records:
+                conv.records[lid]["values"] = dict(instance.state)
+                conv.records[lid]["shown"] = chosen_values(instance.board, instance.options, instance.state)
+        new: dict[str, StoredResult] = {}
+        for rid in conv.store.ids():
+            if rid not in conv.written:
+                new[rid] = conv.store.get(rid)  # type: ignore[assignment]
+        for r in conv.unsaved:
+            if r.id not in conv.written:
+                new.setdefault(r.id, r)
+        conv.unsaved = []
+        conv.written |= set(new)
+        a = conv.actions
+        state = {
+            "version": STATE_VERSION, "surface_tag": conv.surface_tag, "run_starts": list(conv.run_starts), "turns": a.turns,
+            "levels": {str(k): v for k, v in a.levels.items()}, "ids": [a.ids._v, a.ids._f],
+            "latest_tab": a.latest_tab, "store_next": conv.store.next_number, "board_counter": conv.board_counter,
+            "board_opened": conv.board_opened, "records": copy.deepcopy(conv.records),
+            "log": [dict(e) for e in conv.log], "view": copy.deepcopy(conv.view),
+        }
+        title = conv.title or next((r["tab"]["title"] for r in conv.records.values() if r["kind"] != "board"), "")
+        title = title_of(title or next((r["tab"]["title"] for r in conv.records.values()), "") or "Conversation")
+        return Snapshot(conv.id, title, conv.created_at, _now(), a.turns, state, list(conv.history), list(new.values()))
+
+    def _save(self, conv: Conversation) -> None:
+        if self._saved is None or not conv.persist or conv.deleted:
+            return  # nothing worth saving yet, or deleted meanwhile
+        task = asyncio.get_running_loop().create_task(self._write(conv, self._snapshot(conv)))
+        self._writes.add(task)
+        task.add_done_callback(self._writes.discard)
+
+    async def _write(self, conv: Conversation, snap: Snapshot) -> None:
+        assert self._saved is not None
+        try:
+            await self._saved.store.save(snap)
+        except Exception as e:
+            log.error("saving a conversation failed: %s", type(e).__name__)  # never its content
+            # Its Results go with the next write (refuter F8): the store's are picked up again,
+            # the pinned ones are queued again.
+            conv.written -= {r.id for r in snap.results}
+            conv.unsaved += [r for r in snap.results if conv.store.get(r.id) is not r]
+
+    async def flush(self) -> None:
+        """Waits for the writes scheduled so far (tests and shutdown)."""
+        while self._writes:
+            pending = list(self._writes)
+            await asyncio.gather(*pending, return_exceptions=True)
+            self._writes.difference_update(pending)
+
+    async def _restore_named(self, conv: Conversation, ids: list[str]) -> None:
+        """B9: saved Results a new reply names, re-run before it is built."""
+        missing = [rid for rid in ids if conv.results.get(rid) is None and rid in conv.saved_results]
+        if missing:
+            await self._rerun(conv, missing)
+
+    async def _rerun(self, conv: Conversation, ids: list[str]) -> tuple[bool, dict[str, tuple[str, str]]]:
+        """Re-runs saved Results into the store under their saved IDs (B8), once per process.
+        Returns whether any hash differs (G16) and the failed ones: ID -> (reason, sql)."""
+        assert self._saved is not None
+        changed = False
+        failed: dict[str, tuple[str, str]] = {}
+        for rid in ids:
+            if rid in conv.reruns:
+                was_changed, failure = conv.reruns[rid]
+            elif conv.results.get(rid) is not None:
+                continue  # held since it was built in this process
+            else:
+                saved = conv.saved_results.get(rid)
+                if saved is None:  # evicted from the store in this process: read its SQL back
+                    loaded = await self._saved.store.load(conv.id)
+                    if loaded is not None:
+                        conv.saved_results.update(loaded.results)
+                    saved = conv.saved_results.get(rid)
+                if saved is None:
+                    was_changed, failure = False, ("the result is no longer available", "")
+                else:
+                    outcome = await self._saved.runner.run(saved.sql)
+                    if isinstance(outcome, SqlFail):
+                        log.warning("saved result re-run failed: sqlstate=%s", outcome.sqlstate)
+                        was_changed, failure = False, (outcome.message, saved.sql)
+                    else:
+                        result = conv.store.put(rid, sql=saved.sql, purpose=saved.purpose, columns=outcome.columns,
+                                                column_types=outcome.column_types, rows=outcome.rows,
+                                                truncated=outcome.truncated)
+                        was_changed, failure = await asyncio.to_thread(row_hash, result.rows) != saved.row_hash, None
+                conv.reruns[rid] = (was_changed, failure)
+            changed |= was_changed
+            if failure is not None:
+                failed[rid] = failure
+        return changed, failed
+
+    def view_of(self, conv: Conversation) -> dict[str, Any]:
+        """The saved view (SPEC "HTTP API"): Tabs, Log entries, the selected Tab, Control values
+        and Level IDs. No agent work."""
+        closed = set(conv.view.get("closed") or ())
+        tabs = []
+        for lid, rec in sorted(conv.records.items(), key=lambda kv: int(kv[1]["tab"]["id"][1:])):
+            entry = next((e for e in conv.log if e.get("tab") == rec["tab"]["id"]), {})
+            tabs.append({**rec["tab"], "level": lid, "closed": rec["tab"]["id"] in closed,
+                         "log": {k: entry.get(k) for k in ("kind", "tag", "text")}})
+        controls = {lid: rec.get("values", {}) for lid, rec in conv.records.items() if rec["kind"] == "board"}
+        return {"id": conv.id, "title": conv.title, "tabs": tabs, "log": [dict(e) for e in conv.log],
+                "selected": conv.view.get("selected") or conv.actions.latest_tab, "controls": controls,
+                "levels": [t["level"] for t in tabs]}
+
+    async def rebuild_level(self, conv: Conversation, lid: str, *, defaults: bool = False) -> dict[str, Any] | None:
+        """A saved Level shown again (SPEC "Resuming", B10, B11). None: no such Level."""
+        rec = conv.records.get(lid)
+        if rec is None or self._saved is None:
+            return None
+        async with conv.lock:
+            level = conv.actions.surfaces[rec["surface_id"]]
+            out: dict[str, Any] = {"prose": "", "a2ui": [], "changed": False, "failed_results": [],
+                                   "board_changed": False, "board": None, "tab": dict(rec["tab"])}
+            kind = rec["kind"]
+            if kind == "board":
+                await self._rebuild_board(conv, lid, rec, level, out, defaults)
+            elif kind == "drill":
+                changed, failed = await self._rerun(conv, [rec["result"]])
+                result = conv.results.get(rec["result"])
+                if failed or result is None:
+                    reason = failed.get(rec["result"], ("query error", ""))[0]
+                    out.update(prose=RERUN_FAILED.format(reason=reason), failed_results=[rec["result"]])
+                else:
+                    sv = rec["spec"]
+                    spec = DrillSpec(source="", visual=0, sql=sv["sql"], names=tuple(sv["names"]), drill_as=sv["drill_as"],
+                                     drill_x=sv["drill_x"], drill_y=sv["drill_y"], title=sv["title"])
+                    ui = self._saved.pipeline.build_drill_down(result, spec, rec["title"], level.surface_id, conv.actions.ids)
+                    conv.actions.register(level, ui.sources, [], [], drill_down=True)
+                    out.update(a2ui=ui.messages, changed=changed)
+            elif rec.get("reply") is None:
+                out["prose"] = GAVE_UP
+            else:
+                changed, failed = await self._rerun(conv, rec["results"])
+                try:
+                    ui = self._saved.pipeline.build(rec["reply"], conv.results, level.surface_id, conv.actions.ids,
+                                                    rec.get("ignore_drills", ()), rerun_failed=failed)
+                except UiError:
+                    log.warning("saved level rebuild failed: level=%s", lid)
+                    out["prose"] = REBUILD_FAILED
+                    return out
+                conv.actions.register(level, ui.sources, ui.drills, ui.follow_ups)
+                out.update(prose=ui.prose, a2ui=ui.messages, changed=changed, failed_results=sorted(failed))
+            log.info("level rebuilt: level=%s kind=%s changed=%s failed=%d", lid, kind, out["changed"],
+                     len(out["failed_results"]))
+            return out
+
+    async def _rebuild_board(self, conv: Conversation, lid: str, rec: dict[str, Any], level: Level,
+                             out: dict[str, Any], defaults: bool) -> None:
+        views = self._boards
+        board = views.renderer.boards.get(rec["board"]) if views is not None else None
+        if board is None or views is None or (not defaults and views.hashes.get(board.name) != rec["hash"]):
+            out["board_changed"] = True  # G18: never the old definition
+            return
+        renderer = views.renderer
+        try:
+            options, start, _ = await renderer.defaults(board)
+        except OptionsError:
+            log.warning("board options failed: board=%s", board.name)
+            out["prose"] = ENTITY_FAILED
+            return
+        if defaults:
+            state = start
+        else:
+            try:
+                state = validate_values(board, options, rec["values"])
+            except ControlError:  # its options moved: the saved values no longer apply
+                out["board_changed"] = True
+                return
+            if chosen_values(board, options, state) != rec.get("shown", {}):
+                out["board_changed"] = True  # an index now names another option (refuter F5)
+                return
+        key = key_value(rec["key"], board.key_type) if board.key else None
+        outcomes = await renderer.outcomes(board, bound_values(board, options, state), key=key)
+        results, failed = instance_results(outcomes, conv.store.reserve_id)
+        try:
+            ui = build_board(board, results, failed, views.pipeline, level.surface_id, conv.actions.ids, options, state,
+                             title=rec["title"])
+        except UiError:
+            log.error("board rebuild failed: board=%s", board.name)
+            out["prose"] = REBUILD_FAILED
+            return
+        for iid in [i for i, b in conv.boards.items() if b.surface_id == level.surface_id]:
+            del conv.boards[iid]  # the instance shown before on this surface
+        instance = self._add_instance(conv, board, level, ui, results, failed, options, state, key=key,
+                                      title=rec["title"], defaults=start)
+        conv.board_levels[lid] = instance.id
+        if board.name == EXPLORER:
+            conv.board_opened = True
+        if defaults:
+            rec["values"], rec["hash"] = dict(state), views.hashes.get(board.name, "")
+            rec["shown"] = chosen_values(board, options, state)
+            self._save(conv)
+        out.update(a2ui=ui.messages, board={"id": instance.id, "controls": [{"name": c.name, "kind": c.kind}
+                                                                            for c in board.controls]})
 
     # prefetch --------------------------------------------------------------------------------
 

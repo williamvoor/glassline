@@ -35,6 +35,9 @@ export interface AgentConnection {
 }
 
 export const VIEWING_KEY = 'explorerViewing';
+/** Workspace mode: the closed and selected tabs, saved with the Conversation (Workspaces B12). */
+export const VIEW_KEY = 'explorerView';
+export type ViewState = {closed: string[]; selected?: string};
 
 export function withExtensionHeader(fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): typeof fetch {
   return (input, init) => {
@@ -61,11 +64,13 @@ function a2uiOf(parts: Part[] | undefined): Record<string, unknown>[] {
 /**
  * @param capabilities the renderer's `getRendererCapabilities({versions: ['v0.9']})`, sent as
  *   `a2uiClientCapabilities` in each message's metadata.
+ * @param view Workspace mode: the view sent as `explorerView` with each message.
  */
 export async function connect(
   agentUrl: string,
   capabilities: unknown,
   fetchImpl?: typeof fetch,
+  view?: () => ViewState | undefined,
 ): Promise<AgentConnection> {
   const client = await A2AClient.fromCardUrl(`${agentUrl.replace(/\/$/, '')}/.well-known/agent-card.json`, {
     fetchImpl: withExtensionHeader(fetchImpl),
@@ -83,7 +88,11 @@ export async function connect(
       role: 'user',
       messageId: crypto.randomUUID(),
       parts,
-      metadata: {a2uiClientCapabilities: capabilities, ...(viewing ? {[VIEWING_KEY]: viewing} : {})},
+      metadata: {
+        a2uiClientCapabilities: capabilities,
+        ...(viewing ? {[VIEWING_KEY]: viewing} : {}),
+        ...(view?.() ? {[VIEW_KEY]: view()} : {}),
+      },
       ...(contextId ? {contextId} : {}),
     };
     for await (const event of client.sendMessageStream({message})) {

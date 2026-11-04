@@ -5,6 +5,10 @@ login is read-only, checks the Dataset's Boards, builds the system prompt once, 
 AGENT_HOST:AGENT_PORT. A configuration or startup problem prints one line, `explorer: <message>`,
 and exits 1.
 
+With `EXPLORER_DATA_DIR` set (Workspace mode, specs/workspaces/SPEC.md) it reads the Workspace
+list there instead, mounts each available Workspace under `/w/<name>/`, serves `/workspaces`, and
+saves Conversations; `DATASET_DIR` and `DATABASE_URL` are ignored.
+
 `python -m explorer_agent boards` checks and renders each Board cold, printing its time, and exits
 1 when one misses the cold target (SPEC §18).
 """
@@ -17,7 +21,10 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from dotenv import load_dotenv
@@ -31,16 +38,26 @@ from explorer_agent.boards import (
     check_board,
     instance_results,
 )
-from explorer_agent.config import ConfigError, Settings, load_settings
+from explorer_agent.config import (
+    ConfigError,
+    Settings,
+    WorkspaceEntry,
+    WorkspaceUnavailable,
+    data_dir,
+    load_settings,
+    process_settings,
+)
 from explorer_agent.drill import Prefetcher
-from explorer_agent.executor import BoardViews, Conversations, DrillDowns
+from explorer_agent.executor import BoardViews, Conversations, DrillDowns, SavedViews
 from explorer_agent.llm import LlmLoop, LoopConfig
 from explorer_agent.macros import PANEL_UNDRAWABLE
 from explorer_agent.prompt import build_system_prompt, dataset_context
+from explorer_agent.saved import SavedStore
 from explorer_agent.schema import SchemaCatalog, overlay_problems, render_schema_section
 from explorer_agent.server import build_app
-from explorer_agent.sql import SqlRunner, StartupError, open_pool
+from explorer_agent.sql import NO_TABLES_PREFIX, SqlRunner, StartupError, open_pool
 from explorer_agent.ui import UiPipeline
+from explorer_agent.workspaces import Built, Registry, workspace_app
 
 EXPLORER_ROOT = Path(__file__).resolve().parents[3]
 ENV_FILE = EXPLORER_ROOT.parent / ".env"  # the repo root's .env holds the real settings
@@ -78,11 +95,12 @@ async def _check_boards(settings: Settings, runner: SqlRunner, pipeline: UiPipel
         raise ConfigError(str(e)) from None
 
 
-async def _open_pool(settings: Settings):
+async def _open_pool(settings: Settings, timeout_s: float | None = None):
     pool = open_pool(settings.database_url)
     try:
-        await pool.open(wait=True, timeout=DB_CONNECT_TIMEOUT_S)
+        await pool.open(wait=True, timeout=timeout_s or DB_CONNECT_TIMEOUT_S)
     except PoolTimeout:
+        await pool.close()  # it would keep retrying in the background
         raise _Fatal("cannot connect to the database (check DATABASE_URL and that the database is running)") from None
     return pool
 
@@ -124,9 +142,36 @@ async def _boards_check(settings: Settings, target_s: float = BOARD_COLD_TARGET_
         await pool.close()
 
 
-async def _serve(settings: Settings) -> None:
-    pool = await _open_pool(settings)
-    renderer: BoardRenderer | None = None
+@dataclass
+class Running:
+    """One Dataset's agent: its app and what to start and stop with it."""
+
+    app: Any
+    pool: Any
+    renderer: BoardRenderer | None
+    conversations: Conversations
+    saved: SavedStore | None
+
+    def started(self) -> None:
+        if self.renderer is not None:
+            self.renderer.start_warm()  # the first view of every Conversation is cached
+
+    async def close(self) -> None:
+        if self.renderer is not None:
+            self.renderer.stop()
+        try:
+            if self.saved is not None:
+                await self.saved.close()
+        finally:
+            await self.pool.close()
+
+
+async def build_workspace(settings: Settings, url: str, *, saved_path: Path | None = None, cors: bool = True,
+                          connect_timeout_s: float | None = None, completion: Any = None) -> Running:
+    """Everything one Dataset needs, checked, as today's single agent (ADR 0039): the pool, the
+    read-only check, the schema and its overlay, the Boards, the prompt and the app. With
+    `saved_path` (Workspace mode) Conversations are saved there. The pool is closed on failure."""
+    pool = await _open_pool(settings, connect_timeout_s)
     try:
         schemas = settings.dataset.allowed_schemas
         runner = SqlRunner(pool, schemas, settings.sql_timeout_ms, settings.sql_row_cap)
@@ -145,40 +190,84 @@ async def _serve(settings: Settings) -> None:
             "system prompt: %d chars, sha256 %s, format %s, dataset %s",
             len(prompt), hashlib.sha256(prompt.encode()).hexdigest()[:16], settings.format, settings.dataset.name,
         )
-        loop = LlmLoop(LoopConfig.from_settings(settings), prompt, pipeline, runner, catalog)
-        url = f"http://{settings.agent_host}:{settings.agent_port}"
+        loop = LlmLoop(LoopConfig.from_settings(settings), prompt, pipeline, runner, catalog, completion)
         prefetcher = Prefetcher(
             runner, rows=settings.drill_prefetch_rows, timeout_ms=settings.drill_prefetch_timeout_ms,
             max_held=settings.max_prefetched,
         )
+        store = SavedStore(saved_path) if saved_path is not None else None
         conversations = Conversations(
             max_action_sources=settings.max_action_sources, max_pending_pairs=settings.max_pending_pairs,
             board_rows_to_model=settings.board_rows_to_model, board_pair_max_chars=settings.board_pair_max_chars,
-            max_board_instances=settings.max_board_instances,
+            max_board_instances=settings.max_board_instances, saved=store,
         )
+        renderer = _renderer(settings, runner) if settings.dataset.boards else None
         app = build_app(
             loop, url=url, client_origin=settings.client_origin, conversations=conversations,
             description=settings.dataset.description, examples=settings.dataset.examples,
             drills=DrillDowns(runner, pipeline, prefetcher, settings.rows_to_model), model=settings.model,
-            boards=BoardViews(renderer := _renderer(settings, runner), pipeline, settings.board_prefetch_rows) if settings.dataset.boards else None,
+            boards=BoardViews(renderer, pipeline, settings.board_prefetch_rows) if renderer is not None else None,
+            saved=SavedViews(store, runner, pipeline) if store is not None else None, cors=cors,
         )
-        server = uvicorn.Server(
-            uvicorn.Config(app, host=settings.agent_host, port=settings.agent_port, log_level="warning")
-        )
-        task = asyncio.create_task(server.serve())
-        while not server.started:
-            if task.done():
-                await task
-                raise _Fatal(f"could not listen on {settings.agent_host}:{settings.agent_port}")
-            await asyncio.sleep(0.05)
-        print(f"explorer: listening on {url}", flush=True)
-        if renderer is not None:
-            renderer.start_warm()  # the first view of every Conversation is cached
+        return Running(app, pool, renderer, conversations, store)
+    except BaseException:
+        await pool.close()
+        raise
+
+
+async def _listen(app: Any, settings: Settings, url: str) -> tuple[uvicorn.Server, asyncio.Task[None]]:
+    server = uvicorn.Server(uvicorn.Config(app, host=settings.agent_host, port=settings.agent_port, log_level="warning"))
+    task = asyncio.create_task(server.serve())
+    while not server.started:
+        if task.done():
+            await task
+            raise _Fatal(f"could not listen on {settings.agent_host}:{settings.agent_port}")
+        await asyncio.sleep(0.05)
+    print(f"explorer: listening on {url}", flush=True)
+    return server, task
+
+
+async def _serve(settings: Settings) -> None:
+    url = f"http://{settings.agent_host}:{settings.agent_port}"
+    running = await build_workspace(settings, url)
+    try:
+        _, task = await _listen(running.app, settings, url)
+        running.started()
         await task
     finally:
-        if renderer is not None:
-            renderer.stop()
-        await pool.close()
+        await running.close()
+
+
+async def _workspace_builder(entry: WorkspaceEntry, settings: Settings, url: str, saved_path: Path, *,
+                             connect_timeout_s: float | None = None, completion: Any = None) -> Built:
+    """One Workspace for the registry: a failed check becomes its reason (no DSN in it)."""
+    try:
+        running = await build_workspace(settings, url, saved_path=saved_path, cors=False,
+                                        connect_timeout_s=connect_timeout_s, completion=completion)
+    except _Fatal:
+        raise WorkspaceUnavailable("database unreachable") from None
+    except StartupError as e:
+        if str(e).startswith(NO_TABLES_PREFIX):  # a Dataset problem, not a write right (refuter F6)
+            raise WorkspaceUnavailable(f"dataset invalid: {e}") from None
+        raise WorkspaceUnavailable("login can write") from None
+    except ConfigError as e:
+        raise WorkspaceUnavailable(f"dataset invalid: {e}") from None
+    return Built(running.app, running.close, settings.dataset.description,
+                 lambda: running.conversations.running, running.started, running.pool)
+
+
+async def _serve_workspaces(env: Mapping[str, str], data: Path, base: Settings) -> None:
+    """Workspace mode (SPEC phase 1): every Workspace mounted under /w/<name>/, the list at
+    /workspaces. Starts even when none is available."""
+    url = f"http://{base.agent_host}:{base.agent_port}"
+    registry = Registry(data, EXPLORER_ROOT.parent, EXPLORER_ROOT, env, _workspace_builder, url)
+    await registry.start()
+    try:
+        app = workspace_app(registry, base.client_origin, base.agent_host, base.agent_port)
+        _, task = await _listen(app, base, url)
+        await task
+    finally:
+        await registry.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,6 +278,16 @@ def main(argv: list[str] | None = None) -> int:
     env_file = Path(os.environ.get("EXPLORER_ENV_FILE") or ENV_FILE)
     load_dotenv(env_file, override=False)
     try:
+        raw_data = os.environ.get("EXPLORER_DATA_DIR", "").strip()
+        if raw_data and args == []:
+            data = data_dir(raw_data, EXPLORER_ROOT.parent)
+            base = process_settings(os.environ)
+            _configure_logging(base.log_level)
+            for name in ("DATASET_DIR", "DATABASE_URL"):
+                if os.environ.get(name, "").strip():
+                    log.warning("%s is ignored in Workspace mode (EXPLORER_DATA_DIR is set)", name)
+            asyncio.run(_serve_workspaces(os.environ, data, base))
+            return 0
         settings = load_settings(os.environ, EXPLORER_ROOT)
         _configure_logging(settings.log_level)
         if args == ["boards"]:

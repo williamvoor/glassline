@@ -22,6 +22,7 @@ import litellm
 
 from explorer_agent.drill import check_drill
 from explorer_agent.executor import Conversation, StatusFn
+from explorer_agent.saved import result_ids_in
 from explorer_agent.schema import SchemaCatalog
 from explorer_agent.sql import SqlRunner
 from explorer_agent.tools import TOOL_SCHEMAS, ToolBox
@@ -275,6 +276,8 @@ class LlmLoop:
 
     async def _build(self, conv: Conversation, reply: str, ignore_drills: frozenset[int] = frozenset()) -> UiResult:
         """UI pipeline, then check step 2 of every Drill query. Raises UiError."""
+        if conv.restore_results is not None:  # a resumed Conversation (Workspaces B9)
+            await conv.restore_results(result_ids_in(reply))
         ui = self.pipeline.build(reply, conv.results, conv.surface_id, conv.actions.ids, ignore_drills)
         errors, failing = await self._check_drills(ui)
         if errors:

@@ -45,6 +45,9 @@ class GuardError(ValueError):
     """The SQL was rejected before execution. The message says what to change."""
 
 
+NO_TABLES_PREFIX = "allowed schema has no tables visible to this login: "
+
+
 class StartupError(RuntimeError):
     """The database login is unsafe or the dataset is unusable; the agent must not start."""
 
@@ -266,7 +269,7 @@ class SqlRunner:
             )
             empty = [s for s in self.allowed_schemas if not counts.get(s)]
             if empty:
-                raise StartupError(f"allowed schema has no tables visible to this login: {', '.join(empty)}")
+                raise StartupError(f"{NO_TABLES_PREFIX}{', '.join(empty)}")
 
     async def run(self, sql: str) -> SqlOk | SqlFail:
         return await self._run(sql, None, self.timeout_ms)
