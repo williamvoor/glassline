@@ -125,7 +125,8 @@ def test_committed_dataset_loads():
     assert s.dataset.allowed_schemas == ("mart",)
     assert (s.dataset.currency.code, s.dataset.currency.symbol) == ("AUD", "$")
     assert s.prompt_cache_key == "explorer-austender"
-    assert len(s.dataset.notes) + len(s.dataset.glossary) < 2500
+    # Raised from 2500 when bootstrap regenerated the notes (2026-11-04); keeps the prefix in check.
+    assert len(s.dataset.notes) + len(s.dataset.glossary) < 5500
 
 
 def _drill_hints(notes: str) -> str:

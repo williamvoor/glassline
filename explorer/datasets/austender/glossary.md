@@ -1,13 +1,11 @@
-- **Contract notice:** an agency's public record of a contract it awarded, numbered `CN…`.
-- **Amendment:** a later notice (`CN…-A1`, `-A2`, …) that changes a contract's value or period. The
-  current value is the latest one.
-- **Cancelled:** a notice withdrawn by the agency. It keeps its value in the source, but it isn't
-  spend.
-- **Agency:** the Commonwealth entity that procured the contract.
-- **Supplier:** a party the contract was awarded to, identified by ABN where one is valid.
-- **ABN:** Australian Business Number, an 11-digit business identifier.
-- **UNSPSC:** product and service category code. Segment (2 digits), family (4) and class (6) are
-  its broader levels.
-- **Procurement method:** `open` (open tender), `limited` (no open competition) or `selective`
-  (prequalified suppliers only).
-- **Financial year (FY):** 1 July to 30 June, written `2024-25`.
+- **AusTender**: the Australian Government's procurement reporting system, the source of these contract notices.
+- **Contract notice**: one published contract record, identified by `notice_id` (e.g. CN4273249); amendments are separate notices linked to it, not separate rows in `mart.contract`.
+- **Amendment**: a later notice (-A1, -A2, ...) that can change a contract's value or period; `current_value` uses the highest-numbered non-cancelled amendment.
+- **Cancelled contract**: a notice (or amendment) withdrawn after publication; cancelled contracts are excluded from all summary tables and from `mart.contract_supplier`, but remain in `mart.contract` with `is_cancelled = true`.
+- **Financial year**: Australian July-June year, stored as text like '2024-25' meaning 1 Jul 2024 to 30 Jun 2025.
+- **ABN**: Australian Business Number, an 11-digit identifier; used as the agency/supplier key when valid, otherwise the key is `name:` plus a normalised name.
+- **UNSPSC**: United Nations Standard Products and Services Code, an 8-digit category code; the first 2/4/6 digits give broader levels (`unspsc_segment`/`unspsc_family`/`unspsc_class`).
+- **Procurement method**: how the contract was tendered: `open`, `limited` or `selective`.
+- **Limited tender reason**: the code and text explaining why a limited (non-open) tender was allowed, e.g. extreme urgency.
+- **value_share**: a supplier's share of a contract's current value in `mart.contract_supplier` (contract value divided by supplier count); sum this for spend.
+- **Name Withheld**: a supplier whose name was not published; each has a distinct `withheld:<notice_id>` key and is not one entity.

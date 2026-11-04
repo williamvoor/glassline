@@ -1,16 +1,11 @@
 name = "austender"
-description = "Australian Commonwealth procurement contracts (AusTender)"
-allowed_schemas = ["mart"]    # what the read-only role can see; defined in ../austender/SPEC.md
-glossary = "glossary.md"      # paths relative to this file
+description = "Australian Commonwealth contract notices published on AusTender, with agency, supplier, value, category and financial-year summaries."
+allowed_schemas = ["mart"]
+glossary = "glossary.md"
 notes = "notes.md"
-# Shown as starting points in the client's empty state; never in the prompt. Keep them apart
-# from scenarios.toml, which is evaluation data.
-examples = [
-  "How has total contract value changed by financial year?",
-  "Which agencies awarded the most contracts in 2023?",
-  "Who are the top 10 IT suppliers by contract value?",
-]
+examples = ["Which agencies spent the most in 2024-25?", "Who were the top suppliers in 2023-24?", "Show the largest contracts published in 2024-25"]
 
-[currency]                    # one currency per dataset; used by the currency formats
+[currency]
 code = "AUD"
 symbol = "$"
+

@@ -1,35 +1,35 @@
 title = "Explorer"
-question = "How much did Commonwealth agencies spend, with whom, and how is it changing over time?"
-scope = "Non-cancelled contracts with a published value and supplier, from 2012-13 to 2026-27 (earliest and latest years are partial); values are supplier shares as published in AUD."
+question = "How is Commonwealth contract spend distributed across agencies and financial years?"
+scope = "All non-cancelled, valued contracts in mart.agency_fy from 2012-13 to 2026-27; cancelled contracts excluded"
 layout = """
 root = Column([metrics, Row([breakdown, trend]), top])
-metrics = Row([Metric("totals", "total_value", "Total contract value", 0, "currency_compact"), Metric("totals", "contract_count", "Contracts", 0, "int"), Metric("totals", "agency_count", "Agencies", 0, "int"), Metric("totals", "supplier_count", "Suppliers", 0, "int")])
-breakdown = Treemap("share", "Spend by agency", "agency_name", "total_value", "currency_compact")
-trend = LineChart("trend_data", "financial_year", "total_value", "Spend by financial year", format="currency_compact")
-top = DataTable("top_suppliers", "Top suppliers by value", "supplier_name,total_value,contract_count", "total_value:currency_compact,contract_count:int", bars="total_value")
+metrics = Row([Metric("totals", "total_value", "Total spend", 0, "currency_compact"), Metric("totals", "contract_count", "Contracts", 0, "int"), Metric("totals", "agency_count", "Agencies", 0, "int")])
+breakdown = Treemap("agency_share", "Spend share by agency", "agency_name", "total_value", "currency_compact")
+trend = LineChart("fy_trend", "financial_year", "total_value", "Spend by financial year", format="currency_compact")
+top = DataTable("top_agencies", "Top agencies by spend", "agency_name,total_value,contract_count", "total_value:currency_compact,contract_count:int", bars="total_value")
 """
 
 [[controls]]
-name = "procurement_method"
+name = "fy"
 kind = "choice"
-label = "Procurement method"
+label = "Financial year"
 type = "text"
-options_sql = "SELECT DISTINCT procurement_method AS value, procurement_method AS label FROM mart.contract_supplier WHERE procurement_method IS NOT NULL ORDER BY value"
+options_sql = "SELECT financial_year AS value, financial_year AS label FROM (SELECT DISTINCT financial_year FROM mart.agency_fy) s ORDER BY value"
 all_label = "All"
 default = "all"
 
 [[queries]]
 name = "totals"
-sql = "SELECT COALESCE(SUM(value_share), 0) AS total_value, COUNT(DISTINCT notice_id) AS contract_count, COUNT(DISTINCT agency_key) AS agency_count, COUNT(DISTINCT supplier_key) AS supplier_count FROM mart.contract_supplier WHERE (:procurement_method IS NULL OR procurement_method = :procurement_method)"
+sql = "SELECT sum(total_value) AS total_value, sum(contract_count) AS contract_count, count(DISTINCT agency_key) AS agency_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy)"
 
 [[queries]]
-name = "share"
-sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, SUM(value_share) AS total_value FROM mart.contract_supplier WHERE (:procurement_method IS NULL OR procurement_method = :procurement_method) GROUP BY agency_key, agency_name ORDER BY total_value DESC"
+name = "agency_share"
+sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy) GROUP BY agency_key, agency_name ORDER BY total_value DESC"
 
 [[queries]]
-name = "trend_data"
-sql = "SELECT financial_year AS financial_year, SUM(value_share) AS total_value FROM mart.contract_supplier WHERE (:procurement_method IS NULL OR procurement_method = :procurement_method) GROUP BY financial_year ORDER BY financial_year"
+name = "fy_trend"
+sql = "SELECT financial_year AS financial_year, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy) GROUP BY financial_year ORDER BY financial_year"
 
 [[queries]]
-name = "top_suppliers"
-sql = "SELECT supplier_key AS supplier_key, supplier_name AS supplier_name, SUM(value_share) AS total_value, COUNT(*) AS contract_count FROM mart.contract_supplier WHERE (:procurement_method IS NULL OR procurement_method = :procurement_method) GROUP BY supplier_key, supplier_name ORDER BY total_value DESC LIMIT 15"
+name = "top_agencies"
+sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy) GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 15"

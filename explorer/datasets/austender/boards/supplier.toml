@@ -1,24 +1,24 @@
 title = "Supplier"
-question = "How much has this supplier won, how is that changing, and which agencies does it supply?"
-scope = "Every non-cancelled contract for this supplier across all years, not only the clicked answer's filters; multi-supplier contracts are split equally."
+question = "What has this supplier won, in which years, and from which agencies?"
+scope = "Every non-cancelled, valued contract for this supplier across all financial years, not only the clicked answer's filters"
 key = "supplier_key"
 key_type = "text"
 key_columns = ["supplier_key"]
 layout = """
 root = Column([metrics, trend, top])
-metrics = Row([Metric("totals", "total_value", "Total contract value", 0, "currency_compact"), Metric("totals", "contract_count", "Contracts", 0, "int"), Metric("totals", "active_years", "Financial years", 0, "int")])
-trend = LineChart("trend_data", "financial_year", "total_value", "Value by financial year", format="currency_compact")
-top = DataTable("top_agencies", "Top agencies for this supplier", "agency_name,total_value,contract_count", "total_value:currency_compact,contract_count:int", bars="total_value")
+metrics = Row([Metric("supplier_totals", "supplier_name", "Supplier", 0, "text"), Metric("supplier_totals", "total_value", "Total spend", 0, "currency_compact"), Metric("supplier_totals", "contract_count", "Contracts", 0, "int")])
+trend = LineChart("supplier_trend", "financial_year", "total_value", "Spend by financial year", format="currency_compact")
+top = DataTable("supplier_agencies", "Top agencies for this supplier", "agency_name,total_value,contract_count", "total_value:currency_compact,contract_count:int", bars="total_value")
 """
 
 [[queries]]
-name = "totals"
-sql = "SELECT COALESCE(SUM(total_value), 0) AS total_value, COALESCE(SUM(contract_count), 0) AS contract_count, COUNT(DISTINCT financial_year) AS active_years FROM mart.supplier_fy WHERE supplier_key = :supplier_key"
+name = "supplier_totals"
+sql = "SELECT supplier_name AS supplier_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count, count(DISTINCT financial_year) AS year_count FROM mart.supplier_fy WHERE supplier_key = :supplier_key GROUP BY supplier_name"
 
 [[queries]]
-name = "trend_data"
-sql = "SELECT financial_year AS financial_year, total_value AS total_value, contract_count AS contract_count FROM mart.supplier_fy WHERE supplier_key = :supplier_key ORDER BY financial_year"
+name = "supplier_trend"
+sql = "SELECT supplier_key AS supplier_key, financial_year AS financial_year, total_value AS total_value, contract_count AS contract_count FROM mart.supplier_fy WHERE supplier_key = :supplier_key ORDER BY financial_year"
 
 [[queries]]
-name = "top_agencies"
-sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, SUM(total_value) AS total_value, SUM(contract_count) AS contract_count FROM mart.supplier_agency_fy WHERE supplier_key = :supplier_key GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 15"
+name = "supplier_agencies"
+sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.supplier_agency_fy WHERE supplier_key = :supplier_key GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 15"
