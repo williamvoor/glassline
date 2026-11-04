@@ -129,3 +129,23 @@ cd explorer/agent && uv run pytest tests/test_macros.py tests/test_prompt.py -q
 UPDATE_SNAPSHOTS=1 uv run pytest tests/test_prompt.py -q   # once, after the prompt change (needs Docker)
 uv run pytest -q   # full suite; db tests need Docker, live_db tests stay deselected
 ```
+
+## Amendment: whole values, years and single compact values (2026-11-05)
+
+Found in the Workspaces manual check (M1) on a second Dataset.
+
+- **One `currency_compact` value drops a trailing `.0`:** `$770K`, `$2M`, `$1B` in `Cite` and
+  `Metric` (Behaviour 1). A `DataTable` column or a chart with a shared unit keeps one decimal
+  place (`$1.0B` beside `$3.4B`), so columns stay aligned (Behaviour 2 and 3 unchanged).
+- **`auto` shows a year as a year:** a column named `year` or `*_year` holding a whole number from
+  1000 to 9999 (integer or float, as `date_part` gives) shows as `2015`, not `2,015`. Other
+  integers keep the separator.
+- **Whole `numeric` values are integers.** A `Decimal` with no fractional digits (`numeric(p,0)`,
+  `SUM` of integers) is stored as an int, so `auto` shows `1,150,000`, not `1,150,000.00`. A
+  declared scale such as `numeric(18,2)` keeps its digits and stays a float.
+- **`auto` still can't tell money.** A price column without a format shows no symbol.
+
+Tests: `tests/test_macros.py` (`test_auto_shows_a_year_column_without_a_separator`,
+`test_auto_shows_a_whole_numeric_value_without_decimals`,
+`test_currency_compact_drops_a_trailing_zero_decimal`, …) and `tests/test_saved.py`
+(`test_row_hash_is_unchanged_by_whole_numerics_becoming_ints`).

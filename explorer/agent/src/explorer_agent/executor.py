@@ -1026,7 +1026,7 @@ class ExplorerExecutor(AgentExecutor):
                         result = conv.store.put(rid, sql=saved.sql, purpose=saved.purpose, columns=outcome.columns,
                                                 column_types=outcome.column_types, rows=outcome.rows,
                                                 truncated=outcome.truncated)
-                        was_changed, failure = await asyncio.to_thread(row_hash, result.rows) != saved.row_hash, None
+                        was_changed, failure = await asyncio.to_thread(row_hash, result.rows, result.columns, result.column_types) != saved.row_hash, None
                 conv.reruns[rid] = (was_changed, failure)
             changed |= was_changed
             if failure is not None:

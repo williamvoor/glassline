@@ -322,3 +322,23 @@ def test_board_rows_pass_strict_validation():
     grid = next(c for m in ui.messages if "updateComponents" in m for c in m["updateComponents"]["components"]
                 if c["component"] == "DataGrid")
     assert grid["action"]["boards"] == [0, 2]
+
+
+# M1 (2026-11-05): an Entity Board opened from a row was titled "Site · false · false". The key
+# `site` was left out of the label as a key, and the two boolean columns were all that was left.
+def _sites() -> ResultStore:
+    rows = [{"site": "ACME", "price": 5_500_000, "flagged": False, "is_prelim": False}]
+    return _store(["site", "price", "flagged", "is_prelim"], ["text", "numeric", "boolean", "boolean"], rows)
+
+
+def test_a_boolean_column_is_never_the_row_label():
+    with macro_context(_sites(), entity={"site": "site"}, key_types={"site": "text"}) as ctx:
+        expand("DataTable", result_id="r1", title="Sites", columns="site,price,flagged,is_prelim")
+    assert ctx.sources[0].labels[0] == "ACME"
+
+
+def test_a_key_that_is_the_only_text_column_is_shown_beside_boolean_columns_by_default():
+    with macro_context(_sites(), entity={"site": "site"}, key_types={"site": "text"}) as ctx:
+        comps = expand("DataTable", result_id="r1", title="Sites")
+    assert [c["key"] for c in grid_of(comps)["columns"]] == ["site", "price", "flagged", "is_prelim"]
+    assert ctx.sources[0].labels[0] == "ACME"

@@ -61,8 +61,16 @@ CREATE TABLE IF NOT EXISTS results (
 """
 
 
-def row_hash(rows: list[dict[str, Any]]) -> str:
-    """SHA-256 of the canonical JSON of a Result's rows (they are JSON-safe already)."""
+_DECIMAL_TYPES = frozenset({"numeric", "decimal"})
+
+
+def row_hash(rows: list[dict[str, Any]], columns: list[str], column_types: list[str]) -> str:
+    """SHA-256 of the canonical JSON of a Result's rows (they are JSON-safe already). A whole
+    `numeric` value is hashed as the float it was stored as before 2026-11-05 (1150000.0), so a
+    Result saved then still matches its re-run."""
+    decimal = {c for c, t in zip(columns, column_types, strict=True) if t in _DECIMAL_TYPES}
+    if decimal:
+        rows = [{k: float(v) if k in decimal and type(v) is int else v for k, v in r.items()} for r in rows]
     text = json.dumps(rows, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -179,7 +187,7 @@ class SavedStore:
         state = {**snap.state, "history": omit_rows(snap.history)}
         rows = [
             (snap.id, r.id, r.sql, r.purpose, json.dumps(r.columns), json.dumps(r.column_types), r.row_count,
-             int(r.truncated), row_hash(r.rows))
+             int(r.truncated), row_hash(r.rows, r.columns, r.column_types))
             for r in snap.results
         ]
         db.execute("BEGIN")

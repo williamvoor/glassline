@@ -228,9 +228,12 @@ def format_value(
     column_type: str = "",
     currency_symbol: str = DEFAULT_CURRENCY_SYMBOL,
     unit: tuple[float, str] | None = None,
+    *,
+    column: str = "",
 ) -> str:
     """Formats one stored value as display text. `unit` fixes `currency_compact`'s unit, so a
-    table column or chart shares one; by default each value picks its own."""
+    table column or chart shares one; by default each value picks its own. `column` lets `auto`
+    show a year column as 2015, not 2,015."""
     sym = currency_symbol
     if value is None:
         return "—"
@@ -238,6 +241,8 @@ def format_value(
         case "auto":
             if isinstance(value, bool):
                 return str(value).lower()
+            if _is_number(value) and _is_year(column, value):  # also a whole float: date_part() gives one
+                return str(round(value))
             if isinstance(value, int) or (isinstance(value, float) and column_type in INTEGER_TYPES):
                 return f"{round(value):,}"
             if isinstance(value, float):
@@ -251,7 +256,7 @@ def format_value(
             return f"-{sym}{-n:,.1f}M" if n < 0 else f"{sym}{n:,.1f}M"
         case "currency_compact":
             n = _number(value, fmt)
-            return _compact(n, sym, unit or compact_unit(abs(n)))
+            return _compact(n, sym, unit or compact_unit(abs(n)), trim=unit is None)
         case "int":
             return f"{round(_number(value, fmt)):,}"
         case "decimal":
@@ -266,6 +271,12 @@ def format_value(
             return str(value)
 
 
+def _is_year(column: str, value: float | int) -> bool:
+    """A column named `year` or `<something>_year` holding a four-digit whole number."""
+    name = column.lower()
+    return (name == "year" or name.endswith("_year")) and 1000 <= value <= 9999 and value == round(value)
+
+
 def compact_unit(magnitude: float) -> tuple[float, str]:
     """Divisor and suffix for `currency_compact`, chosen after rounding: 999.96M shows as 1.0B."""
     if not math.isfinite(magnitude) or round(magnitude) < 1000:
@@ -276,9 +287,12 @@ def compact_unit(magnitude: float) -> tuple[float, str]:
     return 1e9, "B"
 
 
-def _compact(n: float | int, sym: str, unit: tuple[float, str]) -> str:
+def _compact(n: float | int, sym: str, unit: tuple[float, str], *, trim: bool = False) -> str:
     divisor, suffix = unit if math.isfinite(n) else (1.0, "")
-    text = f"{abs(n) / divisor:,.1f}{suffix}" if suffix else f"{abs(n):,.0f}"
+    text = f"{abs(n) / divisor:,.1f}" if suffix else f"{abs(n):,.0f}"
+    if suffix and trim:
+        text = text.removesuffix(".0")  # a value on its own reads $770K; a column keeps $1.0B beside $3.4B
+    text += suffix
     negative = n < 0 and any(d in "123456789" for d in text)  # no "-$0.0B"
     return f"-{sym}{text}" if negative else f"{sym}{text}"
 
@@ -294,7 +308,7 @@ def _largest(values: Iterable[Any]) -> float:
 def _format(
     result: StoredResult, value: Any, column: str, fmt: str, unit: tuple[float, str] | None = None
 ) -> str:
-    return format_value(value, fmt, result.column_type(column), _ctx().currency_symbol, unit)
+    return format_value(value, fmt, result.column_type(column), _ctx().currency_symbol, unit, column=column)
 
 
 def _cell(
@@ -1118,8 +1132,12 @@ def _parse_formats(result: StoredResult, spec: str) -> dict[str, str]:
 def _text_columns(result: StoredResult, columns: list[str]) -> list[str]:
     """The non-numeric columns, leaving out Board key columns unless nothing else is left: a key
     is for opening a Board, not for reading (SPEC §18)."""
-    text = [c for c in columns if not result.is_numeric(c)]
+    text = [c for c in columns if not result.is_numeric(c) and not _is_boolean(result, c)]  # "false" names nothing
     return [c for c in text if c not in _ctx().entity] or text
+
+
+def _is_boolean(result: StoredResult, column: str) -> bool:
+    return result.column_type(column) in ("boolean", "bool")
 
 
 def _row_label(cells: list[str], result: StoredResult, shown: list[str]) -> str:
@@ -1157,7 +1175,7 @@ def _table_parts(
     shown = [_column(result, c.strip()) for c in columns.split(",") if c.strip()]
     if not shown:  # all but Board key columns, unless a key is the only text column
         keep = set(_text_columns(result, result.columns))
-        shown = [c for c in result.columns if c in keep or result.is_numeric(c)]
+        shown = [c for c in result.columns if c in keep or result.is_numeric(c) or _is_boolean(result, c)]
     formats = _parse_formats(result, format)
     cap = ctx.table_row_cap
     rows = result.rows[:cap]

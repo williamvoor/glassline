@@ -31,6 +31,10 @@ def to_json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {k: to_json_safe(v) for k, v in value.items()}
     if isinstance(value, Decimal):
+        # No fractional digits (numeric(p,0), SUM of integers) stays an integer, so it isn't shown
+        # as "1,150,000.00". A declared scale such as numeric(18,2) keeps its digits and is a float.
+        if value.is_finite() and value.as_tuple().exponent >= 0:
+            return int(value)
         return float(value)
     if isinstance(value, (dt.date, dt.datetime, dt.time)):
         return value.isoformat()

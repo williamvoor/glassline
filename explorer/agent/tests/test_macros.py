@@ -66,8 +66,8 @@ def to_transport(reply: str) -> list[dict]:
         (812.4, "currency_compact", "numeric", "$812"),
         (0, "currency_compact", "bigint", "$0"),
         (-1_500_000_000.0, "currency_compact", "numeric", "-$1.5B"),
-        (999_960_000.0, "currency_compact", "numeric", "$1.0B"),
-        (999.96, "currency_compact", "numeric", "$1.0K"),
+        (999_960_000.0, "currency_compact", "numeric", "$1B"),
+        (999.96, "currency_compact", "numeric", "$1K"),
         (1_234_500_000_000.0, "currency_compact", "numeric", "$1,234.5B"),
         (None, "currency_compact", "numeric", "—"),
         (12.345, "pct", "numeric", "12.3%"),
@@ -378,8 +378,8 @@ def test_cite_and_metric_currency_compact():
         metric = by_type(expand("Metric", result_id="r1", column="value", label="L", row=1,
                                 format="currency_compact"), "Text")[1]
         cite = expand("Cite", template="{r1[0].value|currency_compact} and {r1[1].value|currency_compact}")[0]
-    assert metric["text"] == "$980.0M"
-    assert cite["text"] == r"\$3\.4B and \$980\.0M"
+    assert metric["text"] == "$980M"
+    assert cite["text"] == r"\$3\.4B and \$980M"
 
 
 def test_data_table_currency_compact_uses_one_unit_per_column():
@@ -860,3 +860,44 @@ def test_surface_text_is_escaped_by_variant_and_tabs_titles_are_plain(ctx):
     fill_surface_text(comps)
     assert [c.get("text") for c in comps[:4]] == ["Acme_[x]", "Acme_[x]", r"Acme\_\[x\]", r"Acme\_\[x\]"]
     assert comps[4]["tabs"][0]["title"] == "Acme_[x]"
+
+
+# M1 (2026-11-05): a Dataset table showed years as "2,015" and numeric(12,0) prices as
+# "1,150,000.00" under the default format.
+@pytest.mark.parametrize("column", ["year", "financial_year", "calendar_year"])
+def test_auto_shows_a_year_column_without_a_separator(column):
+    assert format_value(2015, "auto", "smallint", column=column) == "2015"
+
+
+@pytest.mark.parametrize(("column", "value", "expected"), [
+    ("year_count", 2015, "2,015"),  # not a year: a count of something
+    ("year", 123_456, "123,456"),   # not a plausible year
+    ("total", 2015, "2,015"),
+])
+def test_auto_keeps_the_separator_for_other_integers(column, value, expected):
+    assert format_value(value, "auto", "integer", column=column) == expected
+
+
+def test_auto_shows_a_whole_numeric_value_without_decimals():
+    # Postgres returns numeric(12,0) and SUM(bigint) as a Decimal with no fractional digits.
+    from decimal import Decimal
+
+    from explorer_agent.results import to_json_safe
+
+    assert format_value(to_json_safe(Decimal("1150000")), "auto", "numeric") == "1,150,000"
+    assert format_value(to_json_safe(Decimal("1150000.50")), "auto", "numeric") == "1,150,000.50"
+    assert format_value(to_json_safe(Decimal("12.00")), "auto", "numeric") == "12.00"  # scale 2 is kept
+
+
+# M1 (2026-11-05): a Metric read "$770.0K".
+@pytest.mark.parametrize(("value", "expected"), [
+    (770_000, "$770K"), (2_000_000.0, "$2M"), (-3_000_000_000, "-$3B"), (770_500, "$770.5K"),
+])
+def test_currency_compact_drops_a_trailing_zero_decimal(value, expected):
+    assert format_value(value, "currency_compact", "numeric") == expected
+
+
+def test_auto_shows_a_whole_float_year_without_a_separator():
+    # date_part('year', …) returns double precision.
+    assert format_value(2015.0, "auto", "double precision", column="year") == "2015"
+    assert format_value(2015.5, "auto", "double precision", column="year") == "2,015.50"

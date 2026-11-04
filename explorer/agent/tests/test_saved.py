@@ -174,7 +174,8 @@ def test_omit_rows_keeps_columns_counts_and_sql():
 
 
 def test_row_hash_title_and_result_ids():
-    assert row_hash([{"a": 1, "b": 2}]) == row_hash([{"b": 2, "a": 1}]) != row_hash([{"a": 1, "b": 3}])
+    ab, t = ["a", "b"], ["int", "int"]
+    assert row_hash([{"a": 1, "b": 2}], ab, t) == row_hash([{"b": 2, "a": 1}], ab, t) != row_hash([{"a": 1, "b": 3}], ab, t)
     assert title_of("  a\nb  ") == "a b" and len(title_of("x" * 200)) == 80
     assert result_ids_in("{r1[0].a} r12 r1 rx br3") == ["r1", "r12"]
 
@@ -685,3 +686,11 @@ async def test_single_mode_keeps_no_saving_state():
         cid = (await stream(c, "q?"))[-1]["contextId"]
     conv = app.state.conversations.held(cid)
     assert conv.records == {} and conv.log == [] and conv.unsaved == []
+
+
+def test_row_hash_is_unchanged_by_whole_numerics_becoming_ints():
+    # A whole `numeric` value used to be stored as a float (1150000.0) and is now an int. A saved
+    # Result's hash from before must still match its re-run, or it reopens as "data changed".
+    old = row_hash([{"price": 1150000.0, "n": 3}], ["price", "n"], ["numeric", "bigint"])
+    assert row_hash([{"price": 1150000, "n": 3}], ["price", "n"], ["numeric", "bigint"]) == old
+    assert row_hash([{"price": 1150000, "n": 3.0}], ["price", "n"], ["numeric", "bigint"]) != old  # bigint untouched
