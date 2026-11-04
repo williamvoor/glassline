@@ -90,6 +90,10 @@ describe('S5: the Settings views', () => {
     await settle(el);
     expect(asked).toContain('meta/muse-wonder-1.0');
     expect(asked).toContain('$0.12');
+    // M1 (2026-11-05): the dialog said "about $0.65" for a ceiling; real first calls cost ~$0.03.
+    expect(asked).toMatch(/at most \$[\d.]+ for the first call/);
+    expect(asked).toContain('every call uses its full output allowance');
+    expect(asked).not.toContain('about');
     expect(paths(f)).not.toContain('POST /api/draft');
     expect(current(el)).toBe('Report');
 

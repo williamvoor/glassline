@@ -175,8 +175,9 @@ export class ExplorerSettings extends LitElement {
   /** S5: every model call is confirmed first, with the model and the cost ceiling. */
   private confirmRun(what: string, model: string, estimate: Estimate): boolean {
     return this.confirmFn(
-      `${what} with ${model}? This calls the model: about ${usd(estimate.first_call_usd)} for the first call, ` +
-        `at most ${usd(estimate.run_ceiling_usd)} if all ${estimate.max_calls} calls are used.`,
+      `${what} with ${model}? This calls the model: at most ${usd(estimate.first_call_usd)} for the first call ` +
+        `and ${usd(estimate.run_ceiling_usd)} if all ${estimate.max_calls} calls are used. These are ceilings: they ` +
+        `assume every call uses its full output allowance, so a run usually costs much less.`,
     );
   }
 
