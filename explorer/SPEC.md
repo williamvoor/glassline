@@ -2805,9 +2805,9 @@ Same scenarios, same settings, 3 runs each, `SURFACE_MODEL=spark` vs `glimmer`:
 | S8 | The Glimmer server never logs the key, and binds to localhost | `glimmer/tests/test_server.py` |
 | S9 | Glimmer's prompt prefix is byte-identical across requests | `test_glimmer_prompt.py` |
 
-## 20. Amendment: an Entity Board click asks which view (draft, 2026-11-04)
+## 20. Amendment: an Entity Board click asks which view (2026-11-04)
 
-Status: **draft, not approved. Nothing is built yet.** Decision: ADR 0037 (proposed). It amends
+Status: **approved** (the user, 2026-11-04). Not built yet. Decision: ADR 0037 (accepted). It amends
 §18's "Entity Boards (slice 3)" and §15's Ask table. ADR 0028 stands for what an Entity Board
 shows.
 

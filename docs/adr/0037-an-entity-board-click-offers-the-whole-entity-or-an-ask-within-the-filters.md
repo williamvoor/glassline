@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted (2026-11-04, the user)
 ---
 
 # An Entity Board click offers the whole entity or an Ask within the filters
