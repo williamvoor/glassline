@@ -1,0 +1,214 @@
+# Explorer slice picks (ADR 0038). For each case write one of:
+#   {pick: k}                          take candidate k as is
+#   {express: "<edited Express>", from: k}  your edit of candidate k (use a | block for multi-line)
+#   {drop: "reason"}                   the intent is bad; rerun slice-select for a replacement
+# Open data/explorer_dev/picks.html to compare. The validator suggestion is the passing
+# candidate with the fewest tokens; it is only a hint. A pick must pass layer 1.
+
+# detail · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 4
+slice/book-writing-project/00: {pick: 3}
+
+# grid · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 3
+slice/book-writing-project/01: {pick: 0}
+
+# filter · passing: none · suggestion: none (edit one, or drop)
+slice/book-writing-project/02:
+  from: 2
+  express: |
+    surface("gallery-book-tracker", sendDataModel=true)
+    $/chapters = [{chapterTitle: "Epilogue: The Harvest", wordCount: 2410, status: "Revised", readyForReview: "Yes"}, {chapterTitle: "6. Sourdough and Memory", wordCount: 2240, status: "Final", readyForReview: "No"}, {chapterTitle: "5. Physical Therapy", wordCount: 3520, status: "Revised", readyForReview: "Yes"}, {chapterTitle: "4. The Unsent Letter", wordCount: 3100, status: "First Draft", readyForReview: "No"}, {chapterTitle: "5. The Council of Thorns", wordCount: 5120, status: "Needs Rewrite", readyForReview: "No"}]
+    $/searchQuery = ""
+    $/statusFilter = []
+    root = Card(main_column)
+    main_column = Column([search_field, filter_picker, apply_button, headers_row, chapter_list])
+    search_field = TextField("Search chapters", $/searchQuery, "shortText")
+    filter_picker = ChoicePicker("Status", "multipleSelection", [{label: "Not Started", value: "Not Started"}, {label: "First Draft", value: "First Draft"}, {label: "Revised", value: "Revised"}, {label: "Needs Rewrite", value: "Needs Rewrite"}, {label: "Final", value: "Final"}], $/statusFilter, "checkbox")
+    apply_button_text = Text("Apply")
+    apply_button = Button(apply_button_text, _, Event("filter_chapters", {search: $/searchQuery, status: $/statusFilter}))
+    headers_row = Row([h_title, h_word, h_status, h_ready])
+    h_title = Text("Chapter Title", "h5")
+    h_word = Text("Word Count", "h5")
+    h_status = Text("Status", "h5")
+    h_ready = Text("Ready for Review", "h5")
+    chapter_list = List(_template($/chapters, chapter_row))
+    chapter_row = Row([c_title, c_word, c_status, c_ready])
+    c_title = Text($chapterTitle, "body")
+    c_word = Text(formatNumber($wordCount, 0, false), "body")
+    c_status = Text($status, "body")
+    c_ready = Text($readyForReview, "body")
+
+# dashboard · passing: [0, 2, 3, 4, 5, 6, 7] · suggestion: 5
+slice/book-writing-project/04: {pick: 4}
+
+# list · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 6
+slice/book-writing-project/05: {pick: 1}
+
+# grid · passing: [2] · suggestion: 2
+slice/dental-practice/00:
+  from: 2
+  express: |
+    surface("gallery-dental-table", sendDataModel=true)
+    $/patients = [{patientName: "Daniel Okafor", phone: "(415) 555-1267", email: "daniel.okafor88@gmail.com", insuranceProvider: "Delta Dental", patientStatus: "Active"}, {patientName: "James Morrison", phone: "(415) 555-0287", email: "j.morrison85@yahoo.com", insuranceProvider: "Cigna", patientStatus: "Active"}, {patientName: "Michael Torres", phone: "(415) 555-0614", email: "m.torres69@aol.com", insuranceProvider: "Blue Cross Blue Shield", patientStatus: "Active"}, {patientName: "Thomas Wright", phone: "(415) 555-1048", email: "thomas.wright55@yahoo.com", insuranceProvider: "Aetna", patientStatus: "Archived"}, {patientName: "Lily Anderson", phone: "(415) 555-1593", email: "lily.anderson03@gmail.com", insuranceProvider: "Blue Cross Blue Shield", patientStatus: "Active"}, {patientName: "Robert Chen", phone: "(415) 555-0841", email: "robert.chen82@outlook.com", insuranceProvider: "Cigna", patientStatus: "Inactive"}]
+    root = Card(main_column)
+    main_column = Column([title_text, header_row, patient_table], _, "start")
+    title_text = Text("### Patients")
+    header_row = Row([h_name, h_phone, h_email, h_insurance, h_status], _, "start")
+    h_name = Text("Patient Name", "caption")
+    h_phone = Text("Phone", "caption")
+    h_email = Text("Email", "caption")
+    h_insurance = Text("Insurance Provider", "caption")
+    h_status = Text("Patient Status", "caption")
+    patient_table = Column(_template($/patients, patient_row))
+    patient_row = Row([name_col, phone_col, email_col, insurance_col, status_col], _, "start")
+    name_col = Text($patientName, "caption")
+    phone_col = Text($phone, "caption")
+    email_col = Text($email, "caption")
+    insurance_col = Text($insuranceProvider, "caption")
+    status_col = Text($patientStatus, "caption")
+
+# dashboard · passing: [0, 1, 2, 4, 5, 6, 7] · suggestion: 1
+slice/dental-practice/01: {pick: 4}
+
+# list · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 4
+slice/dental-practice/02: {pick: 0}
+
+# stats · passing: [0, 2, 4, 5, 6, 7] · suggestion: 2
+slice/dental-practice/03: {pick: 7}
+
+# detail · passing: [0, 1, 2, 3, 5] · suggestion: 3
+slice/dental-practice/04: {pick: 1}
+
+# grid · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 7
+slice/museum-collection/00: {pick: 0}
+
+# form · passing: [0, 3, 4, 5] · suggestion: 4
+slice/museum-collection/01: {pick: 0}
+
+# state · passing: [0, 1, 2, 3, 4, 6, 7] · suggestion: 4
+slice/museum-collection/02: {pick: 2}
+
+# list · passing: [0, 1, 2, 3, 4, 5, 7] · suggestion: 1
+slice/museum-collection/03: {pick: 0}
+
+# dashboard · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 4
+slice/museum-collection/04: {pick: 5}
+
+# grid · passing: none · suggestion: none (edit one, or drop)
+slice/photography-studio/01:
+  from: 2
+  express: |
+    surface("gallery-studio-photoshoot-table", sendDataModel=true)
+    $/photoshoots = [{name: "Cafe Menu Launch", package: "Product", fee: 650, location: "On-Location"}, {name: "Holiday Mini Sessions Day 1", package: "Family", fee: 2400, location: "In-Studio"}, {name: "Urban Loft Family Session", package: "Family", fee: 475, location: "Client Home"}]
+    root = Column([title, header_row, shoots_table])
+    title = Text("Photoshoots", "h4")
+    header_row = Row([h_name, h_package, h_fee, h_location])
+    h_name = Text("Photoshoot Name", "caption", 4)
+    h_package = Text("Package", "caption", 1)
+    h_fee = Text("Total Fee", "caption", 1)
+    h_location = Text("Location Type", "caption", 1)
+    shoots_table = List(_template($/photoshoots, shoot_row))
+    shoot_row = Column([shoot_details, reschedule_btn])
+    shoot_details = Row([name_cell, package_cell, fee_cell, location_cell])
+    name_cell = Text($name, _, 4)
+    package_cell = Text($package, _, 1)
+    fee_cell = Text(formatCurrency($fee, "USD"), _, 1)
+    location_cell = Text($location, _, 1)
+    reschedule_btn = Button(reschedule_text, _, Event("reschedule_shoot", {photoshoot: $name}))
+    reschedule_text = Text("Reschedule Shoot")
+
+# form · passing: none · suggestion: none (edit one, or drop)
+slice/photography-studio/02:
+  from: 0
+  express: |
+    surface("gallery-print-order-form", sendDataModel=true)
+    $/orderName = ""
+    $/clientName = ""
+    $/productType = []
+    $/status = []
+    root = Column([order_name_field, client_name_field, product_type_picker, status_picker, create_btn])
+    order_name_field = TextField("Order Name", $/orderName)
+    client_name_field = TextField("Client Name", $/clientName)
+    product_type_picker = ChoicePicker("Product Type", "mutuallyExclusive", [{label: "Canvas Print", value: "Canvas Print"}, {label: "Framed Print", value: "Framed Print"}, {label: "Photo Book", value: "Photo Book"}, {label: "Metal Print", value: "Metal Print"}, {label: "Acrylic Print", value: "Acrylic Print"}, {label: "Standard Prints", value: "Standard Prints"}], $/productType)
+    status_picker = ChoicePicker("Status", "mutuallyExclusive", [{label: "Pending", value: "Pending"}, {label: "In Production", value: "In Production"}, {label: "Ready for Pickup", value: "Ready for Pickup"}, {label: "Shipped", value: "Shipped"}, {label: "Delivered", value: "Delivered"}], $/status)
+    create_btn_text = Text("Create Print Order")
+    create_btn = Button(create_btn_text, "primary", Event("create_print_order", {orderName: $/orderName, clientName: $/clientName, productType: $/productType, status: $/status}))
+
+# dashboard · passing: [0, 1, 2, 3, 5, 7] · suggestion: 7
+slice/photography-studio/03: {pick: 0}
+
+# filter · passing: [0, 1, 2, 4, 5, 6, 7] · suggestion: 0
+slice/photography-studio/04: {pick: 6}
+
+# stats · passing: [0, 1, 3, 4, 7] · suggestion: 3
+slice/photography-studio/05: {pick: 1}
+
+# form · passing: [0, 2] · suggestion: 2
+slice/university-admissions/00:
+  from: 2
+  express: |
+    surface("gallery-university-application-form", sendDataModel=true)
+    $/appId = ""
+    $/submissionDate = ""
+    $/appType = []
+    $/decision = []
+    $/satScore = null
+    root = Card(form_col)
+    form_col = Column([id_field, date_field, type_picker, decision_picker, sat_field, submit_btn])
+    id_field = TextField("Application ID", $/appId, "shortText")
+    date_field = DateTimeInput($/submissionDate, true, false, _, _, "Submission Date")
+    type_picker = ChoicePicker("Application Type", "mutuallyExclusive", [{label: "Early Decision", value: "Early Decision"}, {label: "Early Action", value: "Early Action"}, {label: "Regular Decision", value: "Regular Decision"}, {label: "Transfer", value: "Transfer"}, {label: "International", value: "International"}], $/appType, "checkbox")
+    decision_picker = ChoicePicker("Decision", "mutuallyExclusive", [{label: "Incomplete", value: "Incomplete"}, {label: "Submitted", value: "Submitted"}, {label: "Under Review", value: "Under Review"}, {label: "Waitlisted", value: "Waitlisted"}, {label: "Accepted", value: "Accepted"}, {label: "Rejected", value: "Rejected"}, {label: "Withdrawn", value: "Withdrawn"}], $/decision, "checkbox")
+    sat_field = TextField("SAT Score", $/satScore, "number")
+    submit_text = Text("Create Application")
+    submit_btn = Button(submit_text, "primary", Event("create_application", {id: $/appId, date: $/submissionDate, type: $/appType, decision: $/decision, sat: $/satScore}))
+
+# stats · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 2
+slice/university-admissions/01: {pick: 5}
+
+# state · passing: [1, 2, 3, 4, 5, 6, 7] · suggestion: 2
+slice/university-admissions/02:
+  from: 3
+  express: |
+    surface("gallery-child-list-template", sendDataModel=true)
+    $/admissions = [{id: "APP-2025-008934", decision: "Incomplete"}, {id: "APP-2025-008956", decision: "★ Under Review"}, {id: "APP-2025-009145", decision: "Rejected"}, {id: "APP-2025-008539", decision: "Submitted"}]
+    root = Card(main_column)
+    main_column = Column([header_row, items_list])
+    header_row = Row([id_header, decision_header])
+    id_header = Text("Application ID")
+    decision_header = Text("Decision")
+    items_list = List(_template($/admissions, item_row))
+    item_row = Row([app_id, decision])
+    app_id = Text($id)
+    decision = Text($decision)
+
+# dashboard · passing: [0, 1, 2, 3, 5, 6, 7] · suggestion: 5
+slice/university-admissions/04: {pick: 1}
+
+# grid · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 0
+slice/university-admissions/05: {pick: 4}
+
+# list · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 5
+slice/warehouse-inventory/00: {pick: 7}
+
+# dashboard · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 3
+slice/warehouse-inventory/01: {pick: 0}
+
+# detail · passing: [0, 1, 3, 4, 5, 6, 7] · suggestion: 5
+slice/warehouse-inventory/02: {pick: 1}
+
+# stats · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 2
+slice/warehouse-inventory/03: {pick: 4}
+
+# state · passing: [0, 1, 2, 3, 4, 5, 6, 7] · suggestion: 1
+slice/warehouse-inventory/04:
+  from: 4
+  express: |
+    surface("gallery-warehouse-inventory", sendDataModel=true)
+    $/inventory = [{name: "3M N95 Respirator Mask Box of 20", stockStatus: "Overstocked"}, {name: "Makita Circular Saw 7-1/4in", stockStatus: "★ In Stock"}, {name: "Sony WH-1000XM5 Headphones", stockStatus: "★ In Stock"}, {name: "Kraft Paper Roll 36in x 1000ft", stockStatus: "Low Stock"}, {name: "Nike Dri-FIT Polo Shirt Navy", stockStatus: "★ In Stock"}, {name: "Milwaukee Socket Set 48-Piece", stockStatus: "Discontinued"}]
+    root = Card(main_column)
+    main_column = Column([title, stock_list], _, "stretch")
+    title = Text("## Warehouse Inventory")
+    stock_list = List(_template($/inventory, item_row))
+    item_row = Row([product_name, status_text], "spaceBetween")
+    product_name = Text($name)
+    status_text = Text($stockStatus)
