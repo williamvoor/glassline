@@ -1,6 +1,6 @@
 # Workspaces: several databases, saved Conversations, Settings
 
-Status: **approved** (2026-11-04, the user). Phase 1 built (2026-11-04) and phase 2 built (2026-11-05); see the "Build decisions" sections. Retiring `bootstrap/ui/` (G22) waits on the user (D8). It came out of a grilling session with the
+Status: **approved** (2026-11-04, the user). Phase 1 built (2026-11-04) and phase 2 built (2026-11-05); see the "Build decisions" sections. M1 passed (2026-11-05), and `bootstrap/ui/` is retired (G22, D8). It came out of a grilling session with the
 user on 2026-11-04. Where this file is silent, `explorer/SPEC.md` and `bootstrap/SPEC.md` apply.
 
 Decisions: ADR 0039 (Workspaces are sub-apps of one agent process), ADR 0040 (saved
@@ -303,7 +303,7 @@ They go into `explorer/.env.example` with placeholders.
 | S3 | Phase 2: export goes to the data directory, appends the list entry atomically, refuses a duplicate name, and the agent reload mounts it | `test_server.py` (stub model, db) |
 | S4 | Phase 2: delete removes the list entry and the folder for a data-directory Workspace, and never touches a repo Dataset's files | `test_server.py` |
 | S5 | Phase 2: the Settings views cover the bootstrap UI's steps plus Boards, and ask for confirmation before any model call | `client/test/settings.test.ts` |
-| M1 | Manual: two Workspaces (austender, vicprop), switching, a restart, a resumed Conversation, and a vicprop Workspace added from Settings | manual |
+| M1 | Manual: two Workspaces (austender, vicprop), switching, a restart, a resumed Conversation, and a vicprop Workspace added from Settings | manual: **passed 2026-11-05** (Playwright, real databases and models; fixes under "M1 fixes") |
 
 ## Review notes (2026-11-04)
 
@@ -466,8 +466,34 @@ above, it is a deliberate amendment, listed here.
   - **Client:** S5 is `client/test/settings.test.ts`. The copied views keep their own tests, ported
     from `bootstrap/ui/test/` to `client/test/settings/`.
 - **D8 Retiring `bootstrap/ui/`.** `run.sh` starts the bootstrap server in Workspace mode. The old
-  UI is removed only after the user confirms, because it has uncommitted README edits from another
-  session.
+  UI was removed on 2026-11-05, after M1 passed and the user confirmed. The bootstrap server no
+  longer serves static files: `/` answers with a pointer to the explorer's Settings, and the API
+  and the CLI are unchanged.
+
+## M1 fixes (2026-11-05, Claude, after the manual check)
+
+M1 was run with Playwright against both real databases and real models: two Workspaces, vicprop
+added and regenerated from Settings (draft and Boards), switching, a restart and resumed
+Conversations. It passed. These changes fix what it found.
+
+- **M1a Saved Result hashes.** Whole `numeric` values are now stored as integers (see
+  `specs/names-periods-currency/SPEC.md`, amendment 2026-11-05). `row_hash` hashes a `numeric`
+  or `decimal` column's integers as floats, as they were stored before, so a Conversation saved
+  earlier doesn't reopen as "the data has changed". `row_hash` takes the Result's columns and
+  types for this.
+- **M1b Boards in Settings.**
+  - `GET /api/boards` answers 200 with `null` before any Boards, not 404 (no console error).
+  - Once Boards exist, the Boards step has "Continue to Export". It returns to Review's Export
+    section. Review stays mounted (hidden) on the Boards step, because its Workspace name and
+    dismissed claims live only in the component until Export.
+  - The Boards text no longer points to `./run.sh --real`.
+- **M1c Logging.** `serve` logs the `explorer_bootstrap` INFO lines (each model call with its
+  cost, exports, deletes) to stderr, once per process. The CLI commands keep their own output.
+- **M1d Client.** A selected Workspace or Settings button is inverted (readable in both themes).
+  Settings' tab strips are one row.
+- **M1e Row labels.** Boolean columns are never a row's label, so an Entity Board opened from a
+  row whose only text column is its key is titled with the key's value, not `false · false`.
+  Default `DataTable` columns still show boolean columns.
 
 ## Test command
 
