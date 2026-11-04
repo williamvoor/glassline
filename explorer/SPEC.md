@@ -1417,8 +1417,8 @@ before the full run.
 
 Status: **approved** (2026-11-03), revision 3 plus the verified notes below. The refuter gave
 revision 1 a FAIL and revision 2 a PASS-WITH-NOTES (2026-11-03). Both rounds' findings are worked
-in here, as listed under "Review rounds". ADRs 0028 and 0029 are accepted; ADR 0030 stays
-proposed and gates slice 5 only.
+in here, as listed under "Review rounds". ADRs 0028 and 0029 are accepted. ADR 0030 was accepted on 2026-11-04 (the
+user). It gated slice 5 only.
 
 Amends:
 - §1 (scope) and §2 (request flow);
@@ -1456,8 +1456,8 @@ Built in order, tests first, each a commit of its own:
 | 1b | Tabs and the investigation log in the client, replacing the Breadcrumb | none |
 | 2 | Controls: re-query in place; Control state to the model | none |
 | 3 | Entity Boards opened by a row click; `Timeline` | none |
-| 4 | The bootstrap tool drafts and previews Boards from the templates in `bootstrap/templates/`, for any database (a phase 3 in `bootstrap/SPEC.md`, written when this slice starts). This is where austender gets its first Boards | Wonder, offline |
-| 5 | Runtime fill-in (an Ask that has Wonder draft an entity Board); the A/B run for the answer model | Wonder, needs ADR 0030 accepted |
+| 4 | The bootstrap tool drafts and previews Boards from the templates in `bootstrap/templates/`, for any database (a phase 3 in `bootstrap/SPEC.md`; drafted in `specs/board-drafting/SPEC.md`, awaiting review, ADR 0031 proposed). This is where austender gets its first Boards | Wonder, offline |
+| 5 | Runtime fill-in (an Ask that has Wonder draft an entity Board); the A/B run for the answer model | Wonder (ADR 0030 accepted 2026-11-04); built after slice 4 |
 
 Slices 4 and 5 get their own detailed amendments. This section fixes their shape only.
 
@@ -2553,3 +2553,199 @@ Every finding was taken unless noted:
 cd explorer/agent && uv run pytest
 cd explorer/client && npm test && npm run build
 ```
+
+## 19. Amendment: the two-model split, Spark briefs and Glimmer writes the Surface (draft, 2026-11-04)
+
+Status: **draft, not approved. Nothing is built yet.** Decision: ADR 0031 (proposed). It amends
+§2 (request flow), §5 (where `drill_sql` comes from), §6 (prompt layers) and §7 (settings).
+New term in `../CONTEXT.md`: **Glimmer server**. **Brief** is already defined there (ADR 0014).
+
+The user settled these choices (2026-11-04):
+- Glimmer runs on Fireworks' **serverless training sampler**, behind a small sidecar (the Glimmer
+  server). The public inference API doesn't serve Muse Glimmer.
+- **Base Glimmer first, then run 3.**
+  - Stage A: base Glimmer with examples and a grammar, no training.
+  - Stage B: glimmer-tune run 3 trains Brief → macro Surface rows, but only if Stage A falls short.
+- **The gate.** The split replaces Spark-only Surfaces only if scenario quality is equal **and**
+  the Turn's median wall time is lower.
+
+**Why.** Muse Spark writes SQL, prose and the Surface in one tool loop (§2). The plan since
+2026-11-01 has been a split: Spark keeps the SQL and the prose, and Muse Glimmer, a smaller model
+tuned for A2UI, writes the Surface. Glimmer's input is a Brief plus Result schemas (ADR 0014).
+The split was postponed on 2026-11-02 and revived on 2026-11-04, after glimmer-tune run 2
+(`../glimmer-tune/docs/run2-decision-memo-20261104.md`).
+
+**What the evidence says.**
+- Glimmer has never been measured on macros or on Brief input. Run 2's tuned adapter (s225) was
+  trained on generic Express with no macros (ADR 0008), so Stage A uses base Glimmer.
+- On generic Express:
+  - base Glimmer with 3 examples and a grammar was level with s225 on the gallery (0.505 vs 0.523);
+  - it stayed inside the catalog (outside-catalog rate 0.04);
+  - it wrote about 790 tokens per answer at p50, against s225's 332.
+
+### Stage 0: paper check on speed (before any build)
+
+❗️ On today's numbers, a plain sequential split is likely to be slower, not faster.
+- **Spark today.** Spark's final call (prose plus Surface) takes 4.2 s at p50 and writes 476
+  tokens, 138 of them reasoning (scenarios `runs-20261103T051121Z`, 15 runs; Turn wall time 6.3 s
+  at p50).
+- **What the split saves.** Removing the Surface from that call saves the time to write the
+  Express part, roughly 2 s if it is about half the visible output.
+- **What the split adds.** It adds one Glimmer call: s225 on the shared pool was 3.1 s at p50 and
+  8.3 s at p95; base Glimmer with examples was 5.0 s.
+
+So before building, Stage 0 measures the real share:
+1. Re-run the 8 chart-or-table scenarios once with today's agent, logging the final call's
+   visible tokens split into prose and `<a2ui>`. The log already has the reply text.
+2. Estimate the split's Turn time two ways. Sequential: Spark without the Surface, then Glimmer.
+   Overlapped: see "Overlap" below.
+3. **Go** if the overlapped estimate beats today's p50 by at least 0.5 s. Otherwise stop, and
+   record why here. Stage 0 costs one scenario run (about $0.10) and no Glimmer calls.
+
+### Behaviour
+
+**Request flow** (changes §2 steps 4–5 when `SURFACE_MODEL=glimmer`):
+1. The tool loop runs as today until Spark's final reply.
+2. **Spark's final reply** has the prose (with `Cite` placeholders, as today) and a `<brief>`
+   block instead of `<a2ui>`.
+   - The Brief comes **first**, before the prose, so it can be sent on while the prose is still
+     being written (see "Overlap").
+   - It holds one line per Visual, `r2: <how to show it>`.
+   - Optional `drill r2: <SQL>` lines carry the Drill queries.
+   - Optional `followup: <label> | <question>` lines carry the FollowUp buttons.
+3. **Code builds Glimmer's input:**
+   - the Brief text without its `drill` and `followup` lines;
+   - each Result named in the Brief, with its ID, columns and types, and row count, taken from
+     the ResultStore (ADR 0014);
+   - no data values.
+4. **The Glimmer server** returns the Surface as Express (macros plus passthrough components).
+5. **The UI pipeline** runs as today, with two additions:
+   - Each macro on a Result that has a `drill` line gets that `drill_sql`. The SQL still comes
+     from Spark (§17), and the existing Drill checks apply.
+   - The `followup` lines become `FollowUp` buttons at the end of the Surface. Their labels and
+     questions are Spark's.
+6. **Repair.** If the Surface fails the pipeline, Glimmer gets one Repair, with the error
+   appended as today. If that also fails, or the Glimmer server errors or times out
+   (`GLIMMER_TIMEOUT_S`), **Spark writes the Surface**: one more Spark call with "Write the
+   Surface now" appended. Today's path is the fallback. The Turn records which model wrote its
+   Surface (`explorerModel` metadata gains `surfaceModel`).
+
+**Overlap.** Spark's final call is streamed. As soon as `</brief>` arrives, the agent sends
+Glimmer's request while Spark finishes the prose. The Turn ends when both are done. This is the
+only design that can plausibly pass the speed gate. Whether LiteLLM streaming works with the
+pinned version and Spark's tool loop is **unknown**, and Stage 0 checks it first.
+
+**What Glimmer may write.** Macros (`BarChart`, `LineChart`, `DataTable`, `Metric`, `Cite`,
+and the §18 macros), the passthrough components, and the A2UI built-ins. It never writes
+`drill_sql` or `FollowUp`; those come from Spark through code. ADR 0001 holds: Glimmer sees
+Result IDs and columns, never values.
+
+### Glimmer's prompt
+
+Built the same way as §6, with layers that are byte-identical across requests and a fixed
+`prompt_cache_key`:
+1. The A2UI format rules plus the inference catalog: the same layer 1 as Spark's, from
+   `prompt_generator`.
+2. Glimmer instructions (`prompts/glimmer.md`, generic):
+   - how to read a Brief and Result schemas;
+   - one Surface per answer, always `surfaceId` `main`;
+   - "Reasoning strength: low." (glimmer-tune's rule for every Glimmer call).
+3. Stage A only: 3 worked examples, each a Brief plus schemas leading to a Surface. They are
+   hand-written with made-up names and no dataset words.
+4. The request: the Brief and the Result schemas.
+
+Spark's prompt in split mode keeps layer 1 unchanged, so the fallback can still write the
+Surface. Its layer 2 instructions swap the Surface section for the Brief section. The two
+instruction sets are separate files, and the prompt cache key gains the mode
+(`explorer-<dataset>-split`).
+
+### Grammar
+
+Each Glimmer request carries a GBNF grammar (`response_format`). On the training sampler,
+glimmer-tune measured that this cut base Glimmer's outside-catalog rate from 0.16 to 0.04 (run 2
+memo). The grammar is built per request from:
+- the inference catalog: call names, and the **named-argument names per call** (glimmer-tune's
+  version left named arguments free, and the tuned model escaped through them);
+- the Turn's Results: `result_id` arguments are limited to the Result IDs in the Brief, and
+  column arguments to those Results' columns;
+- Glimmer's channel framing (` to=user<|message|>`).
+
+The builder is the explorer's own code, following `glimmer-tune/a2ui_eval/grammar.py`. The
+explorer doesn't import glimmer-tune: separate projects, separate environments (ADR 0015).
+
+### Glimmer server
+
+`explorer/glimmer/`, a separate `uv` project (Python 3.13). It uses the Fireworks training SDK
+and the cookbook renderer at the trainer's pins, which is why it can't live in the agent's
+environment (ADR 0015). Behaviour:
+- `POST /surface {prompt_messages, grammar, max_tokens}` returns
+  `{text, finish, tokens, latency_s, usage}`. `GET /health` reports the checkpoint and the
+  sampler state.
+- It keeps one sampling client per checkpoint for the whole process. It samples greedily, with
+  stop `<|eot|>` and the prompt cache key.
+- It reads `FIREWORKS_API_KEY` from the environment and never logs it.
+- It is local only: it binds to `127.0.0.1`.
+- Tests use a stubbed sampler. No test calls Fireworks.
+
+The agent calls it over HTTP (`httpx`) with `GLIMMER_TIMEOUT_S`.
+
+### Configuration (§7)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `SURFACE_MODEL` | `spark` | `spark` keeps today's behaviour; `glimmer` turns the split on |
+| `GLIMMER_URL` | `http://127.0.0.1:8765` | The Glimmer server |
+| `GLIMMER_CHECKPOINT` | (none) | Checkpoint path, e.g. the base `s000` or a run 3 checkpoint; required by the server |
+| `GLIMMER_TIMEOUT_S` | `10` | Then fall back to Spark |
+| `GLIMMER_MAX_TOKENS` | `1536` | Covers base Glimmer's p95 on generic Express (about 1,550) |
+
+### Stages and slices
+
+| Stage | What | Model calls | Gate to the next |
+|---|---|---|---|
+| 0 | Paper check (above); test LiteLLM streaming with Spark | Spark, one scenario run | Overlapped estimate beats today's p50 by ≥ 0.5 s |
+| A1 | Glimmer server, client, grammar builder, Brief parsing, drill and FollowUp injection, fallback. Everything behind `SURFACE_MODEL` and tested with stubs | none | Tests pass |
+| A2 | Measure base Glimmer: scenarios × 3, `spark` vs `glimmer` | Spark and Glimmer (billed) | The gate below |
+| B | Only if A2 fails on quality but speed is promising: glimmer-tune run 3 on Brief → macro rows (`../glimmer-tune/SPEC.md`, "Run 3"), then A2 again with the run 3 checkpoint | SFT (free until 2026-11-30) | The gate below |
+
+**Calendar.** Run 3 has to start by 2026-11-30 to be free. Stage B's data build takes days, so
+A2's result is needed by about **2026-11-20**.
+
+### Gate (A2, and B if it runs)
+
+Same scenarios, same settings, 3 runs each, `SURFACE_MODEL=spark` vs `glimmer`:
+- the pass rate doesn't drop;
+- surviving Drill queries per clickable Visual don't drop (§17's count);
+- **the Turn's median `wall_s` is lower**, with p90 reported. A difference smaller than the
+  run-to-run spread counts as not faster;
+- the fallback rate (Surfaces written by Spark after Glimmer failed) is reported, and counts
+  against speed in the medians.
+
+`SURFACE_MODEL` stays `spark` by default unless the gate passes.
+
+### Unknowns and decisions needed
+
+- ❗️ **Fireworks' terms.** Whether serving from the training sampler is allowed, how long a
+  deleted session's checkpoints are kept, and whether sampling prices stay as they are. **Ask
+  Fireworks before A2** (needs the user).
+- Whether the pool's queueing makes p90 too unpredictable. On the pool, p95 was 8 s for s225 and
+  18–25 s for base with examples. A2's p90 shows this.
+- How exactly a Brief is written. `r2: <how to show it>` is a proposal. glimmer-tune's run 3
+  rows must imitate it with templates (ADR 0014), so it gets fixed before Stage B.
+- Wonder (ADR 0030) may become `MODEL`. The split works with whichever model writes the Brief,
+  but A2 measures with Spark only.
+- Effect on the prompt cache: Spark's split-mode prefix is a second cached prefix per dataset.
+
+### Criteria → tests (planned, for A1)
+
+| # | Criterion | Test (planned) |
+|---|---|---|
+| S1 | With `SURFACE_MODEL=spark`, behaviour and the prompt are byte-identical to today | `test_prompt.py` (existing prefix test, both modes) |
+| S2 | The Brief is parsed: Visual lines, `drill` and `followup` lines; a Brief naming an unknown Result is a Repair for Spark | `test_brief.py` |
+| S3 | Glimmer's input has the Brief and the named Results' schemas, and no values | `test_split.py` |
+| S4 | `drill_sql` and `FollowUp` come from the Brief; Glimmer can't write them (grammar), and the §17 checks apply | `test_split.py`, `test_glimmer_grammar.py` |
+| S5 | The grammar limits calls, named arguments, Result IDs and columns | `test_glimmer_grammar.py` |
+| S6 | A Glimmer pipeline failure gets one Repair; then, and on a server error or timeout, Spark writes the Surface | `test_split.py` |
+| S7 | Overlap: Glimmer's request starts at `</brief>`, before Spark's stream ends | `test_split.py` (stub stream) |
+| S8 | The Glimmer server never logs the key, and binds to localhost | `glimmer/tests/test_server.py` |
+| S9 | Glimmer's prompt prefix is byte-identical across requests | `test_glimmer_prompt.py` |

@@ -1,6 +1,6 @@
 ---
-status: proposed
-supersedes: 0020 (on acceptance; until then 0020 stands)
+status: accepted (2026-11-04, the user)
+supersedes: 0020
 ---
 
 # Muse Wonder is allowed in the explorer's request path, chosen by configuration

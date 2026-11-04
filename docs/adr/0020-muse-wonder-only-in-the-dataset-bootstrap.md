@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: superseded by ADR-0030 (2026-11-04)
 ---
 
 # Muse Wonder is used only by the dataset bootstrap, never in the explorer's request path

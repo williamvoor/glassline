@@ -58,8 +58,11 @@ npm install && npm test && npm run build
 - **Dataset-agnostic.** No AusTender names, tables, currency or wording in code, prompts or tests'
   shared fixtures. Put them in `datasets/<name>/`. The test database comes from
   `austender.testing.build_test_db` (ADR 0010). That's the one allowed dependency on `../austender/`.
-- **Models.** Live calls use only `meta/muse-spark-1.3`. Muse Wonder (`meta/muse-wonder-1.0`) is
-  allowed only in `bootstrap/`, never in the agent's request path (ADR 0020). No other models.
+- **Models.** Live calls use `meta/muse-spark-1.3` or Muse Wonder (`meta/muse-wonder-1.0`), no
+  other models (ADR 0030, accepted 2026-11-04). Wonder may be the agent's `MODEL` when configured,
+  may draft an Entity Board at runtime as a confirmed Ask (`BOARD_DRAFT_MODEL`, SPEC §18 slice 5),
+  and drafts Datasets and Boards in `bootstrap/`. Spark stays the default answer model until the
+  A/B run says otherwise.
 - **Tests never call a real model or the network.** Use `testing/stub_model.py` with canned tool
   calls and Express. Database tests are marked `db` and fail loudly without Docker. They don't skip.
 - **Database safety (SPEC §9).** Connect only with the dataset's read-only role. Startup refuses a
