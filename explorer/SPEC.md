@@ -388,7 +388,9 @@ Steps 1–3 run in parallel with the database build in `../austender/`.
   data. Text values longer than 500 characters are cut in `rows_preview`.
 - Database strings reach the UI only through macros. `DataGrid` and `SqlDetails` render them as
   text (Lit escaping), and `Cite` escapes markdown before inserting into `Text`. Chart data goes in
-  `data.values` only.
+  `data.values` only. Filled values are markdown-escaped only where the text renders as markdown
+  (body Text, `Cite`, prose, `FollowUp` labels). `h1`–`h5` and `caption` Text and `Tabs` titles are
+  plain text, bound as text by Lit, so they take values as written (amended 2026-11-04, issue 9).
 - Database comments go into the prompt (layer 3). They are written by us in the dataset's
   migrations, so they are trusted configuration, not data. The same holds for the Comment
   overlay (section 13), which is committed with the dataset.
@@ -1039,8 +1041,9 @@ Decisions made while building, where the text above was silent or had to change:
   data exceptions, and Repair text is user text. A class 22 error (bad input, cast or range) goes
   back as its SQLSTATE and a fixed message; other messages and hints have the bound values masked
   (`<value>`). The same text is what gets logged.
-- **The row label in a Drill-down's title is markdown-escaped**, like Cite values; the Breadcrumb
-  label and the tool result keep it raw (they're shown or sent as text).
+- **The row label in a Drill-down's title is written as is.** The title is an `h4` Text, which
+  the client renders as plain text, as are the tab title and the log (amended 2026-11-04, issue 9;
+  it was markdown-escaped, which showed backslashes).
 - **Retry counts as the confirmation**: the user confirmed that Ask, and Retry is an explicit
   click on it.
 - **Known limit:** if more than `MAX_PENDING_PAIRS` Drill-downs happen between two model runs,
@@ -1770,8 +1773,8 @@ too, so a Control change discards them.
    (`r<digits>`).
 5. The server puts the heading first, then the Controls Card, then the layout. The title and row
    label are shown as written, not markdown-escaped, because the client renders `h1`–`h5` and
-   `caption` Text as plain text (amended 2026-11-03; the §15 Drill-down title has the same
-   problem, issue 9).
+   `caption` Text as plain text (amended 2026-11-03). Visual and Drill-down titles follow the
+   same rule since 2026-11-04 (issue 9).
 6. A query that fails replaces its Visuals with an error Card ("This panel couldn't load:
    <SQLSTATE>", with no values), and the rest of the Board still shows.
 
@@ -2183,7 +2186,7 @@ Conversation.
 |---|---|---|
 | B1 | Board files load. Each startup error stops the agent, naming the file and key: bad key or type, unknown, unused, untyped or colliding placeholder, guard failure, `LIMIT 0` failure at defaults or at NULL, a layout column missing or of the wrong kind, an options query without `value`/`label`, overlapping `key_columns`, more than `MAX_BOARD_QUERIES` | `test_boards.py` (db) |
 | B2 | The "All" idiom runs for every kind against real column types: `text`, `int` (including a `multi` Control on an `int` column), `date`, `bool`, each at a value and at NULL; the display copy keeps the casts and reruns to the same rows | `test_boards.py` (db) |
-| B3 | Rendering: the agent-wide semaphore holds across two Conversations; the row cap wraps and reports truncation; query names become Result IDs; heading, then Controls Card, then layout; the heading is markdown-escaped; a failing query gives an error Card with its SQLSTATE and no values while the rest renders; zero-row Results give "No rows" Cards in Board mode and stay Repairs in answers; every Visual shows its SQL; panel root IDs are stable across renders | `test_boards.py` (db), `test_macros.py` |
+| B3 | Rendering: the agent-wide semaphore holds across two Conversations; the row cap wraps and reports truncation; query names become Result IDs; heading, then Controls Card, then layout; the heading is shown as written; a failing query gives an error Card with its SQLSTATE and no values while the rest renders; zero-row Results give "No rows" Cards in Board mode and stay Repairs in answers; every Visual shows its SQL; panel root IDs are stable across renders | `test_boards.py` (db), `test_macros.py` |
 | B4 | Cache: the same key and values run no query; failures aren't cached; two concurrent cold renders run once; the TTL and the cap apply; the Explorer is warm after startup and after expiry | `test_boards.py` |
 | B5 | `open_board` renders the Explorer as Turn 0 with no model call (the stub model asserts it wasn't called) and without an issued `surfaceId`; rejected for an unknown or keyed Board and a second time; no Boards → `explorerNoBoards` | `test_executor.py`, `test_actions.py` |
 | B6 | Controls: each kind builds its basic component and data model with the declared defaults; `choice` "All" binds a typed NULL; `multi` binds `<type>[]`, and none chosen binds NULL; `number` is integer-only; a cleared optional date binds NULL; NULL-valued options are dropped; every case in Validation is rejected with nothing run | `test_boards.py`, `test_actions.py` |
@@ -2382,6 +2385,16 @@ Every finding was taken unless noted:
 - **Screenshots** (stub app at 1440 and 390 px, light and dark: the Explorer with its Controls
   Card, a pending re-query with the layout dimmed, and the settled reply): no console errors and
   no horizontal overflow.
+
+### Fix, issue 9 (2026-11-04)
+
+- `macros._fill` takes a required `markdown` flag, so each call site states where its text goes.
+  Visual titles, `drill_title`, `Metric` labels and no-rows headings are plain. `Cite`, prose and
+  `FollowUp` labels are markdown. The model's own Text is plain for `h1`–`h5` and `caption`
+  (`PLAIN_TEXT_VARIANTS`), and its `Tabs` titles are always plain.
+- `unescape_markdown` is gone: the tab title and log text no longer need undoing.
+- `client/test/text-variants.test.ts` pins web_core's plain-text variants, so an SDK bump that
+  changes them fails a test.
 
 ### Test command
 

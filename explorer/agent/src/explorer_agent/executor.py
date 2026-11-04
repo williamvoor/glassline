@@ -58,7 +58,6 @@ from explorer_agent.boards import (
 )
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.drill import Prefetcher, display_sql
-from explorer_agent.macros import escape_markdown, unescape_markdown
 from explorer_agent.results import ResultStore, ResultView, StoredResult
 from explorer_agent.sql import SqlFail
 from explorer_agent.ui import UiError, UiPipeline, UiResult
@@ -453,10 +452,10 @@ class ExplorerExecutor(AgentExecutor):
                 await fail(DRILL_FAILED.format(reason=outcome.sqlstate or "query error"))
                 return
             label = src.spec.labels[resolved.row]
-            # The label is database text; the client renders Text as markdown (the title part was filled by Cite).
-            title = f"{spec.title} · {escape_markdown(label)}"
+            # The heading, tab and log are all plain text, so the label is written as is (issue 9).
+            title = f"{spec.title} · {label}"
             result = conv.store.add(
-                sql=display_sql(spec.sql, values), purpose=f"{spec.title} · {label}", columns=outcome.columns,
+                sql=display_sql(spec.sql, values), purpose=title, columns=outcome.columns,
                 column_types=outcome.column_types, rows=outcome.rows, truncated=outcome.truncated,
             )
             level = conv.actions.new_level(resolved.level.turn, label)
@@ -467,8 +466,7 @@ class ExplorerExecutor(AgentExecutor):
                 "drill-down: source=%s row=%d turn=%d level=%d prefetched=%s rows=%d",
                 src.id, resolved.row, level.turn, level.level, prefetched, result.row_count,
             )
-        plain = f"{unescape_markdown(spec.title)} · {label}"  # the tab is plain text; `_fill` escaped its values
-        await send(level, ui, Tab("drill", plain, f"Drill-down: {plain}"), model_run=False)
+        await send(level, ui, Tab("drill", title, f"Drill-down: {title}"), model_run=False)
 
     # Boards (no model) ----------------------------------------------------------------------------
 

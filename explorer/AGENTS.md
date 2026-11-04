@@ -73,7 +73,9 @@ npm install && npm test && npm run build
 - **One merged catalog** with one ID on agent and client (ADR 0002). A component outside it renders
   as nothing, so add new components to both sides.
 - **Untrusted data.** Database strings reach the UI only through Macros, rendered as text.
-  `Cite` escapes markdown. The client's markdown has images and raw HTML off.
+  `Cite` escapes markdown. Filled values are escaped only where the text renders as markdown
+  (`_fill(..., markdown=...)`): `h1`–`h5`, `caption` and `Tabs` titles are plain text. The
+  client's markdown has images and raw HTML off.
 - **Pins.** `litellm==1.106.6` exactly, with `mcp` kept as a dependency (it works around a `tools=`
   import bug). `a2a-sdk==0.3.26`. The A2UI SDK packages share one git commit with glimmer-tune
   (ADR 0006). Keep `uv.lock` and `package-lock.json` committed.

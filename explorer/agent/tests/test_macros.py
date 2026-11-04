@@ -509,7 +509,7 @@ import json
 import os
 from pathlib import Path
 
-from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, check_columns, escape_markdown, unescape_markdown
+from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, check_columns
 from explorer_agent.results import StoredResult
 
 TREEMAP_FIXTURE = Path(__file__).resolve().parents[2] / "client" / "test" / "fixtures" / "treemap_spec.json"
@@ -759,11 +759,6 @@ def test_board_mode_drops_a_drill_on_a_list_column_and_keeps_the_ask():
     assert c.drills == [] and len(c.sources) == 1
 
 
-def test_unescape_markdown_inverts_escape_markdown():
-    for text in ("Smith (Pty) Ltd.", r"a\b *c* $1.5M", "\\", "[x](y) #1 <b>", ""):
-        assert unescape_markdown(escape_markdown(text)) == text
-
-
 def test_check_columns_checks_drill_title_placeholders():
     """A bad drill_title would blank the panel at render (refuter, slice 1b)."""
     outputs = {"q": (["name", "value"], ["text", "numeric"])}
@@ -817,3 +812,41 @@ def test_treemap_drill_links_work_as_for_bar_charts():
     assert action["drillable"] is True
     assert action["rows"] == [1, 0]  # displayed order: by value
     assert c.drills[0].names == ("name",) and c.drills[0].source == action["source"]
+
+
+# --- issue 9: escape filled values only where the text renders as markdown ---------------------
+# web_core renders h1–h5 and caption Text (and Tabs titles) as plain text, so escaping there shows
+# backslashes. Body Text, Cite, prose and FollowUp labels render markdown and keep escaping.
+
+from explorer_agent.macros import fill_surface_text
+
+
+def test_visual_titles_show_filled_values_as_written(ctx):
+    bar = expand("BarChart", result_id="r1", x="supplier", y="value", title="Top: {r1[1].supplier}")
+    table = expand("DataTable", result_id="r1", title="Top: {r1[1].supplier}")
+    for comps in (bar, table):
+        title = by_type(comps, "Text")[0]
+        assert (title["text"], title["variant"]) == ("Top: Acme_[x]", "h4")
+
+
+def test_metric_label_shows_filled_values_as_written(ctx):
+    texts = by_type(expand("Metric", result_id="r1", column="value", label="{r1[1].supplier}", row=1), "Text")
+    assert (texts[0]["text"], texts[0]["variant"]) == ("Acme_[x]", "caption")
+
+
+def test_follow_up_label_stays_escaped(ctx):
+    texts = by_type(expand("FollowUp", label="More on {r1[1].supplier}", request="Tell me more"), "Text")
+    assert [t["text"] for t in texts] == [r"More on Acme\_\[x\]"]
+
+
+def test_surface_text_is_escaped_by_variant_and_tabs_titles_are_plain(ctx):
+    comps = [
+        {"id": "h", "component": "Text", "text": "{r1[1].supplier}", "variant": "h3"},
+        {"id": "c", "component": "Text", "text": "{r1[1].supplier}", "variant": "caption"},
+        {"id": "b", "component": "Text", "text": "{r1[1].supplier}", "variant": "body"},
+        {"id": "d", "component": "Text", "text": "{r1[1].supplier}"},
+        {"id": "t", "component": "Tabs", "tabs": [{"title": "{r1[1].supplier}", "child": "h"}]},
+    ]
+    fill_surface_text(comps)
+    assert [c.get("text") for c in comps[:4]] == ["Acme_[x]", "Acme_[x]", r"Acme\_\[x\]", r"Acme\_\[x\]"]
+    assert comps[4]["tabs"][0]["title"] == "Acme_[x]"

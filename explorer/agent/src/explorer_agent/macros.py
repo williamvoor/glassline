@@ -480,7 +480,7 @@ def _drill(
             )
     spec = DrillSpec(
         source=source, visual=visual, sql=rewritten.sql, names=rewritten.names, drill_as=drill_as,
-        drill_x=drill_x.strip(), drill_y=drill_y.strip(), title=_fill(drill_title) if drill_title.strip() else title,
+        drill_x=drill_x.strip(), drill_y=drill_y.strip(), title=_fill(drill_title, markdown=False) if drill_title.strip() else title,
         fixed=tuple((n, ctx.controls[n][1]) for n in rewritten.names if n in casts),
     )
     ctx.drills.append(spec)
@@ -653,7 +653,7 @@ def BarChart(
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked bar's label is appended.
     """
-    title_text = _fill(title)
+    title_text = _fill(title, markdown=False)
     return _chart(
         _result(result_id), mark="bar", x=x, y=y, title=title_text, color=color, fmt=format,
         sort_by_value=True, horizontal=horizontal, clickable=clickable,
@@ -693,7 +693,7 @@ def LineChart(
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked point's label is appended.
     """
-    title_text = _fill(title)
+    title_text = _fill(title, markdown=False)
     return _chart(
         _result(result_id), mark="line", x=x, y=y, title=title_text, color=color, fmt=format,
         sort_by_value=False, clickable=clickable,
@@ -834,7 +834,7 @@ def Treemap(
         drill_title: Optional title of the drill-down (default: this title); the clicked tile's label is appended.
     """
     return _card(_treemap_parts(
-        _result(result_id), title=_fill(title), label=label, value=value, fmt=format, clickable=clickable,
+        _result(result_id), title=_fill(title, markdown=False), label=label, value=value, fmt=format, clickable=clickable,
         drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title),
     ))
 
@@ -945,7 +945,7 @@ def DataTable(
         bars: Optional comma-separated numeric shown columns to draw as share bars under their numbers (each cell's share of the column's largest value), e.g. "value".
     """
     return _table(
-        _result(result_id), title=_fill(title), columns=columns, format=format, clickable=clickable,
+        _result(result_id), title=_fill(title, markdown=False), columns=columns, format=format, clickable=clickable,
         drill=_Drill(drill_sql, drill_as, drill_x, drill_y, drill_title), bars=bars,
     )
 
@@ -968,7 +968,7 @@ def FollowUp(label: str, request: str) -> Button:
         raise MacroError("FollowUp needs a request")
     if len(request) > FOLLOW_UP_REQUEST_MAX:
         raise MacroError(f"FollowUp request is {len(request)} characters; at most {FOLLOW_UP_REQUEST_MAX}")
-    text = _fill(label)
+    text = _fill(label, markdown=True)  # a Button's child Text: body, so markdown
     fid = ctx.ids.follow_up()
     ctx.follow_ups.append(FollowUpSpec(id=fid, label=text, request=request.strip()))
     return Button(child=Text(text=text), action=Action(event=ActionEvent(name="ask", context={"follow_up": fid})))
@@ -1014,12 +1014,12 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
     result = _result(result_id)
     _column(result, column)
     if _ctx().board and not 0 <= row < result.row_count:
-        raise _no_rows(result, _fill(label))
+        raise _no_rows(result, _fill(label, markdown=False))
     value = _row(result, row)[column]
     return Card(
         child=Column(
             children=[
-                Text(text=_fill(label), variant="caption"),
+                Text(text=_fill(label, markdown=False), variant="caption"),
                 Text(text=_format(result, value, column, format), variant="h2"),
                 _sql_details(result),
             ]
@@ -1045,21 +1045,21 @@ def escape_markdown(text: str) -> str:
     return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
 
 
-_ESCAPED = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|<>~$])")
-
-
-def unescape_markdown(text: str) -> str:
-    """The inverse of `escape_markdown`, for text shown as plain text (a tab title, SPEC §18)."""
-    return _ESCAPED.sub(r"\1", text)
-
-
 def placeholders(template: str, board: bool = False) -> list[tuple[str, int, str, str]]:
     """The `Cite` placeholders in a template: (Result ID or query name, row, column, format)."""
     pattern = _BOARD_PLACEHOLDER if board else _PLACEHOLDER
     return [(m.group(1), int(m.group(2)), m.group(3), m.group(4) or "auto") for m in pattern.finditer(template)]
 
 
-def _fill(template: str, on_error: Callable[[Exception], None] | None = None) -> str:
+# web_core's Text renders these variants as plain text and every other one as markdown
+# (`NON_MARKDOWN_VARIANTS` in `Text.js`; pinned by `client/test/text-variants.test.ts`).
+PLAIN_TEXT_VARIANTS = frozenset({"h1", "h2", "h3", "h4", "h5", "caption"})
+
+
+def _fill(template: str, *, markdown: bool, on_error: Callable[[Exception], None] | None = None) -> str:
+    """Fills `{r<n>[row].col|fmt}` placeholders. Values are markdown-escaped only when `markdown`
+    (the text renders as markdown: body Text, `Cite`, prose). Plain text (h1–h5 and caption Text,
+    Tabs titles) is bound as text by Lit, so escaping there would only show backslashes."""
     board = _ctx().board
 
     def fill(m: re.Match[str]) -> str:
@@ -1070,7 +1070,8 @@ def _fill(template: str, on_error: Callable[[Exception], None] | None = None) ->
             if board and not 0 <= row < result.row_count:
                 raise _no_rows(result, "")
             value = _row(result, row)[column]
-            return escape_markdown(_format(result, value, column, m.group(4) or "auto"))
+            text = _format(result, value, column, m.group(4) or "auto")
+            return escape_markdown(text) if markdown else text
         except _PanelReplaced:
             if on_error is None:  # inside a macro: the macro's panel is replaced
                 raise
@@ -1092,7 +1093,7 @@ def Cite(template: str) -> Text:
     Args:
         template: Markdown text with placeholders like {r1[0].value|currency_m}: result ID, row index, column, optional format (the Metric formats; currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%)).
     """
-    return Text(text=_fill(template))
+    return Text(text=_fill(template, markdown=True))
 
 
 _BARE_NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
@@ -1111,7 +1112,7 @@ def fill_prose(prose: str) -> FilledProse:
     back to the model; the placeholder is left as written.
     """
     ctx = _ctx()
-    text = _fill(prose, on_error=lambda e: ctx.errors.append(f"prose: {e}"))
+    text = _fill(prose, markdown=True, on_error=lambda e: ctx.errors.append(f"prose: {e}"))
     return FilledProse(text=text, bare_numbers=_bare_numbers(prose))
 
 
@@ -1126,20 +1127,21 @@ def fill_surface_text(components: Iterable[dict[str, Any]]) -> list[str]:
     ctx = _ctx()
     bare: list[str] = []
 
-    def fill(holder: dict[str, Any], key: str, name: str, cid: Any) -> None:
+    def fill(holder: dict[str, Any], key: str, name: str, cid: Any, markdown: bool) -> None:
         text = holder.get(key)
         if not isinstance(text, str):
             return  # a data binding
-        holder[key] = _fill(text, on_error=lambda e: ctx.errors.append(f"{name} {cid!r}: {e}"))
+        holder[key] = _fill(text, markdown=markdown, on_error=lambda e: ctx.errors.append(f"{name} {cid!r}: {e}"))
         bare.extend(_bare_numbers(text))
 
     for comp in components:
         if comp.get("component") == "Text":
-            fill(comp, "text", "Text", comp.get("id"))
+            markdown = (comp.get("variant") or "body") not in PLAIN_TEXT_VARIANTS
+            fill(comp, "text", "Text", comp.get("id"), markdown)
         elif comp.get("component") == "Tabs":
             for tab in comp.get("tabs") or []:
                 if isinstance(tab, dict):
-                    fill(tab, "title", "Tabs", comp.get("id"))
+                    fill(tab, "title", "Tabs", comp.get("id"), False)  # Tabs titles are plain text
     return bare
 
 

@@ -454,23 +454,25 @@ async def test_a_drill_down_level_does_not_replace_the_prefetch():
     assert len(runner.calls) == before  # still prefetched after the Drill-down Level
 
 
-# Regression (refuter 2026-11-03): the row label (database text) went into the Drill-down's
-# title unescaped, and the client renders Text as markdown, so a label could inject a link.
-async def test_drill_down_title_escapes_the_row_label():
-    evil = "[Click](https://evil.example) **bold**"
+# Issue 9: the Drill-down title is an h4 Text, which the client renders as plain text (Lit binds it as
+# text, so a label can't inject markup). Escaping it showed backslashes. It was escaped since the
+# refuter's 2026-11-03 finding, which assumed every Text renders markdown.
+async def test_drill_down_title_shows_the_row_label_as_written_in_a_plain_text_heading():
+    label = "[Click](https://evil.example) **bold**"
+    reply = REPLY.replace('drill_title="Agencies"', 'drill_title="Top: {r1[0].supplier}"')
 
     def seed(store):
         store.add(sql="SELECT 1", purpose="p", columns=["supplier", "value"], column_types=["text", "numeric"],
-                  rows=[{"supplier": evil, "value": 1.0}], truncated=False)
+                  rows=[{"supplier": label, "value": 1.0}], truncated=False)
 
-    client, answers, runner, _ = make(Answers(seed=seed), rows=0)
+    client, answers, runner, _ = make(Answers(reply, seed=seed), rows=0)
     async with client:
         ctx, events = await first_answer(client)
         surface, _ = chart_action(events)
         out = await send_action(client, act(surface, source="v1", row=0), ctx)
     title = next(c for c in components(out) if c["component"] == "Text" and c.get("variant") == "h4")
-    assert title["text"] == r"Agencies · \[Click\]\(https://evil\.example\) \*\*bold\*\*"
-    assert meta(out)[LEVEL_KEY]["label"] == evil  # the Breadcrumb shows it as plain text
+    assert title["text"] == f"Top: {label} · {label}"
+    assert meta(out)[LEVEL_KEY]["label"] == label
 
 
 # --- refuter round 1: cases that had no proving test ---------------------------------------------
