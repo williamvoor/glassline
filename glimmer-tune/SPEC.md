@@ -1843,6 +1843,58 @@ They were worded on exactly that content.
 
 `uv run pytest tests/test_intents.py tests/test_intents_slice.py`, then `uv run pytest`.
 
+## Approach v2 Phase 3: judge calibration (spec, 2026-11-05)
+
+Layer 4, intent fidelity. The code is in `a2ui_eval/judge.py`, the tests are in `tests/test_judge.py`,
+and the data is in `data/judge/`.
+
+### Behavior
+
+- **Judge:** Spark Open (`muse-spark-open-1026`) on Baseten, reasoning `low`, temperature 0. It
+  sees the intent, the Express, and the 375 and 1280 px screenshots. The image probe (2026-11-04,
+  $0.002) answered four questions that only the screenshot could answer, and got all four right.
+- **Rubric:** the brief's five items (`elements`, `action`, `grouping`, `labels`, `invented`)
+  plus `layout`, from the user's 2026-11-03 standard (kept by the user, 2026-11-05). A candidate
+  passes when no item fails.
+- **Rules in the prompt:** validation messages that the renderer shows on empty form fields are
+  not a fail. Neither is wording that differs but means the same.
+- **Pool:** Spark Open low, n=4 on 25 `tune` intents (3 per UI kind and 1 dashboard), for
+  $1.09. 78 of 100 passed layers 1-3. 50 of those were drawn with a seeded round-robin over
+  20 intents (`pool.jsonl`).
+  - The gate sets (gallery dev and the slice) are not used, so the judge prompt is never tuned
+    on them.
+- **Labels:** the user labels the pool on `label.html` and saves `labels.json`. `load_labels`
+  refuses a missing label, a key outside the pool and an unknown rubric item.
+- **Run:** 3 repeats per candidate. It can resume. Errors, malformed replies and length cut-offs
+  are retried, and a malformed reply never counts as a pass.
+  - The verdict is the majority of the ok repeats; a tie fails.
+  - A candidate is flipped when its repeats disagree.
+  - The score, the mean share of rubric items passed, is what Phase 4 selection uses.
+- **Bar (user, 2026-11-05):** the judge is used for filtering only when it reaches agreement
+  ≥ 0.85 **and** Cohen's kappa ≥ 0.40.
+  - Kappa is required because, at a high pass rate, a judge that always says pass clears 0.85
+    on raw agreement alone.
+  - The report also gives the confusion counts, the flips and the candidates with no verdict.
+
+### Commands
+
+```bash
+uv run python -m a2ui_eval.judge pool --cands <validator output> --shots <dir>   # done
+uv run python -m a2ui_eval.judge run --dry-run                                   # estimate
+uv run --env-file ../.env python -m a2ui_eval.judge run                          # paid
+uv run python -m a2ui_eval.judge agree
+```
+
+### Cost
+
+- The dry run estimates $1.10 for 150 calls.
+- About $0.80 of that is screenshots, at a guessed 1,500 tokens each (`IMAGE_TOKENS`,
+  UNVERIFIED). Replace the guess with the usage measured in the first run.
+
+### Status
+
+- Waiting for the user's 50 labels. The judge has not run yet.
+
 ## 2c-2 and 2c-3 outline
 
 - **2c-2:** generate a base surface and apply a mutation: add, remove or replace a subtree, change data, replace the root with `update=true`, or delete the surface. The row is `existing_surface` = the base, and the target is the update. Export gains a two-turn row: user₁, assistant₁ = base Express, user₂, assistant₂ = update. Text-only rows (5–10%) get templated replies and `expect_ui: false`. The struct hash covers the base and the mutation, since `fingerprint()` gives every rootless surface the same value. Note that the scorer's `extracted` flag is inverted for `expect_ui: false`.

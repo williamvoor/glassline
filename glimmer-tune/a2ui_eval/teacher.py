@@ -68,6 +68,17 @@ def actual_usd(preds: list[dict[str, Any]]) -> float:
     return tin * PRICE_IN / 1e6 + tout * PRICE_OUT / 1e6
 
 
+def allowed_row_ids(data: Path = DATA) -> set[str]:
+    """Rows the teacher may answer: dev cases (Phase 1) and the intent set's train and tune rows
+    (Phases 3 and 4). Never test."""
+    ids = {c["id"] for c in dev_cases(data)}
+    for name in ("train", "tune"):
+        path = data / "intents" / f"{name}.jsonl"
+        if path.exists():
+            ids |= {r["id"] for r in read_jsonl(path)}
+    return ids
+
+
 def only_source(rows: list[dict[str, Any]], source: str | None) -> list[dict[str, Any]]:
     """The rows of one dev source (`gallery` for the Phase 1 teacher ceiling), or all of them."""
     return rows if source is None else [r for r in rows if r.get("source") == source]
@@ -105,7 +116,7 @@ async def run_baseline(
     """Answers every (row, sample) not already answered in `out` (error rows are retried).
     Resumable. With `n` > 1 each row is sampled `n` times and predictions carry a `sample` index."""
     if bad := sorted(r["id"] for r in rows if r["id"] not in allowed_ids):
-        raise TeacherError(f"rows outside the dev cases: {bad[:5]}")
+        raise TeacherError(f"rows the teacher may not answer: {bad[:5]}")
     if n > 1 and not temperature > 0:
         raise TeacherError("n > 1 needs a temperature above 0, or every sample is the same answer")
     rows = rows[:limit] if limit is not None else rows
@@ -198,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     effort = None if args.reasoning_effort == "none" else args.reasoning_effort
     try:
         summary = asyncio.run(run_baseline(
-            rows, args.out, litellm_complete, {c["id"] for c in dev_cases(DATA)},
+            rows, args.out, litellm_complete, allowed_row_ids(DATA),
             model=args.model, reasoning_effort=effort, workers=args.workers,
             n=args.n, temperature=args.temperature, top_p=args.top_p, max_tokens=args.max_tokens,
         ))
