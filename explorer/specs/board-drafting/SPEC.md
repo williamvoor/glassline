@@ -5,7 +5,7 @@ becomes phase 3 of `bootstrap/SPEC.md`. It's written here because another sessio
 uncommitted edits in `bootstrap/*` on 2026-11-04. Where this file is silent, `explorer/SPEC.md`
 §18 and `bootstrap/SPEC.md` (phases 1–2c, plus that session's S10, S11, U6, D8 and E5) apply.
 
-Decision: ADR 0031 (proposed). Board drafting is a second Wonder loop with its own tool, run
+Decision: ADR 0032 (proposed). Board drafting is a second Wonder loop with its own tool, run
 after the dataset draft.
 
 ## Why
@@ -137,7 +137,7 @@ Docker.
 
 ## Decisions
 
-- **A second loop, after the dataset draft** (ADR 0031). Boards need the reviewed notes, glossary
+- **A second loop, after the dataset draft** (ADR 0032). Boards need the reviewed notes, glossary
   and comments, and their own retries against `check_board`. Folding them into `submit_draft`
   would make one long loop that fails as a whole. Phase 2b's "one loop, no step per file" holds
   for the dataset files.
