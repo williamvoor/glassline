@@ -1,0 +1,12 @@
+{
+ "domains": [
+  "book-writing-project",
+  "dental-practice",
+  "museum-collection",
+  "photography-studio",
+  "university-admissions",
+  "warehouse-inventory"
+ ],
+ "seed": 0,
+ "provenance": "script:a2ui_eval.intents.slice@f5b211d"
+}

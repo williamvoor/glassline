@@ -1,0 +1,3000 @@
+{"id": "intent/state/00000", "verdict": "ok"}
+{"id": "intent/dashboard/00001", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/00002", "verdict": "layout_copied"}
+{"detail": "side by side in one row", "id": "intent/stats/00003", "verdict": "layout_copied"}
+{"id": "intent/form/00004", "verdict": "ok"}
+{"id": "intent/grid/00005", "verdict": "ok"}
+{"id": "intent/filter/00006", "verdict": "ok"}
+{"id": "intent/grid/00007", "verdict": "ok"}
+{"id": "intent/grid/00008", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/00009", "verdict": "layout_copied"}
+{"id": "intent/list/00010", "verdict": "ok"}
+{"id": "intent/detail/00011", "verdict": "ok"}
+{"id": "intent/grid/00012", "verdict": "ok"}
+{"id": "intent/list/00013", "verdict": "ok"}
+{"id": "intent/form/00014", "verdict": "ok"}
+{"id": "intent/state/00015", "verdict": "ok"}
+{"id": "intent/grid/00016", "verdict": "ok"}
+{"id": "intent/grid/00017", "verdict": "ok"}
+{"id": "intent/filter/00018", "verdict": "ok"}
+{"id": "intent/detail/00019", "verdict": "ok"}
+{"id": "intent/stats/00020", "verdict": "ok"}
+{"id": "intent/detail/00021", "verdict": "ok"}
+{"id": "intent/grid/00022", "verdict": "ok"}
+{"id": "intent/dashboard/00023", "verdict": "ok"}
+{"id": "intent/grid/00024", "verdict": "ok"}
+{"id": "intent/state/00025", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/00026", "verdict": "layout_copied"}
+{"detail": "the filter and the search box", "id": "intent/filter/00027", "verdict": "layout_copied"}
+{"id": "intent/form/00028", "verdict": "ok"}
+{"id": "intent/grid/00029", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/00030", "verdict": "layout_copied"}
+{"id": "intent/detail/00031", "verdict": "ok"}
+{"id": "intent/list/00032", "verdict": "ok"}
+{"id": "intent/form/00033", "verdict": "ok"}
+{"id": "intent/dashboard/00034", "verdict": "ok"}
+{"id": "intent/state/00035", "verdict": "ok"}
+{"id": "intent/stats/00036", "verdict": "ok"}
+{"id": "intent/state/00037", "verdict": "ok"}
+{"id": "intent/detail/00038", "verdict": "ok"}
+{"id": "intent/list/00039", "verdict": "ok"}
+{"id": "intent/filter/00040", "verdict": "ok"}
+{"id": "intent/dashboard/00041", "verdict": "ok"}
+{"id": "intent/dashboard/00042", "verdict": "ok"}
+{"id": "intent/list/00043", "verdict": "ok"}
+{"id": "intent/grid/00044", "verdict": "ok"}
+{"id": "intent/grid/00045", "verdict": "ok"}
+{"id": "intent/grid/00046", "verdict": "ok"}
+{"id": "intent/text_only/00047", "verdict": "ok"}
+{"id": "intent/grid/00048", "verdict": "ok"}
+{"id": "intent/stats/00049", "verdict": "ok"}
+{"id": "intent/stats/00050", "verdict": "ok"}
+{"id": "intent/state/00051", "verdict": "ok"}
+{"id": "intent/list/00052", "verdict": "ok"}
+{"id": "intent/stats/00053", "verdict": "ok"}
+{"id": "intent/grid/00054", "verdict": "ok"}
+{"detail": ["BUS-105", "2017", "201450", "BUS-107", "2016", "224800", "BUS-111", "2023", "19450", "BUS-115", "2019", "145800", "BUS-113", "2018", "167200", "BUS-110", "156300"], "id": "intent/state/00055", "verdict": "r2_missing"}
+{"id": "intent/dashboard/00056", "verdict": "ok"}
+{"id": "intent/state/00057", "verdict": "ok"}
+{"id": "intent/form/00058", "verdict": "ok"}
+{"id": "intent/grid/00059", "verdict": "ok"}
+{"id": "intent/list/00060", "verdict": "ok"}
+{"id": "intent/dashboard/00061", "verdict": "ok"}
+{"id": "intent/list/00062", "verdict": "ok"}
+{"id": "intent/text_only/00063", "verdict": "ok"}
+{"id": "intent/filter/00064", "verdict": "ok"}
+{"id": "intent/dashboard/00065", "verdict": "ok"}
+{"id": "intent/form/00066", "verdict": "ok"}
+{"id": "intent/form/00067", "verdict": "ok"}
+{"id": "intent/grid/00068", "verdict": "ok"}
+{"id": "intent/grid/00069", "verdict": "ok"}
+{"id": "intent/filter/00070", "verdict": "ok"}
+{"id": "intent/form/00071", "verdict": "ok"}
+{"id": "intent/grid/00072", "verdict": "ok"}
+{"id": "intent/filter/00073", "verdict": "ok"}
+{"id": "intent/list/00074", "verdict": "ok"}
+{"id": "intent/grid/00075", "verdict": "ok"}
+{"id": "intent/stats/00076", "verdict": "ok"}
+{"id": "intent/list/00077", "verdict": "ok"}
+{"id": "intent/grid/00078", "verdict": "ok"}
+{"id": "intent/grid/00079", "verdict": "ok"}
+{"id": "intent/form/00080", "verdict": "ok"}
+{"id": "intent/stats/00081", "verdict": "ok"}
+{"id": "intent/grid/00082", "verdict": "ok"}
+{"id": "intent/grid/00083", "verdict": "ok"}
+{"id": "intent/state/00084", "verdict": "ok"}
+{"id": "intent/state/00085", "verdict": "ok"}
+{"id": "intent/form/00086", "verdict": "ok"}
+{"id": "intent/form/00087", "verdict": "ok"}
+{"id": "intent/text_only/00088", "verdict": "ok"}
+{"id": "intent/list/00089", "verdict": "ok"}
+{"id": "intent/state/00090", "verdict": "ok"}
+{"id": "intent/list/00091", "verdict": "ok"}
+{"id": "intent/filter/00092", "verdict": "ok"}
+{"id": "intent/state/00093", "verdict": "ok"}
+{"id": "intent/dashboard/00094", "verdict": "ok"}
+{"id": "intent/list/00095", "verdict": "ok"}
+{"id": "intent/stats/00096", "verdict": "ok"}
+{"id": "intent/form/00097", "verdict": "ok"}
+{"id": "intent/dashboard/00098", "verdict": "ok"}
+{"id": "intent/grid/00099", "verdict": "ok"}
+{"id": "intent/stats/00100", "verdict": "ok"}
+{"id": "intent/detail/00101", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/00102", "verdict": "layout_copied"}
+{"detail": "per line with the button at", "id": "intent/form/00103", "verdict": "layout_copied"}
+{"id": "intent/list/00104", "verdict": "ok"}
+{"id": "intent/detail/00105", "verdict": "ok"}
+{"id": "intent/list/00106", "verdict": "ok"}
+{"id": "intent/stats/00107", "verdict": "ok"}
+{"id": "intent/form/00108", "verdict": "ok"}
+{"id": "intent/detail/00109", "verdict": "ok"}
+{"id": "intent/list/00110", "verdict": "ok"}
+{"id": "intent/stats/00111", "verdict": "ok"}
+{"id": "intent/detail/00112", "verdict": "ok"}
+{"id": "intent/grid/00113", "verdict": "ok"}
+{"id": "intent/grid/00114", "verdict": "ok"}
+{"id": "intent/state/00115", "verdict": "ok"}
+{"id": "intent/dashboard/00116", "verdict": "ok"}
+{"id": "intent/grid/00117", "verdict": "ok"}
+{"id": "intent/dashboard/00118", "verdict": "ok"}
+{"id": "intent/dashboard/00119", "verdict": "ok"}
+{"id": "intent/form/00120", "verdict": "ok"}
+{"id": "intent/list/00121", "verdict": "ok"}
+{"id": "intent/stats/00122", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/00123", "verdict": "layout_copied"}
+{"id": "intent/stats/00124", "verdict": "ok"}
+{"id": "intent/state/00125", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/00126", "verdict": "layout_copied"}
+{"id": "intent/state/00127", "verdict": "ok"}
+{"id": "intent/filter/00128", "verdict": "ok"}
+{"id": "intent/state/00129", "verdict": "ok"}
+{"id": "intent/dashboard/00130", "verdict": "ok"}
+{"id": "intent/stats/00131", "verdict": "ok"}
+{"id": "intent/filter/00132", "verdict": "ok"}
+{"id": "intent/filter/00133", "verdict": "ok"}
+{"id": "intent/dashboard/00134", "verdict": "ok"}
+{"id": "intent/stats/00135", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/00136", "verdict": "layout_copied"}
+{"id": "intent/grid/00137", "verdict": "ok"}
+{"id": "intent/dashboard/00138", "verdict": "ok"}
+{"id": "intent/filter/00139", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/00140", "verdict": "layout_copied"}
+{"id": "intent/state/00141", "verdict": "ok"}
+{"id": "intent/grid/00142", "verdict": "ok"}
+{"id": "intent/stats/00143", "verdict": "ok"}
+{"detail": ["Château Margaux Premier Grand Cru", "2010", "Bordeaux", "Sassicaia Bolgheri Superiore", "2016", "Tuscany", "Egly-Ouriet Brut Grand Cru Champagne", "2012", "Burgundy", "Masseto Toscana IGT Merlot", "2015", "Domaine Leflaive Puligny-Montrachet", "2019"], "id": "intent/filter/00144", "verdict": "r2_missing"}
+{"id": "intent/filter/00145", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/00146", "verdict": "layout_copied"}
+{"id": "intent/list/00147", "verdict": "ok"}
+{"id": "intent/state/00148", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/00149", "verdict": "layout_copied"}
+{"id": "intent/grid/00150", "verdict": "ok"}
+{"id": "intent/stats/00151", "verdict": "ok"}
+{"id": "intent/state/00152", "verdict": "ok"}
+{"id": "intent/state/00153", "verdict": "ok"}
+{"id": "intent/stats/00154", "verdict": "ok"}
+{"id": "intent/state/00155", "verdict": "ok"}
+{"id": "intent/detail/00156", "verdict": "ok"}
+{"id": "intent/filter/00157", "verdict": "ok"}
+{"id": "intent/form/00158", "verdict": "ok"}
+{"id": "intent/dashboard/00159", "verdict": "ok"}
+{"id": "intent/filter/00160", "verdict": "ok"}
+{"id": "intent/stats/00161", "verdict": "ok"}
+{"id": "intent/filter/00162", "verdict": "ok"}
+{"id": "intent/dashboard/00163", "verdict": "ok"}
+{"id": "intent/list/00164", "verdict": "ok"}
+{"id": "intent/dashboard/00165", "verdict": "ok"}
+{"id": "intent/detail/00166", "verdict": "ok"}
+{"detail": "side by side above the table", "id": "intent/filter/00167", "verdict": "layout_copied"}
+{"id": "intent/stats/00168", "verdict": "ok"}
+{"id": "intent/dashboard/00169", "verdict": "ok"}
+{"id": "intent/detail/00170", "verdict": "ok"}
+{"id": "intent/stats/00171", "verdict": "ok"}
+{"id": "intent/list/00172", "verdict": "ok"}
+{"id": "intent/filter/00173", "verdict": "ok"}
+{"id": "intent/detail/00174", "verdict": "ok"}
+{"id": "intent/stats/00175", "verdict": "ok"}
+{"id": "intent/state/00176", "verdict": "ok"}
+{"id": "intent/dashboard/00177", "verdict": "ok"}
+{"id": "intent/dashboard/00178", "verdict": "ok"}
+{"id": "intent/form/00179", "verdict": "ok"}
+{"id": "intent/dashboard/00180", "verdict": "ok"}
+{"id": "intent/grid/00181", "verdict": "ok"}
+{"id": "intent/detail/00182", "verdict": "ok"}
+{"id": "intent/stats/00183", "verdict": "ok"}
+{"id": "intent/list/00184", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/00185", "verdict": "layout_copied"}
+{"id": "intent/text_only/00186", "verdict": "ok"}
+{"id": "intent/grid/00187", "verdict": "ok"}
+{"id": "intent/grid/00188", "verdict": "ok"}
+{"id": "intent/form/00189", "verdict": "ok"}
+{"id": "intent/detail/00190", "verdict": "ok"}
+{"id": "intent/form/00191", "verdict": "ok"}
+{"id": "intent/detail/00192", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/00193", "verdict": "layout_copied"}
+{"id": "intent/filter/00194", "verdict": "ok"}
+{"id": "intent/form/00195", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/00196", "verdict": "layout_copied"}
+{"detail": ["`"], "id": "intent/form/00197", "verdict": "register"}
+{"id": "intent/detail/00198", "verdict": "ok"}
+{"id": "intent/detail/00199", "verdict": "ok"}
+{"id": "intent/text_only/00200", "verdict": "ok"}
+{"detail": 0.37, "id": "intent/form/00201", "verdict": "near_dup_set"}
+{"id": "intent/text_only/00202", "verdict": "ok"}
+{"id": "intent/text_only/00203", "verdict": "ok"}
+{"id": "intent/form/00204", "verdict": "ok"}
+{"id": "intent/state/00205", "verdict": "ok"}
+{"id": "intent/dashboard/00206", "verdict": "ok"}
+{"detail": "with the buttons at the bottom", "id": "intent/detail/00207", "verdict": "layout_copied"}
+{"detail": "details as label and value pairs", "id": "intent/detail/00208", "verdict": "layout_copied"}
+{"id": "intent/grid/00209", "verdict": "ok"}
+{"id": "intent/detail/00210", "verdict": "ok"}
+{"id": "intent/state/00211", "verdict": "ok"}
+{"id": "intent/grid/00212", "verdict": "ok"}
+{"id": "intent/detail/00213", "verdict": "ok"}
+{"id": "intent/form/00214", "verdict": "ok"}
+{"id": "intent/stats/00215", "verdict": "ok"}
+{"id": "intent/form/00216", "verdict": "ok"}
+{"detail": "one per line with the button", "id": "intent/form/00217", "verdict": "layout_copied"}
+{"id": "intent/grid/00218", "verdict": "ok"}
+{"id": "intent/grid/00219", "verdict": "ok"}
+{"id": "intent/stats/00220", "verdict": "ok"}
+{"id": "intent/form/00221", "verdict": "ok"}
+{"id": "intent/form/00222", "verdict": "ok"}
+{"id": "intent/grid/00223", "verdict": "ok"}
+{"id": "intent/detail/00224", "verdict": "ok"}
+{"id": "intent/grid/00225", "verdict": "ok"}
+{"id": "intent/dashboard/00226", "verdict": "ok"}
+{"id": "intent/dashboard/00227", "verdict": "ok"}
+{"id": "intent/detail/00228", "verdict": "ok"}
+{"id": "intent/list/00229", "verdict": "ok"}
+{"id": "intent/text_only/00230", "verdict": "ok"}
+{"id": "intent/text_only/00231", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/00232", "verdict": "layout_copied"}
+{"id": "intent/form/00233", "verdict": "ok"}
+{"id": "intent/dashboard/00234", "verdict": "ok"}
+{"id": "intent/dashboard/00235", "verdict": "ok"}
+{"id": "intent/filter/00236", "verdict": "ok"}
+{"id": "intent/form/00237", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/form/00238", "verdict": "register"}
+{"id": "intent/filter/00239", "verdict": "ok"}
+{"id": "intent/form/00240", "verdict": "ok"}
+{"id": "intent/form/00241", "verdict": "ok"}
+{"id": "intent/grid/00242", "verdict": "ok"}
+{"id": "intent/form/00243", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/00244", "verdict": "layout_copied"}
+{"detail": "details as label and value pairs", "id": "intent/detail/00245", "verdict": "layout_copied"}
+{"id": "intent/state/00246", "verdict": "ok"}
+{"id": "intent/list/00247", "verdict": "ok"}
+{"id": "intent/grid/00248", "verdict": "ok"}
+{"id": "intent/dashboard/00249", "verdict": "ok"}
+{"detail": "one per line with the button", "id": "intent/form/00250", "verdict": "layout_copied"}
+{"id": "intent/list/00251", "verdict": "ok"}
+{"id": "intent/grid/00252", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/00253", "verdict": "layout_copied"}
+{"id": "intent/detail/00254", "verdict": "ok"}
+{"id": "intent/dashboard/00255", "verdict": "ok"}
+{"id": "intent/form/00256", "verdict": "ok"}
+{"detail": "a simple list one record per", "id": "intent/state/00257", "verdict": "layout_copied"}
+{"id": "intent/state/00258", "verdict": "ok"}
+{"id": "intent/detail/00259", "verdict": "ok"}
+{"detail": "one per line with the button", "id": "intent/form/00260", "verdict": "layout_copied"}
+{"id": "intent/stats/00261", "verdict": "ok"}
+{"id": "intent/detail/00262", "verdict": "ok"}
+{"id": "intent/grid/00263", "verdict": "ok"}
+{"id": "intent/state/00264", "verdict": "ok"}
+{"id": "intent/state/00265", "verdict": "ok"}
+{"id": "intent/grid/00266", "verdict": "ok"}
+{"id": "intent/detail/00267", "verdict": "ok"}
+{"id": "intent/stats/00268", "verdict": "ok"}
+{"id": "intent/dashboard/00269", "verdict": "ok"}
+{"id": "intent/detail/00270", "verdict": "ok"}
+{"id": "intent/stats/00271", "verdict": "ok"}
+{"id": "intent/grid/00272", "verdict": "ok"}
+{"id": "intent/stats/00273", "verdict": "ok"}
+{"id": "intent/detail/00274", "verdict": "ok"}
+{"id": "intent/text_only/00275", "verdict": "ok"}
+{"id": "intent/grid/00276", "verdict": "ok"}
+{"id": "intent/detail/00277", "verdict": "ok"}
+{"id": "intent/grid/00278", "verdict": "ok"}
+{"id": "intent/stats/00279", "verdict": "ok"}
+{"id": "intent/stats/00280", "verdict": "ok"}
+{"id": "intent/form/00281", "verdict": "ok"}
+{"id": "intent/form/00282", "verdict": "ok"}
+{"id": "intent/state/00283", "verdict": "ok"}
+{"id": "intent/grid/00284", "verdict": "ok"}
+{"id": "intent/dashboard/00285", "verdict": "ok"}
+{"id": "intent/filter/00286", "verdict": "ok"}
+{"id": "intent/filter/00287", "verdict": "ok"}
+{"id": "intent/list/00288", "verdict": "ok"}
+{"id": "intent/text_only/00289", "verdict": "ok"}
+{"id": "intent/list/00290", "verdict": "ok"}
+{"id": "intent/grid/00291", "verdict": "ok"}
+{"id": "intent/form/00292", "verdict": "ok"}
+{"id": "intent/dashboard/00293", "verdict": "ok"}
+{"id": "intent/text_only/00294", "verdict": "ok"}
+{"id": "intent/grid/00295", "verdict": "ok"}
+{"id": "intent/list/00296", "verdict": "ok"}
+{"id": "intent/dashboard/00297", "verdict": "ok"}
+{"id": "intent/text_only/00298", "verdict": "ok"}
+{"id": "intent/list/00299", "verdict": "ok"}
+{"id": "intent/filter/00300", "verdict": "ok"}
+{"id": "intent/list/00301", "verdict": "ok"}
+{"id": "intent/state/00302", "verdict": "ok"}
+{"id": "intent/stats/00303", "verdict": "ok"}
+{"id": "intent/stats/00304", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/00305", "verdict": "layout_copied"}
+{"id": "intent/detail/00306", "verdict": "ok"}
+{"id": "intent/detail/00307", "verdict": "ok"}
+{"id": "intent/grid/00308", "verdict": "ok"}
+{"id": "intent/form/00309", "verdict": "ok"}
+{"id": "intent/detail/00310", "verdict": "ok"}
+{"id": "intent/detail/00311", "verdict": "ok"}
+{"id": "intent/list/00312", "verdict": "ok"}
+{"id": "intent/detail/00313", "verdict": "ok"}
+{"id": "intent/dashboard/00314", "verdict": "ok"}
+{"id": "intent/detail/00315", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00316", "verdict": "layout_copied"}
+{"id": "intent/grid/00317", "verdict": "ok"}
+{"id": "intent/grid/00318", "verdict": "ok"}
+{"id": "intent/detail/00319", "verdict": "ok"}
+{"id": "intent/form/00320", "verdict": "ok"}
+{"detail": "the figures side by side at", "id": "intent/dashboard/00321", "verdict": "layout_copied"}
+{"id": "intent/grid/00322", "verdict": "ok"}
+{"id": "intent/detail/00323", "verdict": "ok"}
+{"id": "intent/list/00324", "verdict": "ok"}
+{"id": "intent/grid/00325", "verdict": "ok"}
+{"id": "intent/grid/00326", "verdict": "ok"}
+{"id": "intent/form/00327", "verdict": "ok"}
+{"id": "intent/filter/00328", "verdict": "ok"}
+{"id": "intent/detail/00329", "verdict": "ok"}
+{"id": "intent/stats/00330", "verdict": "ok"}
+{"id": "intent/state/00331", "verdict": "ok"}
+{"id": "intent/form/00332", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00333", "verdict": "layout_copied"}
+{"id": "intent/detail/00334", "verdict": "ok"}
+{"id": "intent/dashboard/00335", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/00336", "verdict": "layout_copied"}
+{"id": "intent/stats/00337", "verdict": "ok"}
+{"detail": 0.384, "id": "intent/form/00338", "verdict": "near_dup_set"}
+{"id": "intent/filter/00339", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/00340", "verdict": "layout_copied"}
+{"id": "intent/filter/00341", "verdict": "ok"}
+{"id": "intent/state/00342", "verdict": "ok"}
+{"id": "intent/stats/00343", "verdict": "ok"}
+{"id": "intent/list/00344", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/00345", "verdict": "layout_copied"}
+{"id": "intent/grid/00346", "verdict": "ok"}
+{"id": "intent/filter/00347", "verdict": "ok"}
+{"id": "intent/state/00348", "verdict": "ok"}
+{"id": "intent/list/00349", "verdict": "ok"}
+{"id": "intent/filter/00350", "verdict": "ok"}
+{"id": "intent/detail/00351", "verdict": "ok"}
+{"id": "intent/text_only/00352", "verdict": "ok"}
+{"id": "intent/list/00353", "verdict": "ok"}
+{"id": "intent/grid/00354", "verdict": "ok"}
+{"id": "intent/list/00355", "verdict": "ok"}
+{"id": "intent/list/00356", "verdict": "ok"}
+{"id": "intent/grid/00357", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/dashboard/00358", "verdict": "register"}
+{"id": "intent/dashboard/00359", "verdict": "ok"}
+{"id": "intent/filter/00360", "verdict": "ok"}
+{"id": "intent/detail/00361", "verdict": "ok"}
+{"id": "intent/stats/00362", "verdict": "ok"}
+{"id": "intent/state/00363", "verdict": "ok"}
+{"id": "intent/form/00364", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/00365", "verdict": "layout_copied"}
+{"id": "intent/form/00366", "verdict": "ok"}
+{"id": "intent/list/00367", "verdict": "ok"}
+{"id": "intent/list/00368", "verdict": "ok"}
+{"id": "intent/detail/00369", "verdict": "ok"}
+{"id": "intent/text_only/00370", "verdict": "ok"}
+{"id": "intent/state/00371", "verdict": "ok"}
+{"id": "intent/grid/00372", "verdict": "ok"}
+{"id": "intent/list/00373", "verdict": "ok"}
+{"id": "intent/state/00374", "verdict": "ok"}
+{"id": "intent/list/00375", "verdict": "ok"}
+{"id": "intent/dashboard/00376", "verdict": "ok"}
+{"id": "intent/text_only/00377", "verdict": "ok"}
+{"id": "intent/detail/00378", "verdict": "ok"}
+{"id": "intent/dashboard/00379", "verdict": "ok"}
+{"id": "intent/dashboard/00380", "verdict": "ok"}
+{"id": "intent/dashboard/00381", "verdict": "ok"}
+{"id": "intent/detail/00382", "verdict": "ok"}
+{"id": "intent/dashboard/00383", "verdict": "ok"}
+{"id": "intent/dashboard/00384", "verdict": "ok"}
+{"id": "intent/text_only/00385", "verdict": "ok"}
+{"id": "intent/grid/00386", "verdict": "ok"}
+{"id": "intent/grid/00387", "verdict": "ok"}
+{"id": "intent/text_only/00388", "verdict": "ok"}
+{"id": "intent/detail/00389", "verdict": "ok"}
+{"id": "intent/text_only/00390", "verdict": "ok"}
+{"id": "intent/state/00391", "verdict": "ok"}
+{"id": "intent/dashboard/00392", "verdict": "ok"}
+{"id": "intent/grid/00393", "verdict": "ok"}
+{"id": "intent/text_only/00394", "verdict": "ok"}
+{"id": "intent/filter/00395", "verdict": "ok"}
+{"detail": "one per line with the button", "id": "intent/form/00396", "verdict": "layout_copied"}
+{"id": "intent/filter/00397", "verdict": "ok"}
+{"id": "intent/dashboard/00398", "verdict": "ok"}
+{"id": "intent/stats/00399", "verdict": "ok"}
+{"id": "intent/text_only/00400", "verdict": "ok"}
+{"id": "intent/detail/00401", "verdict": "ok"}
+{"id": "intent/dashboard/00402", "verdict": "ok"}
+{"id": "intent/form/00403", "verdict": "ok"}
+{"id": "intent/grid/00404", "verdict": "ok"}
+{"id": "intent/dashboard/00405", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/00406", "verdict": "layout_copied"}
+{"id": "intent/list/00407", "verdict": "ok"}
+{"id": "intent/grid/00408", "verdict": "ok"}
+{"id": "intent/form/00409", "verdict": "ok"}
+{"id": "intent/filter/00410", "verdict": "ok"}
+{"id": "intent/grid/00411", "verdict": "ok"}
+{"id": "intent/dashboard/00412", "verdict": "ok"}
+{"id": "intent/detail/00413", "verdict": "ok"}
+{"id": "intent/detail/00414", "verdict": "ok"}
+{"id": "intent/state/00415", "verdict": "ok"}
+{"id": "intent/form/00416", "verdict": "ok"}
+{"id": "intent/state/00417", "verdict": "ok"}
+{"id": "intent/grid/00418", "verdict": "ok"}
+{"id": "intent/state/00419", "verdict": "ok"}
+{"id": "intent/dashboard/00420", "verdict": "ok"}
+{"id": "intent/list/00421", "verdict": "ok"}
+{"id": "intent/dashboard/00422", "verdict": "ok"}
+{"detail": 0.351, "id": "intent/state/00423", "verdict": "near_dup_set"}
+{"id": "intent/state/00424", "verdict": "ok"}
+{"id": "intent/state/00425", "verdict": "ok"}
+{"id": "intent/stats/00426", "verdict": "ok"}
+{"detail": "line with the name first and", "id": "intent/list/00427", "verdict": "layout_copied"}
+{"detail": "figures side by side in one", "id": "intent/stats/00428", "verdict": "layout_copied"}
+{"id": "intent/list/00429", "verdict": "ok"}
+{"id": "intent/dashboard/00430", "verdict": "ok"}
+{"detail": "one per line with the button", "id": "intent/form/00431", "verdict": "layout_copied"}
+{"id": "intent/form/00432", "verdict": "ok"}
+{"id": "intent/text_only/00433", "verdict": "ok"}
+{"id": "intent/state/00434", "verdict": "ok"}
+{"id": "intent/dashboard/00435", "verdict": "ok"}
+{"id": "intent/text_only/00436", "verdict": "ok"}
+{"id": "intent/stats/00437", "verdict": "ok"}
+{"id": "intent/dashboard/00438", "verdict": "ok"}
+{"id": "intent/detail/00439", "verdict": "ok"}
+{"id": "intent/detail/00440", "verdict": "ok"}
+{"id": "intent/list/00441", "verdict": "ok"}
+{"id": "intent/filter/00442", "verdict": "ok"}
+{"id": "intent/dashboard/00443", "verdict": "ok"}
+{"id": "intent/filter/00444", "verdict": "ok"}
+{"id": "intent/list/00445", "verdict": "ok"}
+{"id": "intent/state/00446", "verdict": "ok"}
+{"id": "intent/filter/00447", "verdict": "ok"}
+{"id": "intent/filter/00448", "verdict": "ok"}
+{"id": "intent/stats/00449", "verdict": "ok"}
+{"id": "intent/stats/00450", "verdict": "ok"}
+{"id": "intent/grid/00451", "verdict": "ok"}
+{"id": "intent/stats/00452", "verdict": "ok"}
+{"id": "intent/form/00453", "verdict": "ok"}
+{"id": "intent/grid/00454", "verdict": "ok"}
+{"id": "intent/filter/00455", "verdict": "ok"}
+{"id": "intent/detail/00456", "verdict": "ok"}
+{"id": "intent/form/00457", "verdict": "ok"}
+{"id": "intent/dashboard/00458", "verdict": "ok"}
+{"id": "intent/state/00459", "verdict": "ok"}
+{"id": "intent/stats/00460", "verdict": "ok"}
+{"id": "intent/dashboard/00461", "verdict": "ok"}
+{"id": "intent/state/00462", "verdict": "ok"}
+{"id": "intent/detail/00463", "verdict": "ok"}
+{"id": "intent/list/00464", "verdict": "ok"}
+{"id": "intent/grid/00465", "verdict": "ok"}
+{"id": "intent/state/00466", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/00467", "verdict": "layout_copied"}
+{"id": "intent/grid/00468", "verdict": "ok"}
+{"id": "intent/stats/00469", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/00470", "verdict": "layout_copied"}
+{"id": "intent/stats/00471", "verdict": "ok"}
+{"id": "intent/form/00472", "verdict": "ok"}
+{"id": "intent/grid/00473", "verdict": "ok"}
+{"id": "intent/list/00474", "verdict": "ok"}
+{"id": "intent/grid/00475", "verdict": "ok"}
+{"id": "intent/text_only/00476", "verdict": "ok"}
+{"id": "intent/filter/00477", "verdict": "ok"}
+{"id": "intent/state/00478", "verdict": "ok"}
+{"id": "intent/state/00479", "verdict": "ok"}
+{"id": "intent/list/00480", "verdict": "ok"}
+{"id": "intent/detail/00481", "verdict": "ok"}
+{"detail": 0.374, "id": "intent/stats/00482", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/00483", "verdict": "ok"}
+{"id": "intent/list/00484", "verdict": "ok"}
+{"id": "intent/list/00485", "verdict": "ok"}
+{"detail": "as small cards in a grid", "id": "intent/stats/00486", "verdict": "layout_copied"}
+{"id": "intent/grid/00487", "verdict": "ok"}
+{"id": "intent/text_only/00488", "verdict": "ok"}
+{"id": "intent/text_only/00489", "verdict": "ok"}
+{"id": "intent/grid/00490", "verdict": "ok"}
+{"id": "intent/list/00491", "verdict": "ok"}
+{"id": "intent/filter/00492", "verdict": "ok"}
+{"id": "intent/dashboard/00493", "verdict": "ok"}
+{"detail": 0.364, "id": "intent/stats/00494", "verdict": "near_dup_set"}
+{"id": "intent/text_only/00495", "verdict": "ok"}
+{"id": "intent/filter/00496", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/00497", "verdict": "layout_copied"}
+{"id": "intent/grid/00498", "verdict": "ok"}
+{"id": "intent/stats/00499", "verdict": "ok"}
+{"id": "intent/list/00500", "verdict": "ok"}
+{"id": "intent/list/00501", "verdict": "ok"}
+{"id": "intent/form/00502", "verdict": "ok"}
+{"id": "intent/state/00503", "verdict": "ok"}
+{"id": "intent/form/00504", "verdict": "ok"}
+{"id": "intent/grid/00505", "verdict": "ok"}
+{"id": "intent/form/00506", "verdict": "ok"}
+{"id": "intent/dashboard/00507", "verdict": "ok"}
+{"id": "intent/detail/00508", "verdict": "ok"}
+{"id": "intent/form/00509", "verdict": "ok"}
+{"id": "intent/dashboard/00510", "verdict": "ok"}
+{"id": "intent/form/00511", "verdict": "ok"}
+{"id": "intent/dashboard/00512", "verdict": "ok"}
+{"id": "intent/state/00513", "verdict": "ok"}
+{"id": "intent/grid/00514", "verdict": "ok"}
+{"id": "intent/list/00515", "verdict": "ok"}
+{"id": "intent/state/00516", "verdict": "ok"}
+{"id": "intent/detail/00517", "verdict": "ok"}
+{"id": "intent/form/00518", "verdict": "ok"}
+{"id": "intent/text_only/00519", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00520", "verdict": "layout_copied"}
+{"id": "intent/stats/00521", "verdict": "ok"}
+{"id": "intent/text_only/00522", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/00523", "verdict": "layout_copied"}
+{"id": "intent/stats/00524", "verdict": "ok"}
+{"id": "intent/filter/00525", "verdict": "ok"}
+{"id": "intent/filter/00526", "verdict": "ok"}
+{"id": "intent/list/00527", "verdict": "ok"}
+{"id": "intent/form/00528", "verdict": "ok"}
+{"id": "intent/stats/00529", "verdict": "ok"}
+{"id": "intent/dashboard/00530", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00531", "verdict": "layout_copied"}
+{"id": "intent/dashboard/00532", "verdict": "ok"}
+{"detail": "line with the name first and", "id": "intent/list/00533", "verdict": "layout_copied"}
+{"id": "intent/stats/00534", "verdict": "ok"}
+{"id": "intent/dashboard/00535", "verdict": "ok"}
+{"id": "intent/detail/00536", "verdict": "ok"}
+{"id": "intent/dashboard/00537", "verdict": "ok"}
+{"id": "intent/grid/00538", "verdict": "ok"}
+{"detail": "as small cards in a grid", "id": "intent/stats/00539", "verdict": "layout_copied"}
+{"id": "intent/list/00540", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/00541", "verdict": "layout_copied"}
+{"id": "intent/form/00542", "verdict": "ok"}
+{"id": "intent/detail/00543", "verdict": "ok"}
+{"id": "intent/detail/00544", "verdict": "ok"}
+{"id": "intent/state/00545", "verdict": "ok"}
+{"id": "intent/state/00546", "verdict": "ok"}
+{"id": "intent/grid/00547", "verdict": "ok"}
+{"id": "intent/list/00548", "verdict": "ok"}
+{"id": "intent/list/00549", "verdict": "ok"}
+{"id": "intent/form/00550", "verdict": "ok"}
+{"id": "intent/state/00551", "verdict": "ok"}
+{"id": "intent/filter/00552", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/00553", "verdict": "layout_copied"}
+{"detail": "stacked one per line with the", "id": "intent/form/00554", "verdict": "layout_copied"}
+{"id": "intent/list/00555", "verdict": "ok"}
+{"id": "intent/form/00556", "verdict": "ok"}
+{"id": "intent/detail/00557", "verdict": "ok"}
+{"id": "intent/grid/00558", "verdict": "ok"}
+{"id": "intent/form/00559", "verdict": "ok"}
+{"id": "intent/detail/00560", "verdict": "ok"}
+{"id": "intent/stats/00561", "verdict": "ok"}
+{"id": "intent/stats/00562", "verdict": "ok"}
+{"id": "intent/text_only/00563", "verdict": "ok"}
+{"id": "intent/detail/00564", "verdict": "ok"}
+{"id": "intent/detail/00565", "verdict": "ok"}
+{"id": "intent/state/00566", "verdict": "ok"}
+{"id": "intent/detail/00567", "verdict": "ok"}
+{"id": "intent/dashboard/00568", "verdict": "ok"}
+{"id": "intent/grid/00569", "verdict": "ok"}
+{"id": "intent/filter/00570", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/00571", "verdict": "layout_copied"}
+{"id": "intent/list/00572", "verdict": "ok"}
+{"id": "intent/filter/00573", "verdict": "ok"}
+{"detail": "the name on its own line", "id": "intent/list/00574", "verdict": "layout_copied"}
+{"id": "intent/form/00575", "verdict": "ok"}
+{"id": "intent/stats/00576", "verdict": "ok"}
+{"id": "intent/grid/00577", "verdict": "ok"}
+{"id": "intent/list/00578", "verdict": "ok"}
+{"id": "intent/state/00579", "verdict": "ok"}
+{"id": "intent/grid/00580", "verdict": "ok"}
+{"id": "intent/dashboard/00581", "verdict": "ok"}
+{"id": "intent/detail/00582", "verdict": "ok"}
+{"id": "intent/filter/00583", "verdict": "ok"}
+{"id": "intent/grid/00584", "verdict": "ok"}
+{"id": "intent/filter/00585", "verdict": "ok"}
+{"id": "intent/dashboard/00586", "verdict": "ok"}
+{"id": "intent/list/00587", "verdict": "ok"}
+{"id": "intent/form/00588", "verdict": "ok"}
+{"id": "intent/stats/00589", "verdict": "ok"}
+{"id": "intent/grid/00590", "verdict": "ok"}
+{"id": "intent/detail/00591", "verdict": "ok"}
+{"id": "intent/stats/00592", "verdict": "ok"}
+{"id": "intent/dashboard/00593", "verdict": "ok"}
+{"id": "intent/dashboard/00594", "verdict": "ok"}
+{"id": "intent/list/00595", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/00596", "verdict": "layout_copied"}
+{"detail": "two short fields side by side", "id": "intent/form/00597", "verdict": "layout_copied"}
+{"id": "intent/dashboard/00598", "verdict": "ok"}
+{"detail": "with the name column first and", "id": "intent/grid/00599", "verdict": "layout_copied"}
+{"id": "intent/state/00600", "verdict": "ok"}
+{"id": "intent/list/00601", "verdict": "ok"}
+{"id": "intent/grid/00602", "verdict": "ok"}
+{"id": "intent/grid/00603", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00604", "verdict": "layout_copied"}
+{"id": "intent/state/00605", "verdict": "ok"}
+{"id": "intent/dashboard/00606", "verdict": "ok"}
+{"detail": 0.402, "id": "intent/dashboard/00607", "verdict": "near_dup_set"}
+{"id": "intent/detail/00608", "verdict": "ok"}
+{"id": "intent/detail/00609", "verdict": "ok"}
+{"id": "intent/form/00610", "verdict": "ok"}
+{"id": "intent/grid/00611", "verdict": "ok"}
+{"id": "intent/state/00612", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/00613", "verdict": "layout_copied"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00614", "verdict": "layout_copied"}
+{"id": "intent/state/00615", "verdict": "ok"}
+{"id": "intent/stats/00616", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/00617", "verdict": "layout_copied"}
+{"id": "intent/list/00618", "verdict": "ok"}
+{"id": "intent/state/00619", "verdict": "ok"}
+{"detail": "the other details as label and", "id": "intent/detail/00620", "verdict": "layout_copied"}
+{"id": "intent/detail/00621", "verdict": "ok"}
+{"id": "intent/dashboard/00622", "verdict": "ok"}
+{"id": "intent/grid/00623", "verdict": "ok"}
+{"id": "intent/text_only/00624", "verdict": "ok"}
+{"id": "intent/list/00625", "verdict": "ok"}
+{"detail": "filter and the search box side", "id": "intent/filter/00626", "verdict": "layout_copied"}
+{"detail": "on its own line and the", "id": "intent/list/00627", "verdict": "layout_copied"}
+{"detail": 0.377, "id": "intent/form/00628", "verdict": "near_dup_set"}
+{"id": "intent/form/00629", "verdict": "ok"}
+{"id": "intent/detail/00630", "verdict": "ok"}
+{"id": "intent/stats/00631", "verdict": "ok"}
+{"id": "intent/form/00632", "verdict": "ok"}
+{"id": "intent/detail/00633", "verdict": "ok"}
+{"id": "intent/filter/00634", "verdict": "ok"}
+{"id": "intent/state/00635", "verdict": "ok"}
+{"id": "intent/detail/00636", "verdict": "ok"}
+{"id": "intent/detail/00637", "verdict": "ok"}
+{"id": "intent/dashboard/00638", "verdict": "ok"}
+{"id": "intent/form/00639", "verdict": "ok"}
+{"id": "intent/detail/00640", "verdict": "ok"}
+{"id": "intent/grid/00641", "verdict": "ok"}
+{"id": "intent/filter/00642", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/00643", "verdict": "layout_copied"}
+{"detail": "one per record not a table", "id": "intent/list/00644", "verdict": "layout_copied"}
+{"id": "intent/filter/00645", "verdict": "ok"}
+{"id": "intent/dashboard/00646", "verdict": "ok"}
+{"id": "intent/list/00647", "verdict": "ok"}
+{"id": "intent/stats/00648", "verdict": "ok"}
+{"id": "intent/stats/00649", "verdict": "ok"}
+{"id": "intent/grid/00650", "verdict": "ok"}
+{"detail": "details as label and value pairs", "id": "intent/detail/00651", "verdict": "layout_copied"}
+{"id": "intent/grid/00652", "verdict": "ok"}
+{"id": "intent/grid/00653", "verdict": "ok"}
+{"id": "intent/detail/00654", "verdict": "ok"}
+{"id": "intent/grid/00655", "verdict": "ok"}
+{"id": "intent/dashboard/00656", "verdict": "ok"}
+{"id": "intent/filter/00657", "verdict": "ok"}
+{"id": "intent/list/00658", "verdict": "ok"}
+{"id": "intent/text_only/00659", "verdict": "ok"}
+{"id": "intent/stats/00660", "verdict": "ok"}
+{"id": "intent/detail/00661", "verdict": "ok"}
+{"id": "intent/dashboard/00662", "verdict": "ok"}
+{"id": "intent/grid/00663", "verdict": "ok"}
+{"id": "intent/filter/00664", "verdict": "ok"}
+{"id": "intent/grid/00665", "verdict": "ok"}
+{"id": "intent/text_only/00666", "verdict": "ok"}
+{"id": "intent/dashboard/00667", "verdict": "ok"}
+{"id": "intent/list/00668", "verdict": "ok"}
+{"id": "intent/grid/00669", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/00670", "verdict": "layout_copied"}
+{"id": "intent/state/00671", "verdict": "ok"}
+{"id": "intent/grid/00672", "verdict": "ok"}
+{"id": "intent/filter/00673", "verdict": "ok"}
+{"id": "intent/state/00674", "verdict": "ok"}
+{"id": "intent/stats/00675", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/00676", "verdict": "layout_copied"}
+{"id": "intent/stats/00677", "verdict": "ok"}
+{"id": "intent/detail/00678", "verdict": "ok"}
+{"id": "intent/state/00679", "verdict": "ok"}
+{"id": "intent/grid/00680", "verdict": "ok"}
+{"id": "intent/detail/00681", "verdict": "ok"}
+{"id": "intent/grid/00682", "verdict": "ok"}
+{"id": "intent/dashboard/00683", "verdict": "ok"}
+{"id": "intent/state/00684", "verdict": "ok"}
+{"id": "intent/stats/00685", "verdict": "ok"}
+{"id": "intent/state/00686", "verdict": "ok"}
+{"id": "intent/list/00687", "verdict": "ok"}
+{"id": "intent/state/00688", "verdict": "ok"}
+{"detail": 0.365, "id": "intent/form/00689", "verdict": "near_dup_set"}
+{"id": "intent/filter/00690", "verdict": "ok"}
+{"id": "intent/stats/00691", "verdict": "ok"}
+{"id": "intent/state/00692", "verdict": "ok"}
+{"id": "intent/detail/00693", "verdict": "ok"}
+{"id": "intent/detail/00694", "verdict": "ok"}
+{"id": "intent/form/00695", "verdict": "ok"}
+{"id": "intent/detail/00696", "verdict": "ok"}
+{"id": "intent/grid/00697", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/00698", "verdict": "layout_copied"}
+{"id": "intent/grid/00699", "verdict": "ok"}
+{"id": "intent/text_only/00700", "verdict": "ok"}
+{"id": "intent/text_only/00701", "verdict": "ok"}
+{"id": "intent/stats/00702", "verdict": "ok"}
+{"id": "intent/form/00703", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/00704", "verdict": "layout_copied"}
+{"id": "intent/filter/00705", "verdict": "ok"}
+{"id": "intent/filter/00706", "verdict": "ok"}
+{"id": "intent/text_only/00707", "verdict": "ok"}
+{"detail": "side by side at the top", "id": "intent/dashboard/00708", "verdict": "layout_copied"}
+{"id": "intent/list/00709", "verdict": "ok"}
+{"id": "intent/grid/00710", "verdict": "ok"}
+{"id": "intent/grid/00711", "verdict": "ok"}
+{"id": "intent/text_only/00712", "verdict": "ok"}
+{"id": "intent/grid/00713", "verdict": "ok"}
+{"id": "intent/grid/00714", "verdict": "ok"}
+{"id": "intent/text_only/00715", "verdict": "ok"}
+{"id": "intent/list/00716", "verdict": "ok"}
+{"id": "intent/stats/00717", "verdict": "ok"}
+{"id": "intent/form/00718", "verdict": "ok"}
+{"id": "intent/dashboard/00719", "verdict": "ok"}
+{"id": "intent/list/00720", "verdict": "ok"}
+{"id": "intent/detail/00721", "verdict": "ok"}
+{"detail": 0.394, "id": "intent/form/00722", "verdict": "near_dup_set"}
+{"id": "intent/grid/00723", "verdict": "ok"}
+{"id": "intent/state/00724", "verdict": "ok"}
+{"detail": 0.418, "id": "intent/filter/00725", "verdict": "near_dup_set"}
+{"id": "intent/form/00726", "verdict": "ok"}
+{"id": "intent/state/00727", "verdict": "ok"}
+{"detail": 0.412, "id": "intent/form/00728", "verdict": "near_dup_set"}
+{"id": "intent/detail/00729", "verdict": "ok"}
+{"id": "intent/dashboard/00730", "verdict": "ok"}
+{"id": "intent/grid/00731", "verdict": "ok"}
+{"id": "intent/state/00732", "verdict": "ok"}
+{"id": "intent/grid/00733", "verdict": "ok"}
+{"id": "intent/grid/00734", "verdict": "ok"}
+{"id": "intent/detail/00735", "verdict": "ok"}
+{"id": "intent/grid/00736", "verdict": "ok"}
+{"detail": "stacked one per line with the", "id": "intent/form/00737", "verdict": "layout_copied"}
+{"id": "intent/stats/00738", "verdict": "ok"}
+{"id": "intent/detail/00739", "verdict": "ok"}
+{"id": "intent/detail/00740", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00741", "verdict": "layout_copied"}
+{"id": "intent/grid/00742", "verdict": "ok"}
+{"id": "intent/list/00743", "verdict": "ok"}
+{"id": "intent/text_only/00744", "verdict": "ok"}
+{"id": "intent/list/00745", "verdict": "ok"}
+{"id": "intent/text_only/00746", "verdict": "ok"}
+{"id": "intent/grid/00747", "verdict": "ok"}
+{"id": "intent/list/00748", "verdict": "ok"}
+{"id": "intent/text_only/00749", "verdict": "ok"}
+{"id": "intent/stats/00750", "verdict": "ok"}
+{"id": "intent/grid/00751", "verdict": "ok"}
+{"id": "intent/stats/00752", "verdict": "ok"}
+{"id": "intent/detail/00753", "verdict": "ok"}
+{"detail": ["Button"], "id": "intent/form/00754", "verdict": "register"}
+{"id": "intent/dashboard/00755", "verdict": "ok"}
+{"id": "intent/text_only/00756", "verdict": "ok"}
+{"id": "intent/list/00757", "verdict": "ok"}
+{"id": "intent/list/00758", "verdict": "ok"}
+{"id": "intent/dashboard/00759", "verdict": "ok"}
+{"id": "intent/form/00760", "verdict": "ok"}
+{"id": "intent/grid/00761", "verdict": "ok"}
+{"id": "intent/list/00762", "verdict": "ok"}
+{"detail": "with the name column first and", "id": "intent/grid/00763", "verdict": "layout_copied"}
+{"detail": 0.514, "id": "intent/form/00764", "verdict": "near_dup_set"}
+{"id": "intent/filter/00765", "verdict": "ok"}
+{"id": "intent/list/00766", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/00767", "verdict": "layout_copied"}
+{"detail": ["stretch"], "id": "intent/grid/00768", "verdict": "register"}
+{"id": "intent/grid/00769", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/00770", "verdict": "layout_copied"}
+{"id": "intent/filter/00771", "verdict": "ok"}
+{"id": "intent/grid/00772", "verdict": "ok"}
+{"id": "intent/state/00773", "verdict": "ok"}
+{"detail": "a simple list one record per", "id": "intent/state/00774", "verdict": "layout_copied"}
+{"id": "intent/stats/00775", "verdict": "ok"}
+{"id": "intent/list/00776", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/00777", "verdict": "layout_copied"}
+{"id": "intent/grid/00778", "verdict": "ok"}
+{"id": "intent/stats/00779", "verdict": "ok"}
+{"id": "intent/detail/00780", "verdict": "ok"}
+{"detail": ["Button", "Text"], "id": "intent/form/00781", "verdict": "register"}
+{"id": "intent/dashboard/00782", "verdict": "ok"}
+{"id": "intent/dashboard/00783", "verdict": "ok"}
+{"id": "intent/stats/00784", "verdict": "ok"}
+{"id": "intent/state/00785", "verdict": "ok"}
+{"id": "intent/detail/00786", "verdict": "ok"}
+{"id": "intent/text_only/00787", "verdict": "ok"}
+{"id": "intent/dashboard/00788", "verdict": "ok"}
+{"id": "intent/detail/00789", "verdict": "ok"}
+{"id": "intent/detail/00790", "verdict": "ok"}
+{"id": "intent/grid/00791", "verdict": "ok"}
+{"id": "intent/state/00792", "verdict": "ok"}
+{"id": "intent/grid/00793", "verdict": "ok"}
+{"id": "intent/dashboard/00794", "verdict": "ok"}
+{"id": "intent/dashboard/00795", "verdict": "ok"}
+{"id": "intent/stats/00796", "verdict": "ok"}
+{"id": "intent/stats/00797", "verdict": "ok"}
+{"id": "intent/list/00798", "verdict": "ok"}
+{"id": "intent/detail/00799", "verdict": "ok"}
+{"id": "intent/filter/00800", "verdict": "ok"}
+{"id": "intent/form/00801", "verdict": "ok"}
+{"id": "intent/grid/00802", "verdict": "ok"}
+{"id": "intent/state/00803", "verdict": "ok"}
+{"id": "intent/grid/00804", "verdict": "ok"}
+{"id": "intent/state/00805", "verdict": "ok"}
+{"id": "intent/list/00806", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/00807", "verdict": "layout_copied"}
+{"id": "intent/form/00808", "verdict": "ok"}
+{"detail": 0.364, "id": "intent/stats/00809", "verdict": "near_dup_set"}
+{"detail": "as small cards in a row", "id": "intent/dashboard/00810", "verdict": "layout_copied"}
+{"id": "intent/list/00811", "verdict": "ok"}
+{"id": "intent/form/00812", "verdict": "ok"}
+{"id": "intent/dashboard/00813", "verdict": "ok"}
+{"id": "intent/form/00814", "verdict": "ok"}
+{"id": "intent/form/00815", "verdict": "ok"}
+{"id": "intent/filter/00816", "verdict": "ok"}
+{"id": "intent/detail/00817", "verdict": "ok"}
+{"id": "intent/form/00818", "verdict": "ok"}
+{"id": "intent/form/00819", "verdict": "ok"}
+{"id": "intent/list/00820", "verdict": "ok"}
+{"id": "intent/state/00821", "verdict": "ok"}
+{"id": "intent/form/00822", "verdict": "ok"}
+{"id": "intent/list/00823", "verdict": "ok"}
+{"id": "intent/form/00824", "verdict": "ok"}
+{"id": "intent/text_only/00825", "verdict": "ok"}
+{"detail": "one per line with the button", "id": "intent/form/00826", "verdict": "layout_copied"}
+{"id": "intent/grid/00827", "verdict": "ok"}
+{"id": "intent/dashboard/00828", "verdict": "ok"}
+{"id": "intent/grid/00829", "verdict": "ok"}
+{"id": "intent/stats/00830", "verdict": "ok"}
+{"id": "intent/detail/00831", "verdict": "ok"}
+{"id": "intent/filter/00832", "verdict": "ok"}
+{"id": "intent/form/00833", "verdict": "ok"}
+{"id": "intent/form/00834", "verdict": "ok"}
+{"id": "intent/detail/00835", "verdict": "ok"}
+{"detail": 0.365, "id": "intent/stats/00836", "verdict": "near_dup_set"}
+{"id": "intent/state/00837", "verdict": "ok"}
+{"detail": "with its label above the number", "id": "intent/stats/00838", "verdict": "layout_copied"}
+{"id": "intent/state/00839", "verdict": "ok"}
+{"id": "intent/form/00840", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/00841", "verdict": "layout_copied"}
+{"id": "intent/text_only/00842", "verdict": "ok"}
+{"id": "intent/text_only/00843", "verdict": "ok"}
+{"id": "intent/grid/00844", "verdict": "ok"}
+{"id": "intent/form/00845", "verdict": "ok"}
+{"id": "intent/dashboard/00846", "verdict": "ok"}
+{"id": "intent/filter/00847", "verdict": "ok"}
+{"id": "intent/dashboard/00848", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/00849", "verdict": "layout_copied"}
+{"id": "intent/form/00850", "verdict": "ok"}
+{"id": "intent/form/00851", "verdict": "ok"}
+{"id": "intent/state/00852", "verdict": "ok"}
+{"id": "intent/dashboard/00853", "verdict": "ok"}
+{"id": "intent/form/00854", "verdict": "ok"}
+{"id": "intent/state/00855", "verdict": "ok"}
+{"id": "intent/stats/00856", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/detail/00857", "verdict": "register"}
+{"id": "intent/state/00858", "verdict": "ok"}
+{"id": "intent/grid/00859", "verdict": "ok"}
+{"id": "intent/form/00860", "verdict": "ok"}
+{"id": "intent/list/00861", "verdict": "ok"}
+{"id": "intent/detail/00862", "verdict": "ok"}
+{"id": "intent/grid/00863", "verdict": "ok"}
+{"id": "intent/text_only/00864", "verdict": "ok"}
+{"id": "intent/dashboard/00865", "verdict": "ok"}
+{"id": "intent/form/00866", "verdict": "ok"}
+{"id": "intent/grid/00867", "verdict": "ok"}
+{"detail": "a simple list one record per", "id": "intent/list/00868", "verdict": "layout_copied"}
+{"id": "intent/text_only/00869", "verdict": "ok"}
+{"id": "intent/dashboard/00870", "verdict": "ok"}
+{"id": "intent/list/00871", "verdict": "ok"}
+{"id": "intent/detail/00872", "verdict": "ok"}
+{"id": "intent/filter/00873", "verdict": "ok"}
+{"id": "intent/detail/00874", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/00875", "verdict": "layout_copied"}
+{"detail": 0.404, "id": "intent/grid/00876", "verdict": "near_dup_set"}
+{"id": "intent/text_only/00877", "verdict": "ok"}
+{"id": "intent/grid/00878", "verdict": "ok"}
+{"detail": 0.395, "id": "intent/grid/00879", "verdict": "near_dup_set"}
+{"id": "intent/text_only/00880", "verdict": "ok"}
+{"id": "intent/list/00881", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/00882", "verdict": "layout_copied"}
+{"id": "intent/state/00883", "verdict": "ok"}
+{"id": "intent/grid/00884", "verdict": "ok"}
+{"id": "intent/text_only/00885", "verdict": "ok"}
+{"id": "intent/grid/00886", "verdict": "ok"}
+{"id": "intent/detail/00887", "verdict": "ok"}
+{"id": "intent/stats/00888", "verdict": "ok"}
+{"id": "intent/dashboard/00889", "verdict": "ok"}
+{"id": "intent/stats/00890", "verdict": "ok"}
+{"id": "intent/filter/00891", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/00892", "verdict": "layout_copied"}
+{"detail": 0.458, "id": "intent/form/00893", "verdict": "near_dup_set"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00894", "verdict": "layout_copied"}
+{"id": "intent/filter/00895", "verdict": "ok"}
+{"id": "intent/stats/00896", "verdict": "ok"}
+{"id": "intent/list/00897", "verdict": "ok"}
+{"id": "intent/form/00898", "verdict": "ok"}
+{"id": "intent/grid/00899", "verdict": "ok"}
+{"id": "intent/state/00900", "verdict": "ok"}
+{"id": "intent/dashboard/00901", "verdict": "ok"}
+{"id": "intent/stats/00902", "verdict": "ok"}
+{"id": "intent/form/00903", "verdict": "ok"}
+{"id": "intent/dashboard/00904", "verdict": "ok"}
+{"id": "intent/stats/00905", "verdict": "ok"}
+{"id": "intent/stats/00906", "verdict": "ok"}
+{"id": "intent/filter/00907", "verdict": "ok"}
+{"id": "intent/stats/00908", "verdict": "ok"}
+{"id": "intent/stats/00909", "verdict": "ok"}
+{"id": "intent/text_only/00910", "verdict": "ok"}
+{"id": "intent/dashboard/00911", "verdict": "ok"}
+{"id": "intent/grid/00912", "verdict": "ok"}
+{"id": "intent/text_only/00913", "verdict": "ok"}
+{"id": "intent/stats/00914", "verdict": "ok"}
+{"id": "intent/state/00915", "verdict": "ok"}
+{"id": "intent/state/00916", "verdict": "ok"}
+{"detail": "the name on its own line", "id": "intent/list/00917", "verdict": "layout_copied"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00918", "verdict": "layout_copied"}
+{"id": "intent/dashboard/00919", "verdict": "ok"}
+{"id": "intent/grid/00920", "verdict": "ok"}
+{"id": "intent/state/00921", "verdict": "ok"}
+{"detail": 0.377, "id": "intent/form/00922", "verdict": "near_dup_set"}
+{"id": "intent/grid/00923", "verdict": "ok"}
+{"id": "intent/state/00924", "verdict": "ok"}
+{"id": "intent/list/00925", "verdict": "ok"}
+{"id": "intent/state/00926", "verdict": "ok"}
+{"id": "intent/filter/00927", "verdict": "ok"}
+{"id": "intent/list/00928", "verdict": "ok"}
+{"id": "intent/grid/00929", "verdict": "ok"}
+{"id": "intent/dashboard/00930", "verdict": "ok"}
+{"id": "intent/text_only/00931", "verdict": "ok"}
+{"detail": ["fit"], "id": "intent/form/00932", "verdict": "register"}
+{"id": "intent/state/00933", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/00934", "verdict": "layout_copied"}
+{"id": "intent/detail/00935", "verdict": "ok"}
+{"id": "intent/stats/00936", "verdict": "ok"}
+{"id": "intent/stats/00937", "verdict": "ok"}
+{"id": "intent/form/00938", "verdict": "ok"}
+{"id": "intent/form/00939", "verdict": "ok"}
+{"id": "intent/detail/00940", "verdict": "ok"}
+{"id": "intent/dashboard/00941", "verdict": "ok"}
+{"id": "intent/stats/00942", "verdict": "ok"}
+{"id": "intent/detail/00943", "verdict": "ok"}
+{"id": "intent/filter/00944", "verdict": "ok"}
+{"id": "intent/stats/00945", "verdict": "ok"}
+{"id": "intent/grid/00946", "verdict": "ok"}
+{"id": "intent/stats/00947", "verdict": "ok"}
+{"id": "intent/dashboard/00948", "verdict": "ok"}
+{"id": "intent/grid/00949", "verdict": "ok"}
+{"id": "intent/state/00950", "verdict": "ok"}
+{"id": "intent/detail/00951", "verdict": "ok"}
+{"id": "intent/detail/00952", "verdict": "ok"}
+{"id": "intent/text_only/00953", "verdict": "ok"}
+{"id": "intent/state/00954", "verdict": "ok"}
+{"id": "intent/list/00955", "verdict": "ok"}
+{"id": "intent/form/00956", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/00957", "verdict": "layout_copied"}
+{"id": "intent/state/00958", "verdict": "ok"}
+{"id": "intent/stats/00959", "verdict": "ok"}
+{"id": "intent/state/00960", "verdict": "ok"}
+{"id": "intent/text_only/00961", "verdict": "ok"}
+{"detail": "line with the name first and", "id": "intent/list/00962", "verdict": "layout_copied"}
+{"id": "intent/dashboard/00963", "verdict": "ok"}
+{"id": "intent/state/00964", "verdict": "ok"}
+{"id": "intent/filter/00965", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/00966", "verdict": "layout_copied"}
+{"detail": "two short fields side by side", "id": "intent/form/00967", "verdict": "layout_copied"}
+{"id": "intent/list/00968", "verdict": "ok"}
+{"id": "intent/filter/00969", "verdict": "ok"}
+{"id": "intent/state/00970", "verdict": "ok"}
+{"id": "intent/dashboard/00971", "verdict": "ok"}
+{"id": "intent/state/00972", "verdict": "ok"}
+{"id": "intent/dashboard/00973", "verdict": "ok"}
+{"id": "intent/dashboard/00974", "verdict": "ok"}
+{"id": "intent/state/00975", "verdict": "ok"}
+{"id": "intent/state/00976", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/00977", "verdict": "layout_copied"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00978", "verdict": "layout_copied"}
+{"detail": 0.359, "id": "intent/form/00979", "verdict": "near_dup_set"}
+{"id": "intent/filter/00980", "verdict": "ok"}
+{"id": "intent/text_only/00981", "verdict": "ok"}
+{"id": "intent/stats/00982", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/00983", "verdict": "layout_copied"}
+{"id": "intent/dashboard/00984", "verdict": "ok"}
+{"id": "intent/text_only/00985", "verdict": "ok"}
+{"detail": 0.413, "id": "intent/filter/00986", "verdict": "near_dup_set"}
+{"detail": "as small cards in a grid", "id": "intent/stats/00987", "verdict": "layout_copied"}
+{"id": "intent/detail/00988", "verdict": "ok"}
+{"id": "intent/dashboard/00989", "verdict": "ok"}
+{"id": "intent/state/00990", "verdict": "ok"}
+{"id": "intent/state/00991", "verdict": "ok"}
+{"id": "intent/filter/00992", "verdict": "ok"}
+{"detail": 0.388, "id": "intent/form/00993", "verdict": "near_dup_set"}
+{"detail": 0.397, "id": "intent/form/00994", "verdict": "near_dup_set"}
+{"id": "intent/filter/00995", "verdict": "ok"}
+{"id": "intent/form/00996", "verdict": "ok"}
+{"id": "intent/stats/00997", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00998", "verdict": "layout_copied"}
+{"detail": "the fields stacked one per line", "id": "intent/form/00999", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01000", "verdict": "ok"}
+{"id": "intent/form/01001", "verdict": "ok"}
+{"id": "intent/stats/01002", "verdict": "ok"}
+{"id": "intent/list/01003", "verdict": "ok"}
+{"id": "intent/grid/01004", "verdict": "ok"}
+{"id": "intent/grid/01005", "verdict": "ok"}
+{"id": "intent/list/01006", "verdict": "ok"}
+{"id": "intent/dashboard/01007", "verdict": "ok"}
+{"id": "intent/list/01008", "verdict": "ok"}
+{"id": "intent/state/01009", "verdict": "ok"}
+{"id": "intent/filter/01010", "verdict": "ok"}
+{"id": "intent/filter/01011", "verdict": "ok"}
+{"id": "intent/stats/01012", "verdict": "ok"}
+{"id": "intent/list/01013", "verdict": "ok"}
+{"id": "intent/list/01014", "verdict": "ok"}
+{"id": "intent/filter/01015", "verdict": "ok"}
+{"id": "intent/stats/01016", "verdict": "ok"}
+{"id": "intent/stats/01017", "verdict": "ok"}
+{"id": "intent/state/01018", "verdict": "ok"}
+{"id": "intent/list/01019", "verdict": "ok"}
+{"id": "intent/list/01020", "verdict": "ok"}
+{"id": "intent/dashboard/01021", "verdict": "ok"}
+{"id": "intent/text_only/01022", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/01023", "verdict": "layout_copied"}
+{"id": "intent/list/01024", "verdict": "ok"}
+{"id": "intent/filter/01025", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01026", "verdict": "layout_copied"}
+{"id": "intent/stats/01027", "verdict": "ok"}
+{"detail": "the other details as label and", "id": "intent/detail/01028", "verdict": "layout_copied"}
+{"id": "intent/stats/01029", "verdict": "ok"}
+{"id": "intent/stats/01030", "verdict": "ok"}
+{"detail": "side by side above the table", "id": "intent/filter/01031", "verdict": "layout_copied"}
+{"id": "intent/filter/01032", "verdict": "ok"}
+{"id": "intent/form/01033", "verdict": "ok"}
+{"id": "intent/detail/01034", "verdict": "ok"}
+{"id": "intent/form/01035", "verdict": "ok"}
+{"detail": "side by side at the top", "id": "intent/dashboard/01036", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01037", "verdict": "ok"}
+{"id": "intent/dashboard/01038", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01039", "verdict": "layout_copied"}
+{"id": "intent/filter/01040", "verdict": "ok"}
+{"id": "intent/state/01041", "verdict": "ok"}
+{"id": "intent/list/01042", "verdict": "ok"}
+{"id": "intent/list/01043", "verdict": "ok"}
+{"id": "intent/filter/01044", "verdict": "ok"}
+{"id": "intent/dashboard/01045", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/01046", "verdict": "layout_copied"}
+{"detail": "a list of small cards one", "id": "intent/list/01047", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01048", "verdict": "ok"}
+{"id": "intent/detail/01049", "verdict": "ok"}
+{"id": "intent/stats/01050", "verdict": "ok"}
+{"id": "intent/grid/01051", "verdict": "ok"}
+{"id": "intent/list/01052", "verdict": "ok"}
+{"id": "intent/filter/01053", "verdict": "ok"}
+{"id": "intent/detail/01054", "verdict": "ok"}
+{"id": "intent/text_only/01055", "verdict": "ok"}
+{"id": "intent/grid/01056", "verdict": "ok"}
+{"id": "intent/state/01057", "verdict": "ok"}
+{"id": "intent/detail/01058", "verdict": "ok"}
+{"detail": 0.379, "id": "intent/grid/01059", "verdict": "near_dup_set"}
+{"id": "intent/grid/01060", "verdict": "ok"}
+{"id": "intent/detail/01061", "verdict": "ok"}
+{"id": "intent/grid/01062", "verdict": "ok"}
+{"id": "intent/filter/01063", "verdict": "ok"}
+{"id": "intent/filter/01064", "verdict": "ok"}
+{"id": "intent/grid/01065", "verdict": "ok"}
+{"id": "intent/grid/01066", "verdict": "ok"}
+{"id": "intent/state/01067", "verdict": "ok"}
+{"id": "intent/stats/01068", "verdict": "ok"}
+{"id": "intent/form/01069", "verdict": "ok"}
+{"detail": 0.379, "id": "intent/form/01070", "verdict": "near_dup_set"}
+{"id": "intent/detail/01071", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/01072", "verdict": "layout_copied"}
+{"id": "intent/form/01073", "verdict": "ok"}
+{"id": "intent/form/01074", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01075", "verdict": "layout_copied"}
+{"id": "intent/filter/01076", "verdict": "ok"}
+{"id": "intent/list/01077", "verdict": "ok"}
+{"detail": "the name on its own line", "id": "intent/list/01078", "verdict": "layout_copied"}
+{"detail": "side by side in one row", "id": "intent/stats/01079", "verdict": "layout_copied"}
+{"id": "intent/detail/01080", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/01081", "verdict": "layout_copied"}
+{"id": "intent/stats/01082", "verdict": "ok"}
+{"id": "intent/list/01083", "verdict": "ok"}
+{"id": "intent/text_only/01084", "verdict": "ok"}
+{"id": "intent/dashboard/01085", "verdict": "ok"}
+{"id": "intent/dashboard/01086", "verdict": "ok"}
+{"id": "intent/stats/01087", "verdict": "ok"}
+{"id": "intent/state/01088", "verdict": "ok"}
+{"id": "intent/filter/01089", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/01090", "verdict": "layout_copied"}
+{"id": "intent/form/01091", "verdict": "ok"}
+{"id": "intent/grid/01092", "verdict": "ok"}
+{"id": "intent/stats/01093", "verdict": "ok"}
+{"id": "intent/grid/01094", "verdict": "ok"}
+{"id": "intent/stats/01095", "verdict": "ok"}
+{"id": "intent/detail/01096", "verdict": "ok"}
+{"id": "intent/list/01097", "verdict": "ok"}
+{"id": "intent/list/01098", "verdict": "ok"}
+{"id": "intent/state/01099", "verdict": "ok"}
+{"detail": 0.387, "id": "intent/form/01100", "verdict": "near_dup_set"}
+{"id": "intent/state/01101", "verdict": "ok"}
+{"id": "intent/grid/01102", "verdict": "ok"}
+{"detail": "per line with the button at", "id": "intent/form/01103", "verdict": "layout_copied"}
+{"id": "intent/detail/01104", "verdict": "ok"}
+{"id": "intent/text_only/01105", "verdict": "ok"}
+{"id": "intent/list/01106", "verdict": "ok"}
+{"id": "intent/stats/01107", "verdict": "ok"}
+{"id": "intent/filter/01108", "verdict": "ok"}
+{"id": "intent/dashboard/01109", "verdict": "ok"}
+{"id": "intent/grid/01110", "verdict": "ok"}
+{"id": "intent/stats/01111", "verdict": "ok"}
+{"id": "intent/dashboard/01112", "verdict": "ok"}
+{"id": "intent/list/01113", "verdict": "ok"}
+{"id": "intent/state/01114", "verdict": "ok"}
+{"id": "intent/list/01115", "verdict": "ok"}
+{"id": "intent/stats/01116", "verdict": "ok"}
+{"id": "intent/list/01117", "verdict": "ok"}
+{"id": "intent/grid/01118", "verdict": "ok"}
+{"id": "intent/detail/01119", "verdict": "ok"}
+{"id": "intent/form/01120", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01121", "verdict": "layout_copied"}
+{"id": "intent/stats/01122", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01123", "verdict": "layout_copied"}
+{"id": "intent/stats/01124", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/01125", "verdict": "layout_copied"}
+{"detail": 0.352, "id": "intent/filter/01126", "verdict": "near_dup_set"}
+{"detail": 0.457, "id": "intent/form/01127", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01128", "verdict": "ok"}
+{"id": "intent/dashboard/01129", "verdict": "ok"}
+{"id": "intent/list/01130", "verdict": "ok"}
+{"id": "intent/dashboard/01131", "verdict": "ok"}
+{"id": "intent/stats/01132", "verdict": "ok"}
+{"id": "intent/state/01133", "verdict": "ok"}
+{"id": "intent/detail/01134", "verdict": "ok"}
+{"id": "intent/grid/01135", "verdict": "ok"}
+{"id": "intent/grid/01136", "verdict": "ok"}
+{"id": "intent/stats/01137", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/01138", "verdict": "layout_copied"}
+{"id": "intent/text_only/01139", "verdict": "ok"}
+{"id": "intent/stats/01140", "verdict": "ok"}
+{"id": "intent/filter/01141", "verdict": "ok"}
+{"detail": 0.411, "id": "intent/form/01142", "verdict": "near_dup_set"}
+{"id": "intent/grid/01143", "verdict": "ok"}
+{"id": "intent/dashboard/01144", "verdict": "ok"}
+{"id": "intent/list/01145", "verdict": "ok"}
+{"id": "intent/stats/01146", "verdict": "ok"}
+{"id": "intent/filter/01147", "verdict": "ok"}
+{"id": "intent/detail/01148", "verdict": "ok"}
+{"id": "intent/state/01149", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/stats/01150", "verdict": "register"}
+{"id": "intent/text_only/01151", "verdict": "ok"}
+{"id": "intent/grid/01152", "verdict": "ok"}
+{"id": "intent/filter/01153", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01154", "verdict": "layout_copied"}
+{"id": "intent/list/01155", "verdict": "ok"}
+{"id": "intent/list/01156", "verdict": "ok"}
+{"id": "intent/detail/01157", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01158", "verdict": "layout_copied"}
+{"id": "intent/state/01159", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/01160", "verdict": "layout_copied"}
+{"id": "intent/list/01161", "verdict": "ok"}
+{"id": "intent/filter/01162", "verdict": "ok"}
+{"id": "intent/list/01163", "verdict": "ok"}
+{"id": "intent/state/01164", "verdict": "ok"}
+{"id": "intent/list/01165", "verdict": "ok"}
+{"id": "intent/grid/01166", "verdict": "ok"}
+{"id": "intent/list/01167", "verdict": "ok"}
+{"detail": 0.382, "id": "intent/stats/01168", "verdict": "near_dup_set"}
+{"id": "intent/stats/01169", "verdict": "ok"}
+{"id": "intent/text_only/01170", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/01171", "verdict": "layout_copied"}
+{"id": "intent/detail/01172", "verdict": "ok"}
+{"id": "intent/detail/01173", "verdict": "ok"}
+{"detail": 0.388, "id": "intent/form/01174", "verdict": "near_dup_set"}
+{"id": "intent/text_only/01175", "verdict": "ok"}
+{"id": "intent/dashboard/01176", "verdict": "ok"}
+{"id": "intent/dashboard/01177", "verdict": "ok"}
+{"id": "intent/text_only/01178", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/01179", "verdict": "layout_copied"}
+{"id": "intent/grid/01180", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/01181", "verdict": "layout_copied"}
+{"id": "intent/detail/01182", "verdict": "ok"}
+{"id": "intent/dashboard/01183", "verdict": "ok"}
+{"id": "intent/dashboard/01184", "verdict": "ok"}
+{"id": "intent/state/01185", "verdict": "ok"}
+{"id": "intent/dashboard/01186", "verdict": "ok"}
+{"id": "intent/list/01187", "verdict": "ok"}
+{"detail": "a card with the details in", "id": "intent/detail/01188", "verdict": "layout_copied"}
+{"id": "intent/list/01189", "verdict": "ok"}
+{"id": "intent/detail/01190", "verdict": "ok"}
+{"id": "intent/form/01191", "verdict": "ok"}
+{"id": "intent/text_only/01192", "verdict": "ok"}
+{"id": "intent/list/01193", "verdict": "ok"}
+{"id": "intent/stats/01194", "verdict": "ok"}
+{"id": "intent/stats/01195", "verdict": "ok"}
+{"id": "intent/form/01196", "verdict": "ok"}
+{"id": "intent/dashboard/01197", "verdict": "ok"}
+{"id": "intent/form/01198", "verdict": "ok"}
+{"id": "intent/detail/01199", "verdict": "ok"}
+{"id": "intent/state/01200", "verdict": "ok"}
+{"detail": 0.38, "id": "intent/detail/01201", "verdict": "near_dup_set"}
+{"id": "intent/state/01202", "verdict": "ok"}
+{"id": "intent/form/01203", "verdict": "ok"}
+{"id": "intent/grid/01204", "verdict": "ok"}
+{"id": "intent/grid/01205", "verdict": "ok"}
+{"id": "intent/list/01206", "verdict": "ok"}
+{"id": "intent/detail/01207", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/01208", "verdict": "layout_copied"}
+{"detail": "figures side by side in one", "id": "intent/stats/01209", "verdict": "layout_copied"}
+{"detail": "side by side at the top", "id": "intent/dashboard/01210", "verdict": "layout_copied"}
+{"id": "intent/grid/01211", "verdict": "ok"}
+{"id": "intent/list/01212", "verdict": "ok"}
+{"id": "intent/detail/01213", "verdict": "ok"}
+{"id": "intent/dashboard/01214", "verdict": "ok"}
+{"id": "intent/filter/01215", "verdict": "ok"}
+{"id": "intent/form/01216", "verdict": "ok"}
+{"id": "intent/dashboard/01217", "verdict": "ok"}
+{"id": "intent/list/01218", "verdict": "ok"}
+{"id": "intent/state/01219", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/01220", "verdict": "layout_copied"}
+{"id": "intent/state/01221", "verdict": "ok"}
+{"id": "intent/form/01222", "verdict": "ok"}
+{"id": "intent/dashboard/01223", "verdict": "ok"}
+{"detail": 0.379, "id": "intent/filter/01224", "verdict": "near_dup_set"}
+{"id": "intent/filter/01225", "verdict": "ok"}
+{"id": "intent/detail/01226", "verdict": "ok"}
+{"id": "intent/dashboard/01227", "verdict": "ok"}
+{"id": "intent/dashboard/01228", "verdict": "ok"}
+{"id": "intent/stats/01229", "verdict": "ok"}
+{"id": "intent/dashboard/01230", "verdict": "ok"}
+{"detail": 0.369, "id": "intent/form/01231", "verdict": "near_dup_set"}
+{"id": "intent/detail/01232", "verdict": "ok"}
+{"detail": 0.53, "id": "intent/form/01233", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01234", "verdict": "ok"}
+{"id": "intent/list/01235", "verdict": "ok"}
+{"id": "intent/dashboard/01236", "verdict": "ok"}
+{"id": "intent/form/01237", "verdict": "ok"}
+{"detail": 0.408, "id": "intent/stats/01238", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01239", "verdict": "ok"}
+{"id": "intent/dashboard/01240", "verdict": "ok"}
+{"id": "intent/form/01241", "verdict": "ok"}
+{"id": "intent/detail/01242", "verdict": "ok"}
+{"detail": 0.424, "id": "intent/form/01243", "verdict": "near_dup_set"}
+{"id": "intent/detail/01244", "verdict": "ok"}
+{"id": "intent/detail/01245", "verdict": "ok"}
+{"id": "intent/form/01246", "verdict": "ok"}
+{"id": "intent/list/01247", "verdict": "ok"}
+{"id": "intent/form/01248", "verdict": "ok"}
+{"detail": "label and value pairs with the", "id": "intent/detail/01249", "verdict": "layout_copied"}
+{"id": "intent/detail/01250", "verdict": "ok"}
+{"id": "intent/dashboard/01251", "verdict": "ok"}
+{"id": "intent/grid/01252", "verdict": "ok"}
+{"id": "intent/filter/01253", "verdict": "ok"}
+{"id": "intent/dashboard/01254", "verdict": "ok"}
+{"id": "intent/state/01255", "verdict": "ok"}
+{"id": "intent/list/01256", "verdict": "ok"}
+{"id": "intent/dashboard/01257", "verdict": "ok"}
+{"id": "intent/detail/01258", "verdict": "ok"}
+{"id": "intent/form/01259", "verdict": "ok"}
+{"id": "intent/filter/01260", "verdict": "ok"}
+{"id": "intent/list/01261", "verdict": "ok"}
+{"id": "intent/state/01262", "verdict": "ok"}
+{"id": "intent/grid/01263", "verdict": "ok"}
+{"id": "intent/stats/01264", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/01265", "verdict": "layout_copied"}
+{"id": "intent/grid/01266", "verdict": "ok"}
+{"detail": 0.392, "id": "intent/grid/01267", "verdict": "near_dup_set"}
+{"id": "intent/state/01268", "verdict": "ok"}
+{"id": "intent/state/01269", "verdict": "ok"}
+{"id": "intent/text_only/01270", "verdict": "ok"}
+{"id": "intent/detail/01271", "verdict": "ok"}
+{"id": "intent/dashboard/01272", "verdict": "ok"}
+{"id": "intent/filter/01273", "verdict": "ok"}
+{"id": "intent/text_only/01274", "verdict": "ok"}
+{"id": "intent/stats/01275", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/form/01276", "verdict": "register"}
+{"id": "intent/form/01277", "verdict": "ok"}
+{"id": "intent/dashboard/01278", "verdict": "ok"}
+{"id": "intent/filter/01279", "verdict": "ok"}
+{"id": "intent/detail/01280", "verdict": "ok"}
+{"detail": "side by side above the table", "id": "intent/filter/01281", "verdict": "layout_copied"}
+{"id": "intent/filter/01282", "verdict": "ok"}
+{"id": "intent/form/01283", "verdict": "ok"}
+{"id": "intent/dashboard/01284", "verdict": "ok"}
+{"detail": 0.36, "id": "intent/detail/01285", "verdict": "near_dup_set"}
+{"id": "intent/form/01286", "verdict": "ok"}
+{"id": "intent/detail/01287", "verdict": "ok"}
+{"id": "intent/state/01288", "verdict": "ok"}
+{"id": "intent/detail/01289", "verdict": "ok"}
+{"detail": 0.352, "id": "intent/text_only/01290", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01291", "verdict": "ok"}
+{"id": "intent/filter/01292", "verdict": "ok"}
+{"id": "intent/form/01293", "verdict": "ok"}
+{"id": "intent/text_only/01294", "verdict": "ok"}
+{"id": "intent/state/01295", "verdict": "ok"}
+{"id": "intent/state/01296", "verdict": "ok"}
+{"id": "intent/state/01297", "verdict": "ok"}
+{"id": "intent/grid/01298", "verdict": "ok"}
+{"id": "intent/stats/01299", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/01300", "verdict": "layout_copied"}
+{"id": "intent/state/01301", "verdict": "ok"}
+{"id": "intent/list/01302", "verdict": "ok"}
+{"id": "intent/stats/01303", "verdict": "ok"}
+{"detail": ["fit"], "id": "intent/form/01304", "verdict": "register"}
+{"id": "intent/dashboard/01305", "verdict": "ok"}
+{"id": "intent/grid/01306", "verdict": "ok"}
+{"id": "intent/text_only/01307", "verdict": "ok"}
+{"id": "intent/form/01308", "verdict": "ok"}
+{"id": "intent/text_only/01309", "verdict": "ok"}
+{"id": "intent/dashboard/01310", "verdict": "ok"}
+{"id": "intent/list/01311", "verdict": "ok"}
+{"id": "intent/stats/01312", "verdict": "ok"}
+{"id": "intent/dashboard/01313", "verdict": "ok"}
+{"id": "intent/list/01314", "verdict": "ok"}
+{"id": "intent/grid/01315", "verdict": "ok"}
+{"detail": "side by side at the top", "id": "intent/dashboard/01316", "verdict": "layout_copied"}
+{"id": "intent/list/01317", "verdict": "ok"}
+{"id": "intent/stats/01318", "verdict": "ok"}
+{"id": "intent/grid/01319", "verdict": "ok"}
+{"id": "intent/form/01320", "verdict": "ok"}
+{"id": "intent/stats/01321", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/01322", "verdict": "layout_copied"}
+{"id": "intent/grid/01323", "verdict": "ok"}
+{"id": "intent/state/01324", "verdict": "ok"}
+{"id": "intent/grid/01325", "verdict": "ok"}
+{"id": "intent/dashboard/01326", "verdict": "ok"}
+{"id": "intent/list/01327", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/01328", "verdict": "layout_copied"}
+{"id": "intent/filter/01329", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01330", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01331", "verdict": "ok"}
+{"id": "intent/state/01332", "verdict": "ok"}
+{"id": "intent/list/01333", "verdict": "ok"}
+{"id": "intent/filter/01334", "verdict": "ok"}
+{"id": "intent/filter/01335", "verdict": "ok"}
+{"id": "intent/stats/01336", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/01337", "verdict": "layout_copied"}
+{"id": "intent/filter/01338", "verdict": "ok"}
+{"id": "intent/grid/01339", "verdict": "ok"}
+{"id": "intent/detail/01340", "verdict": "ok"}
+{"id": "intent/form/01341", "verdict": "ok"}
+{"id": "intent/text_only/01342", "verdict": "ok"}
+{"id": "intent/state/01343", "verdict": "ok"}
+{"id": "intent/dashboard/01344", "verdict": "ok"}
+{"id": "intent/text_only/01345", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/01346", "verdict": "layout_copied"}
+{"id": "intent/list/01347", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/01348", "verdict": "layout_copied"}
+{"detail": "fields stacked one per line with", "id": "intent/form/01349", "verdict": "layout_copied"}
+{"id": "intent/stats/01350", "verdict": "ok"}
+{"detail": "a card with the details in", "id": "intent/detail/01351", "verdict": "layout_copied"}
+{"id": "intent/detail/01352", "verdict": "ok"}
+{"id": "intent/detail/01353", "verdict": "ok"}
+{"id": "intent/list/01354", "verdict": "ok"}
+{"id": "intent/state/01355", "verdict": "ok"}
+{"id": "intent/dashboard/01356", "verdict": "ok"}
+{"id": "intent/list/01357", "verdict": "ok"}
+{"id": "intent/state/01358", "verdict": "ok"}
+{"id": "intent/filter/01359", "verdict": "ok"}
+{"id": "intent/dashboard/01360", "verdict": "ok"}
+{"id": "intent/detail/01361", "verdict": "ok"}
+{"detail": ["Button"], "id": "intent/form/01362", "verdict": "register"}
+{"id": "intent/dashboard/01363", "verdict": "ok"}
+{"id": "intent/detail/01364", "verdict": "ok"}
+{"id": "intent/grid/01365", "verdict": "ok"}
+{"id": "intent/state/01366", "verdict": "ok"}
+{"id": "intent/text_only/01367", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/01368", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01369", "verdict": "ok"}
+{"id": "intent/text_only/01370", "verdict": "ok"}
+{"id": "intent/text_only/01371", "verdict": "ok"}
+{"id": "intent/grid/01372", "verdict": "ok"}
+{"id": "intent/filter/01373", "verdict": "ok"}
+{"id": "intent/dashboard/01374", "verdict": "ok"}
+{"id": "intent/state/01375", "verdict": "ok"}
+{"detail": 0.371, "id": "intent/detail/01376", "verdict": "near_dup_set"}
+{"id": "intent/form/01377", "verdict": "ok"}
+{"id": "intent/grid/01378", "verdict": "ok"}
+{"id": "intent/form/01379", "verdict": "ok"}
+{"id": "intent/text_only/01380", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01381", "verdict": "layout_copied"}
+{"id": "intent/detail/01382", "verdict": "ok"}
+{"id": "intent/dashboard/01383", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/01384", "verdict": "layout_copied"}
+{"id": "intent/grid/01385", "verdict": "ok"}
+{"id": "intent/dashboard/01386", "verdict": "ok"}
+{"id": "intent/detail/01387", "verdict": "ok"}
+{"id": "intent/grid/01388", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/01389", "verdict": "layout_copied"}
+{"id": "intent/form/01390", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/01391", "verdict": "layout_copied"}
+{"id": "intent/filter/01392", "verdict": "ok"}
+{"id": "intent/state/01393", "verdict": "ok"}
+{"id": "intent/stats/01394", "verdict": "ok"}
+{"id": "intent/stats/01395", "verdict": "ok"}
+{"id": "intent/dashboard/01396", "verdict": "ok"}
+{"id": "intent/filter/01397", "verdict": "ok"}
+{"id": "intent/detail/01398", "verdict": "ok"}
+{"id": "intent/form/01399", "verdict": "ok"}
+{"id": "intent/list/01400", "verdict": "ok"}
+{"id": "intent/dashboard/01401", "verdict": "ok"}
+{"id": "intent/detail/01402", "verdict": "ok"}
+{"id": "intent/stats/01403", "verdict": "ok"}
+{"id": "intent/stats/01404", "verdict": "ok"}
+{"id": "intent/list/01405", "verdict": "ok"}
+{"id": "intent/detail/01406", "verdict": "ok"}
+{"id": "intent/list/01407", "verdict": "ok"}
+{"id": "intent/detail/01408", "verdict": "ok"}
+{"id": "intent/list/01409", "verdict": "ok"}
+{"id": "intent/form/01410", "verdict": "ok"}
+{"id": "intent/stats/01411", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/01412", "verdict": "layout_copied"}
+{"id": "intent/state/01413", "verdict": "ok"}
+{"id": "intent/detail/01414", "verdict": "ok"}
+{"id": "intent/dashboard/01415", "verdict": "ok"}
+{"id": "intent/detail/01416", "verdict": "ok"}
+{"id": "intent/dashboard/01417", "verdict": "ok"}
+{"id": "intent/filter/01418", "verdict": "ok"}
+{"id": "intent/list/01419", "verdict": "ok"}
+{"id": "intent/text_only/01420", "verdict": "ok"}
+{"id": "intent/form/01421", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/01422", "verdict": "layout_copied"}
+{"id": "intent/grid/01423", "verdict": "ok"}
+{"id": "intent/stats/01424", "verdict": "ok"}
+{"id": "intent/stats/01425", "verdict": "ok"}
+{"id": "intent/dashboard/01426", "verdict": "ok"}
+{"id": "intent/form/01427", "verdict": "ok"}
+{"id": "intent/dashboard/01428", "verdict": "ok"}
+{"id": "intent/grid/01429", "verdict": "ok"}
+{"id": "intent/dashboard/01430", "verdict": "ok"}
+{"id": "intent/filter/01431", "verdict": "ok"}
+{"id": "intent/state/01432", "verdict": "ok"}
+{"id": "intent/stats/01433", "verdict": "ok"}
+{"detail": "details as label and value pairs", "id": "intent/detail/01434", "verdict": "layout_copied"}
+{"id": "intent/text_only/01435", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01436", "verdict": "layout_copied"}
+{"id": "intent/stats/01437", "verdict": "ok"}
+{"id": "intent/list/01438", "verdict": "ok"}
+{"id": "intent/stats/01439", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01440", "verdict": "layout_copied"}
+{"id": "intent/grid/01441", "verdict": "ok"}
+{"id": "intent/grid/01442", "verdict": "ok"}
+{"id": "intent/list/01443", "verdict": "ok"}
+{"id": "intent/grid/01444", "verdict": "ok"}
+{"id": "intent/detail/01445", "verdict": "ok"}
+{"id": "intent/detail/01446", "verdict": "ok"}
+{"id": "intent/state/01447", "verdict": "ok"}
+{"id": "intent/form/01448", "verdict": "ok"}
+{"detail": 0.438, "id": "intent/detail/01449", "verdict": "near_dup_set"}
+{"id": "intent/filter/01450", "verdict": "ok"}
+{"detail": 0.424, "id": "intent/stats/01451", "verdict": "near_dup_set"}
+{"detail": "a list of small cards one", "id": "intent/list/01452", "verdict": "layout_copied"}
+{"id": "intent/grid/01453", "verdict": "ok"}
+{"detail": 0.351, "id": "intent/filter/01454", "verdict": "near_dup_set"}
+{"detail": "side by side at the top", "id": "intent/dashboard/01455", "verdict": "layout_copied"}
+{"id": "intent/form/01456", "verdict": "ok"}
+{"id": "intent/stats/01457", "verdict": "ok"}
+{"id": "intent/text_only/01458", "verdict": "ok"}
+{"id": "intent/grid/01459", "verdict": "ok"}
+{"id": "intent/filter/01460", "verdict": "ok"}
+{"id": "intent/list/01461", "verdict": "ok"}
+{"id": "intent/text_only/01462", "verdict": "ok"}
+{"id": "intent/stats/01463", "verdict": "ok"}
+{"id": "intent/detail/01464", "verdict": "ok"}
+{"detail": 0.474, "id": "intent/stats/01465", "verdict": "near_dup_set"}
+{"id": "intent/stats/01466", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01467", "verdict": "layout_copied"}
+{"id": "intent/list/01468", "verdict": "ok"}
+{"id": "intent/detail/01469", "verdict": "ok"}
+{"id": "intent/dashboard/01470", "verdict": "ok"}
+{"id": "intent/list/01471", "verdict": "ok"}
+{"id": "intent/detail/01472", "verdict": "ok"}
+{"id": "intent/dashboard/01473", "verdict": "ok"}
+{"id": "intent/filter/01474", "verdict": "ok"}
+{"id": "intent/state/01475", "verdict": "ok"}
+{"id": "intent/detail/01476", "verdict": "ok"}
+{"id": "intent/grid/01477", "verdict": "ok"}
+{"id": "intent/grid/01478", "verdict": "ok"}
+{"id": "intent/grid/01479", "verdict": "ok"}
+{"id": "intent/list/01480", "verdict": "ok"}
+{"detail": "one per record not a table", "id": "intent/list/01481", "verdict": "layout_copied"}
+{"id": "intent/list/01482", "verdict": "ok"}
+{"id": "intent/grid/01483", "verdict": "ok"}
+{"id": "intent/grid/01484", "verdict": "ok"}
+{"id": "intent/filter/01485", "verdict": "ok"}
+{"id": "intent/filter/01486", "verdict": "ok"}
+{"id": "intent/dashboard/01487", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01488", "verdict": "layout_copied"}
+{"id": "intent/grid/01489", "verdict": "ok"}
+{"id": "intent/form/01490", "verdict": "ok"}
+{"detail": 0.353, "id": "intent/form/01491", "verdict": "near_dup_set"}
+{"detail": "side by side above the table", "id": "intent/filter/01492", "verdict": "layout_copied"}
+{"detail": 0.384, "id": "intent/state/01493", "verdict": "near_dup_set"}
+{"id": "intent/list/01494", "verdict": "ok"}
+{"id": "intent/form/01495", "verdict": "ok"}
+{"id": "intent/list/01496", "verdict": "ok"}
+{"detail": 0.353, "id": "intent/dashboard/01497", "verdict": "near_dup_set"}
+{"id": "intent/text_only/01498", "verdict": "ok"}
+{"id": "intent/dashboard/01499", "verdict": "ok"}
+{"id": "intent/list/01500", "verdict": "ok"}
+{"id": "intent/list/01501", "verdict": "ok"}
+{"id": "intent/dashboard/01502", "verdict": "ok"}
+{"id": "intent/list/01503", "verdict": "ok"}
+{"id": "intent/state/01504", "verdict": "ok"}
+{"id": "intent/text_only/01505", "verdict": "ok"}
+{"detail": "as small cards in a grid", "id": "intent/stats/01506", "verdict": "layout_copied"}
+{"detail": "one per record not a table", "id": "intent/list/01507", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01508", "verdict": "ok"}
+{"id": "intent/grid/01509", "verdict": "ok"}
+{"id": "intent/list/01510", "verdict": "ok"}
+{"id": "intent/detail/01511", "verdict": "ok"}
+{"id": "intent/grid/01512", "verdict": "ok"}
+{"id": "intent/detail/01513", "verdict": "ok"}
+{"id": "intent/list/01514", "verdict": "ok"}
+{"id": "intent/list/01515", "verdict": "ok"}
+{"id": "intent/state/01516", "verdict": "ok"}
+{"id": "intent/detail/01517", "verdict": "ok"}
+{"id": "intent/filter/01518", "verdict": "ok"}
+{"id": "intent/grid/01519", "verdict": "ok"}
+{"id": "intent/state/01520", "verdict": "ok"}
+{"id": "intent/form/01521", "verdict": "ok"}
+{"id": "intent/list/01522", "verdict": "ok"}
+{"detail": 0.458, "id": "intent/form/01523", "verdict": "near_dup_set"}
+{"id": "intent/detail/01524", "verdict": "ok"}
+{"id": "intent/dashboard/01525", "verdict": "ok"}
+{"id": "intent/dashboard/01526", "verdict": "ok"}
+{"id": "intent/form/01527", "verdict": "ok"}
+{"detail": 0.373, "id": "intent/text_only/01528", "verdict": "near_dup_set"}
+{"id": "intent/state/01529", "verdict": "ok"}
+{"id": "intent/detail/01530", "verdict": "ok"}
+{"id": "intent/filter/01531", "verdict": "ok"}
+{"id": "intent/grid/01532", "verdict": "ok"}
+{"id": "intent/grid/01533", "verdict": "ok"}
+{"id": "intent/detail/01534", "verdict": "ok"}
+{"id": "intent/state/01535", "verdict": "ok"}
+{"id": "intent/stats/01536", "verdict": "ok"}
+{"id": "intent/grid/01537", "verdict": "ok"}
+{"detail": 0.375, "id": "intent/form/01538", "verdict": "near_dup_set"}
+{"id": "intent/text_only/01539", "verdict": "ok"}
+{"id": "intent/detail/01540", "verdict": "ok"}
+{"id": "intent/form/01541", "verdict": "ok"}
+{"id": "intent/dashboard/01542", "verdict": "ok"}
+{"id": "intent/filter/01543", "verdict": "ok"}
+{"id": "intent/grid/01544", "verdict": "ok"}
+{"id": "intent/dashboard/01545", "verdict": "ok"}
+{"id": "intent/state/01546", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/01547", "verdict": "layout_copied"}
+{"id": "intent/list/01548", "verdict": "ok"}
+{"id": "intent/detail/01549", "verdict": "ok"}
+{"id": "intent/state/01550", "verdict": "ok"}
+{"id": "intent/list/01551", "verdict": "ok"}
+{"id": "intent/grid/01552", "verdict": "ok"}
+{"id": "intent/detail/01553", "verdict": "ok"}
+{"id": "intent/grid/01554", "verdict": "ok"}
+{"id": "intent/list/01555", "verdict": "ok"}
+{"id": "intent/grid/01556", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/01557", "verdict": "layout_copied"}
+{"id": "intent/text_only/01558", "verdict": "ok"}
+{"id": "intent/state/01559", "verdict": "ok"}
+{"id": "intent/list/01560", "verdict": "ok"}
+{"id": "intent/detail/01561", "verdict": "ok"}
+{"id": "intent/grid/01562", "verdict": "ok"}
+{"id": "intent/detail/01563", "verdict": "ok"}
+{"id": "intent/detail/01564", "verdict": "ok"}
+{"id": "intent/grid/01565", "verdict": "ok"}
+{"id": "intent/detail/01566", "verdict": "ok"}
+{"id": "intent/list/01567", "verdict": "ok"}
+{"id": "intent/state/01568", "verdict": "ok"}
+{"id": "intent/form/01569", "verdict": "ok"}
+{"id": "intent/state/01570", "verdict": "ok"}
+{"id": "intent/dashboard/01571", "verdict": "ok"}
+{"id": "intent/text_only/01572", "verdict": "ok"}
+{"id": "intent/grid/01573", "verdict": "ok"}
+{"id": "intent/dashboard/01574", "verdict": "ok"}
+{"id": "intent/form/01575", "verdict": "ok"}
+{"detail": 0.372, "id": "intent/form/01576", "verdict": "near_dup_set"}
+{"id": "intent/grid/01577", "verdict": "ok"}
+{"id": "intent/state/01578", "verdict": "ok"}
+{"id": "intent/dashboard/01579", "verdict": "ok"}
+{"id": "intent/detail/01580", "verdict": "ok"}
+{"id": "intent/stats/01581", "verdict": "ok"}
+{"id": "intent/filter/01582", "verdict": "ok"}
+{"detail": 0.393, "id": "intent/filter/01583", "verdict": "near_dup_set"}
+{"id": "intent/filter/01584", "verdict": "ok"}
+{"id": "intent/grid/01585", "verdict": "ok"}
+{"id": "intent/list/01586", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/01587", "verdict": "layout_copied"}
+{"id": "intent/form/01588", "verdict": "ok"}
+{"id": "intent/detail/01589", "verdict": "ok"}
+{"id": "intent/dashboard/01590", "verdict": "ok"}
+{"id": "intent/stats/01591", "verdict": "ok"}
+{"id": "intent/text_only/01592", "verdict": "ok"}
+{"id": "intent/grid/01593", "verdict": "ok"}
+{"id": "intent/list/01594", "verdict": "ok"}
+{"id": "intent/grid/01595", "verdict": "ok"}
+{"id": "intent/dashboard/01596", "verdict": "ok"}
+{"id": "intent/stats/01597", "verdict": "ok"}
+{"detail": 0.361, "id": "intent/stats/01598", "verdict": "near_dup_set"}
+{"id": "intent/grid/01599", "verdict": "ok"}
+{"id": "intent/stats/01600", "verdict": "ok"}
+{"id": "intent/form/01601", "verdict": "ok"}
+{"id": "intent/filter/01602", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/01603", "verdict": "layout_copied"}
+{"id": "intent/state/01604", "verdict": "ok"}
+{"id": "intent/list/01605", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01606", "verdict": "layout_copied"}
+{"id": "intent/stats/01607", "verdict": "ok"}
+{"detail": 0.408, "id": "intent/text_only/01608", "verdict": "near_dup_set"}
+{"id": "intent/form/01609", "verdict": "ok"}
+{"id": "intent/state/01610", "verdict": "ok"}
+{"detail": 0.352, "id": "intent/filter/01611", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01612", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01613", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01614", "verdict": "ok"}
+{"id": "intent/list/01615", "verdict": "ok"}
+{"detail": "as small cards in a row", "id": "intent/dashboard/01616", "verdict": "layout_copied"}
+{"detail": 0.423, "id": "intent/stats/01617", "verdict": "near_dup_set"}
+{"detail": "the filter and the search box", "id": "intent/filter/01618", "verdict": "layout_copied"}
+{"id": "intent/state/01619", "verdict": "ok"}
+{"detail": 0.408, "id": "intent/detail/01620", "verdict": "near_dup_set"}
+{"id": "intent/grid/01621", "verdict": "ok"}
+{"id": "intent/grid/01622", "verdict": "ok"}
+{"id": "intent/list/01623", "verdict": "ok"}
+{"id": "intent/form/01624", "verdict": "ok"}
+{"id": "intent/dashboard/01625", "verdict": "ok"}
+{"id": "intent/detail/01626", "verdict": "ok"}
+{"id": "intent/stats/01627", "verdict": "ok"}
+{"id": "intent/filter/01628", "verdict": "ok"}
+{"id": "intent/dashboard/01629", "verdict": "ok"}
+{"id": "intent/form/01630", "verdict": "ok"}
+{"detail": 0.394, "id": "intent/form/01631", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01632", "verdict": "ok"}
+{"id": "intent/detail/01633", "verdict": "ok"}
+{"id": "intent/state/01634", "verdict": "ok"}
+{"id": "intent/list/01635", "verdict": "ok"}
+{"id": "intent/detail/01636", "verdict": "ok"}
+{"id": "intent/detail/01637", "verdict": "ok"}
+{"detail": 0.428, "id": "intent/form/01638", "verdict": "near_dup_set"}
+{"id": "intent/state/01639", "verdict": "ok"}
+{"id": "intent/dashboard/01640", "verdict": "ok"}
+{"id": "intent/state/01641", "verdict": "ok"}
+{"id": "intent/form/01642", "verdict": "ok"}
+{"id": "intent/form/01643", "verdict": "ok"}
+{"id": "intent/grid/01644", "verdict": "ok"}
+{"id": "intent/detail/01645", "verdict": "ok"}
+{"detail": 0.352, "id": "intent/detail/01646", "verdict": "near_dup_set"}
+{"id": "intent/filter/01647", "verdict": "ok"}
+{"id": "intent/grid/01648", "verdict": "ok"}
+{"id": "intent/grid/01649", "verdict": "ok"}
+{"id": "intent/form/01650", "verdict": "ok"}
+{"id": "intent/filter/01651", "verdict": "ok"}
+{"id": "intent/state/01652", "verdict": "ok"}
+{"id": "intent/form/01653", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/01654", "verdict": "layout_copied"}
+{"detail": "with the name on its own", "id": "intent/list/01655", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01656", "verdict": "ok"}
+{"id": "intent/list/01657", "verdict": "ok"}
+{"id": "intent/form/01658", "verdict": "ok"}
+{"id": "intent/stats/01659", "verdict": "ok"}
+{"id": "intent/text_only/01660", "verdict": "ok"}
+{"id": "intent/dashboard/01661", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01662", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01663", "verdict": "ok"}
+{"id": "intent/detail/01664", "verdict": "ok"}
+{"detail": 0.385, "id": "intent/stats/01665", "verdict": "near_dup_set"}
+{"id": "intent/state/01666", "verdict": "ok"}
+{"id": "intent/detail/01667", "verdict": "ok"}
+{"id": "intent/detail/01668", "verdict": "ok"}
+{"id": "intent/list/01669", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/01670", "verdict": "layout_copied"}
+{"id": "intent/form/01671", "verdict": "ok"}
+{"id": "intent/state/01672", "verdict": "ok"}
+{"id": "intent/dashboard/01673", "verdict": "ok"}
+{"id": "intent/state/01674", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01675", "verdict": "layout_copied"}
+{"id": "intent/filter/01676", "verdict": "ok"}
+{"id": "intent/state/01677", "verdict": "ok"}
+{"id": "intent/detail/01678", "verdict": "ok"}
+{"id": "intent/grid/01679", "verdict": "ok"}
+{"id": "intent/state/01680", "verdict": "ok"}
+{"id": "intent/filter/01681", "verdict": "ok"}
+{"id": "intent/state/01682", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/01683", "verdict": "layout_copied"}
+{"id": "intent/state/01684", "verdict": "ok"}
+{"id": "intent/stats/01685", "verdict": "ok"}
+{"id": "intent/stats/01686", "verdict": "ok"}
+{"id": "intent/grid/01687", "verdict": "ok"}
+{"id": "intent/text_only/01688", "verdict": "ok"}
+{"id": "intent/stats/01689", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/01690", "verdict": "layout_copied"}
+{"id": "intent/grid/01691", "verdict": "ok"}
+{"id": "intent/dashboard/01692", "verdict": "ok"}
+{"id": "intent/detail/01693", "verdict": "ok"}
+{"id": "intent/form/01694", "verdict": "ok"}
+{"id": "intent/text_only/01695", "verdict": "ok"}
+{"detail": ["Button"], "id": "intent/form/01696", "verdict": "register"}
+{"detail": "two short fields side by side", "id": "intent/form/01697", "verdict": "layout_copied"}
+{"id": "intent/filter/01698", "verdict": "ok"}
+{"id": "intent/dashboard/01699", "verdict": "ok"}
+{"id": "intent/state/01700", "verdict": "ok"}
+{"id": "intent/state/01701", "verdict": "ok"}
+{"id": "intent/list/01702", "verdict": "ok"}
+{"detail": 0.388, "id": "intent/stats/01703", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01704", "verdict": "ok"}
+{"id": "intent/filter/01705", "verdict": "ok"}
+{"id": "intent/dashboard/01706", "verdict": "ok"}
+{"detail": "list one record per line with", "id": "intent/list/01707", "verdict": "layout_copied"}
+{"id": "intent/detail/01708", "verdict": "ok"}
+{"id": "intent/dashboard/01709", "verdict": "ok"}
+{"id": "intent/state/01710", "verdict": "ok"}
+{"id": "intent/list/01711", "verdict": "ok"}
+{"id": "intent/stats/01712", "verdict": "ok"}
+{"id": "intent/form/01713", "verdict": "ok"}
+{"id": "intent/grid/01714", "verdict": "ok"}
+{"id": "intent/dashboard/01715", "verdict": "ok"}
+{"id": "intent/grid/01716", "verdict": "ok"}
+{"id": "intent/grid/01717", "verdict": "ok"}
+{"id": "intent/grid/01718", "verdict": "ok"}
+{"id": "intent/list/01719", "verdict": "ok"}
+{"id": "intent/list/01720", "verdict": "ok"}
+{"id": "intent/detail/01721", "verdict": "ok"}
+{"id": "intent/state/01722", "verdict": "ok"}
+{"id": "intent/text_only/01723", "verdict": "ok"}
+{"detail": "search box side by side above", "id": "intent/filter/01724", "verdict": "layout_copied"}
+{"id": "intent/grid/01725", "verdict": "ok"}
+{"id": "intent/form/01726", "verdict": "ok"}
+{"id": "intent/detail/01727", "verdict": "ok"}
+{"detail": "in two columns side by side", "id": "intent/detail/01728", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01729", "verdict": "ok"}
+{"id": "intent/grid/01730", "verdict": "ok"}
+{"id": "intent/dashboard/01731", "verdict": "ok"}
+{"id": "intent/state/01732", "verdict": "ok"}
+{"id": "intent/grid/01733", "verdict": "ok"}
+{"detail": "details as label and value pairs", "id": "intent/detail/01734", "verdict": "layout_copied"}
+{"id": "intent/grid/01735", "verdict": "ok"}
+{"id": "intent/state/01736", "verdict": "ok"}
+{"id": "intent/stats/01737", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/01738", "verdict": "layout_copied"}
+{"id": "intent/filter/01739", "verdict": "ok"}
+{"id": "intent/grid/01740", "verdict": "ok"}
+{"id": "intent/detail/01741", "verdict": "ok"}
+{"id": "intent/grid/01742", "verdict": "ok"}
+{"id": "intent/list/01743", "verdict": "ok"}
+{"id": "intent/stats/01744", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/01745", "verdict": "layout_copied"}
+{"id": "intent/detail/01746", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/01747", "verdict": "layout_copied"}
+{"id": "intent/filter/01748", "verdict": "ok"}
+{"id": "intent/list/01749", "verdict": "ok"}
+{"id": "intent/form/01750", "verdict": "ok"}
+{"detail": "the name on its own line", "id": "intent/list/01751", "verdict": "layout_copied"}
+{"id": "intent/list/01752", "verdict": "ok"}
+{"detail": ["Button", "Text"], "id": "intent/form/01753", "verdict": "register"}
+{"detail": 0.39, "id": "intent/dashboard/01754", "verdict": "near_dup_set"}
+{"id": "intent/stats/01755", "verdict": "ok"}
+{"id": "intent/stats/01756", "verdict": "ok"}
+{"id": "intent/stats/01757", "verdict": "ok"}
+{"id": "intent/form/01758", "verdict": "ok"}
+{"id": "intent/list/01759", "verdict": "ok"}
+{"detail": "the figures side by side at", "id": "intent/dashboard/01760", "verdict": "layout_copied"}
+{"id": "intent/form/01761", "verdict": "ok"}
+{"id": "intent/state/01762", "verdict": "ok"}
+{"id": "intent/dashboard/01763", "verdict": "ok"}
+{"id": "intent/state/01764", "verdict": "ok"}
+{"id": "intent/filter/01765", "verdict": "ok"}
+{"id": "intent/form/01766", "verdict": "ok"}
+{"id": "intent/list/01767", "verdict": "ok"}
+{"id": "intent/text_only/01768", "verdict": "ok"}
+{"id": "intent/list/01769", "verdict": "ok"}
+{"id": "intent/list/01770", "verdict": "ok"}
+{"id": "intent/stats/01771", "verdict": "ok"}
+{"id": "intent/filter/01772", "verdict": "ok"}
+{"id": "intent/detail/01773", "verdict": "ok"}
+{"id": "intent/filter/01774", "verdict": "ok"}
+{"id": "intent/state/01775", "verdict": "ok"}
+{"id": "intent/dashboard/01776", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/01777", "verdict": "layout_copied"}
+{"id": "intent/grid/01778", "verdict": "ok"}
+{"id": "intent/state/01779", "verdict": "ok"}
+{"id": "intent/state/01780", "verdict": "ok"}
+{"id": "intent/state/01781", "verdict": "ok"}
+{"id": "intent/list/01782", "verdict": "ok"}
+{"detail": 0.424, "id": "intent/stats/01783", "verdict": "near_dup_set"}
+{"detail": "the other details as label and", "id": "intent/detail/01784", "verdict": "layout_copied"}
+{"id": "intent/filter/01785", "verdict": "ok"}
+{"id": "intent/detail/01786", "verdict": "ok"}
+{"id": "intent/grid/01787", "verdict": "ok"}
+{"id": "intent/detail/01788", "verdict": "ok"}
+{"id": "intent/dashboard/01789", "verdict": "ok"}
+{"id": "intent/state/01790", "verdict": "ok"}
+{"id": "intent/list/01791", "verdict": "ok"}
+{"id": "intent/grid/01792", "verdict": "ok"}
+{"id": "intent/dashboard/01793", "verdict": "ok"}
+{"id": "intent/state/01794", "verdict": "ok"}
+{"id": "intent/filter/01795", "verdict": "ok"}
+{"id": "intent/dashboard/01796", "verdict": "ok"}
+{"id": "intent/state/01797", "verdict": "ok"}
+{"id": "intent/dashboard/01798", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/01799", "verdict": "layout_copied"}
+{"id": "intent/text_only/01800", "verdict": "ok"}
+{"id": "intent/stats/01801", "verdict": "ok"}
+{"id": "intent/state/01802", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/01803", "verdict": "layout_copied"}
+{"id": "intent/list/01804", "verdict": "ok"}
+{"id": "intent/form/01805", "verdict": "ok"}
+{"id": "intent/text_only/01806", "verdict": "ok"}
+{"id": "intent/dashboard/01807", "verdict": "ok"}
+{"id": "intent/state/01808", "verdict": "ok"}
+{"id": "intent/form/01809", "verdict": "ok"}
+{"id": "intent/grid/01810", "verdict": "ok"}
+{"id": "intent/list/01811", "verdict": "ok"}
+{"id": "intent/state/01812", "verdict": "ok"}
+{"id": "intent/grid/01813", "verdict": "ok"}
+{"id": "intent/state/01814", "verdict": "ok"}
+{"id": "intent/form/01815", "verdict": "ok"}
+{"id": "intent/grid/01816", "verdict": "ok"}
+{"id": "intent/state/01817", "verdict": "ok"}
+{"detail": 0.35, "id": "intent/grid/01818", "verdict": "near_dup_set"}
+{"id": "intent/filter/01819", "verdict": "ok"}
+{"id": "intent/detail/01820", "verdict": "ok"}
+{"id": "intent/detail/01821", "verdict": "ok"}
+{"id": "intent/grid/01822", "verdict": "ok"}
+{"id": "intent/state/01823", "verdict": "ok"}
+{"id": "intent/form/01824", "verdict": "ok"}
+{"id": "intent/list/01825", "verdict": "ok"}
+{"id": "intent/detail/01826", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/01827", "verdict": "layout_copied"}
+{"id": "intent/state/01828", "verdict": "ok"}
+{"id": "intent/state/01829", "verdict": "ok"}
+{"id": "intent/list/01830", "verdict": "ok"}
+{"id": "intent/detail/01831", "verdict": "ok"}
+{"id": "intent/dashboard/01832", "verdict": "ok"}
+{"id": "intent/form/01833", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/01834", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01835", "verdict": "ok"}
+{"id": "intent/dashboard/01836", "verdict": "ok"}
+{"id": "intent/filter/01837", "verdict": "ok"}
+{"id": "intent/stats/01838", "verdict": "ok"}
+{"id": "intent/list/01839", "verdict": "ok"}
+{"id": "intent/list/01840", "verdict": "ok"}
+{"id": "intent/detail/01841", "verdict": "ok"}
+{"id": "intent/state/01842", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/01843", "verdict": "layout_copied"}
+{"id": "intent/detail/01844", "verdict": "ok"}
+{"detail": "side by side above the table", "id": "intent/filter/01845", "verdict": "layout_copied"}
+{"detail": 0.365, "id": "intent/form/01846", "verdict": "near_dup_set"}
+{"id": "intent/text_only/01847", "verdict": "ok"}
+{"id": "intent/state/01848", "verdict": "ok"}
+{"id": "intent/stats/01849", "verdict": "ok"}
+{"id": "intent/detail/01850", "verdict": "ok"}
+{"id": "intent/dashboard/01851", "verdict": "ok"}
+{"id": "intent/form/01852", "verdict": "ok"}
+{"id": "intent/detail/01853", "verdict": "ok"}
+{"id": "intent/detail/01854", "verdict": "ok"}
+{"id": "intent/list/01855", "verdict": "ok"}
+{"detail": "as small cards in a row", "id": "intent/dashboard/01856", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01857", "verdict": "ok"}
+{"id": "intent/grid/01858", "verdict": "ok"}
+{"id": "intent/state/01859", "verdict": "ok"}
+{"id": "intent/list/01860", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/01861", "verdict": "layout_copied"}
+{"id": "intent/stats/01862", "verdict": "ok"}
+{"id": "intent/state/01863", "verdict": "ok"}
+{"id": "intent/state/01864", "verdict": "ok"}
+{"id": "intent/state/01865", "verdict": "ok"}
+{"id": "intent/state/01866", "verdict": "ok"}
+{"id": "intent/detail/01867", "verdict": "ok"}
+{"id": "intent/text_only/01868", "verdict": "ok"}
+{"id": "intent/detail/01869", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/01870", "verdict": "layout_copied"}
+{"id": "intent/list/01871", "verdict": "ok"}
+{"id": "intent/form/01872", "verdict": "ok"}
+{"detail": 0.384, "id": "intent/filter/01873", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/01874", "verdict": "ok"}
+{"id": "intent/stats/01875", "verdict": "ok"}
+{"id": "intent/grid/01876", "verdict": "ok"}
+{"id": "intent/stats/01877", "verdict": "ok"}
+{"detail": "a simple list one record per", "id": "intent/state/01878", "verdict": "layout_copied"}
+{"detail": 0.445, "id": "intent/form/01879", "verdict": "near_dup_set"}
+{"id": "intent/form/01880", "verdict": "ok"}
+{"id": "intent/dashboard/01881", "verdict": "ok"}
+{"id": "intent/grid/01882", "verdict": "ok"}
+{"detail": 0.376, "id": "intent/stats/01883", "verdict": "near_dup_set"}
+{"id": "intent/text_only/01884", "verdict": "ok"}
+{"id": "intent/grid/01885", "verdict": "ok"}
+{"id": "intent/filter/01886", "verdict": "ok"}
+{"id": "intent/dashboard/01887", "verdict": "ok"}
+{"id": "intent/stats/01888", "verdict": "ok"}
+{"id": "intent/state/01889", "verdict": "ok"}
+{"id": "intent/filter/01890", "verdict": "ok"}
+{"id": "intent/detail/01891", "verdict": "ok"}
+{"id": "intent/list/01892", "verdict": "ok"}
+{"id": "intent/detail/01893", "verdict": "ok"}
+{"id": "intent/dashboard/01894", "verdict": "ok"}
+{"id": "intent/list/01895", "verdict": "ok"}
+{"id": "intent/stats/01896", "verdict": "ok"}
+{"id": "intent/grid/01897", "verdict": "ok"}
+{"id": "intent/filter/01898", "verdict": "ok"}
+{"id": "intent/filter/01899", "verdict": "ok"}
+{"id": "intent/stats/01900", "verdict": "ok"}
+{"id": "intent/dashboard/01901", "verdict": "ok"}
+{"id": "intent/detail/01902", "verdict": "ok"}
+{"id": "intent/detail/01903", "verdict": "ok"}
+{"id": "intent/dashboard/01904", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/01905", "verdict": "layout_copied"}
+{"id": "intent/form/01906", "verdict": "ok"}
+{"id": "intent/dashboard/01907", "verdict": "ok"}
+{"id": "intent/grid/01908", "verdict": "ok"}
+{"id": "intent/filter/01909", "verdict": "ok"}
+{"id": "intent/filter/01910", "verdict": "ok"}
+{"id": "intent/text_only/01911", "verdict": "ok"}
+{"id": "intent/detail/01912", "verdict": "ok"}
+{"id": "intent/dashboard/01913", "verdict": "ok"}
+{"id": "intent/filter/01914", "verdict": "ok"}
+{"detail": "stacked one per line with the", "id": "intent/form/01915", "verdict": "layout_copied"}
+{"id": "intent/state/01916", "verdict": "ok"}
+{"id": "intent/dashboard/01917", "verdict": "ok"}
+{"id": "intent/dashboard/01918", "verdict": "ok"}
+{"id": "intent/list/01919", "verdict": "ok"}
+{"id": "intent/state/01920", "verdict": "ok"}
+{"id": "intent/stats/01921", "verdict": "ok"}
+{"id": "intent/detail/01922", "verdict": "ok"}
+{"id": "intent/filter/01923", "verdict": "ok"}
+{"id": "intent/form/01924", "verdict": "ok"}
+{"id": "intent/detail/01925", "verdict": "ok"}
+{"id": "intent/text_only/01926", "verdict": "ok"}
+{"id": "intent/list/01927", "verdict": "ok"}
+{"id": "intent/stats/01928", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/01929", "verdict": "layout_copied"}
+{"id": "intent/detail/01930", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/01931", "verdict": "layout_copied"}
+{"id": "intent/text_only/01932", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/01933", "verdict": "layout_copied"}
+{"id": "intent/stats/01934", "verdict": "ok"}
+{"id": "intent/dashboard/01935", "verdict": "ok"}
+{"id": "intent/dashboard/01936", "verdict": "ok"}
+{"detail": 0.413, "id": "intent/state/01937", "verdict": "near_dup_set"}
+{"id": "intent/list/01938", "verdict": "ok"}
+{"id": "intent/filter/01939", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/01940", "verdict": "layout_copied"}
+{"detail": "a list of small cards one", "id": "intent/list/01941", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01942", "verdict": "ok"}
+{"id": "intent/grid/01943", "verdict": "ok"}
+{"id": "intent/detail/01944", "verdict": "ok"}
+{"id": "intent/stats/01945", "verdict": "ok"}
+{"id": "intent/filter/01946", "verdict": "ok"}
+{"id": "intent/state/01947", "verdict": "ok"}
+{"id": "intent/stats/01948", "verdict": "ok"}
+{"id": "intent/filter/01949", "verdict": "ok"}
+{"id": "intent/dashboard/01950", "verdict": "ok"}
+{"id": "intent/grid/01951", "verdict": "ok"}
+{"id": "intent/state/01952", "verdict": "ok"}
+{"id": "intent/state/01953", "verdict": "ok"}
+{"id": "intent/form/01954", "verdict": "ok"}
+{"id": "intent/detail/01955", "verdict": "ok"}
+{"id": "intent/grid/01956", "verdict": "ok"}
+{"id": "intent/dashboard/01957", "verdict": "ok"}
+{"id": "intent/dashboard/01958", "verdict": "ok"}
+{"id": "intent/state/01959", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/01960", "verdict": "layout_copied"}
+{"id": "intent/detail/01961", "verdict": "ok"}
+{"id": "intent/stats/01962", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/01963", "verdict": "layout_copied"}
+{"detail": "fields stacked one per line with", "id": "intent/form/01964", "verdict": "layout_copied"}
+{"id": "intent/filter/01965", "verdict": "ok"}
+{"id": "intent/filter/01966", "verdict": "ok"}
+{"id": "intent/dashboard/01967", "verdict": "ok"}
+{"id": "intent/state/01968", "verdict": "ok"}
+{"id": "intent/detail/01969", "verdict": "ok"}
+{"id": "intent/detail/01970", "verdict": "ok"}
+{"detail": 0.365, "id": "intent/list/01971", "verdict": "near_dup_set"}
+{"id": "intent/form/01972", "verdict": "ok"}
+{"id": "intent/form/01973", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/01974", "verdict": "layout_copied"}
+{"id": "intent/stats/01975", "verdict": "ok"}
+{"id": "intent/grid/01976", "verdict": "ok"}
+{"id": "intent/dashboard/01977", "verdict": "ok"}
+{"id": "intent/detail/01978", "verdict": "ok"}
+{"id": "intent/text_only/01979", "verdict": "ok"}
+{"id": "intent/stats/01980", "verdict": "ok"}
+{"id": "intent/dashboard/01981", "verdict": "ok"}
+{"detail": "the other details as label and", "id": "intent/detail/01982", "verdict": "layout_copied"}
+{"id": "intent/dashboard/01983", "verdict": "ok"}
+{"id": "intent/stats/01984", "verdict": "ok"}
+{"id": "intent/filter/01985", "verdict": "ok"}
+{"id": "intent/stats/01986", "verdict": "ok"}
+{"id": "intent/state/01987", "verdict": "ok"}
+{"id": "intent/detail/01988", "verdict": "ok"}
+{"detail": 0.376, "id": "intent/form/01989", "verdict": "near_dup_set"}
+{"id": "intent/filter/01990", "verdict": "ok"}
+{"id": "intent/detail/01991", "verdict": "ok"}
+{"id": "intent/detail/01992", "verdict": "ok"}
+{"id": "intent/filter/01993", "verdict": "ok"}
+{"id": "intent/state/01994", "verdict": "ok"}
+{"detail": 0.548, "id": "intent/stats/01995", "verdict": "near_dup_set"}
+{"detail": 0.354, "id": "intent/grid/01996", "verdict": "near_dup_set"}
+{"id": "intent/list/01997", "verdict": "ok"}
+{"id": "intent/grid/01998", "verdict": "ok"}
+{"id": "intent/filter/01999", "verdict": "ok"}
+{"id": "intent/grid/02000", "verdict": "ok"}
+{"id": "intent/filter/02001", "verdict": "ok"}
+{"id": "intent/form/02002", "verdict": "ok"}
+{"id": "intent/grid/02003", "verdict": "ok"}
+{"detail": 0.391, "id": "intent/state/02004", "verdict": "near_dup_set"}
+{"id": "intent/text_only/02005", "verdict": "ok"}
+{"id": "intent/state/02006", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/02007", "verdict": "layout_copied"}
+{"id": "intent/form/02008", "verdict": "ok"}
+{"detail": 0.361, "id": "intent/stats/02009", "verdict": "near_dup_set"}
+{"id": "intent/grid/02010", "verdict": "ok"}
+{"id": "intent/stats/02011", "verdict": "ok"}
+{"id": "intent/list/02012", "verdict": "ok"}
+{"id": "intent/dashboard/02013", "verdict": "ok"}
+{"id": "intent/state/02014", "verdict": "ok"}
+{"detail": ["BUS-113"], "id": "intent/state/02015", "verdict": "r2_missing"}
+{"detail": "in two columns side by side", "id": "intent/detail/02016", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02017", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02018", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02019", "verdict": "ok"}
+{"id": "intent/form/02020", "verdict": "ok"}
+{"id": "intent/dashboard/02021", "verdict": "ok"}
+{"id": "intent/detail/02022", "verdict": "ok"}
+{"id": "intent/text_only/02023", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/dashboard/02024", "verdict": "register"}
+{"detail": "figures side by side in one", "id": "intent/stats/02025", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02026", "verdict": "ok"}
+{"id": "intent/text_only/02027", "verdict": "ok"}
+{"id": "intent/grid/02028", "verdict": "ok"}
+{"detail": "the name on its own line", "id": "intent/list/02029", "verdict": "layout_copied"}
+{"id": "intent/filter/02030", "verdict": "ok"}
+{"id": "intent/state/02031", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02032", "verdict": "layout_copied"}
+{"id": "intent/state/02033", "verdict": "ok"}
+{"detail": 0.353, "id": "intent/form/02034", "verdict": "near_dup_set"}
+{"id": "intent/form/02035", "verdict": "ok"}
+{"id": "intent/state/02036", "verdict": "ok"}
+{"id": "intent/stats/02037", "verdict": "ok"}
+{"id": "intent/state/02038", "verdict": "ok"}
+{"id": "intent/filter/02039", "verdict": "ok"}
+{"id": "intent/detail/02040", "verdict": "ok"}
+{"id": "intent/list/02041", "verdict": "ok"}
+{"id": "intent/grid/02042", "verdict": "ok"}
+{"id": "intent/filter/02043", "verdict": "ok"}
+{"id": "intent/detail/02044", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/02045", "verdict": "layout_copied"}
+{"id": "intent/grid/02046", "verdict": "ok"}
+{"id": "intent/grid/02047", "verdict": "ok"}
+{"id": "intent/grid/02048", "verdict": "ok"}
+{"id": "intent/grid/02049", "verdict": "ok"}
+{"id": "intent/form/02050", "verdict": "ok"}
+{"id": "intent/text_only/02051", "verdict": "ok"}
+{"id": "intent/list/02052", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/02053", "verdict": "layout_copied"}
+{"detail": "details as label and value pairs", "id": "intent/detail/02054", "verdict": "layout_copied"}
+{"id": "intent/detail/02055", "verdict": "ok"}
+{"id": "intent/state/02056", "verdict": "ok"}
+{"id": "intent/form/02057", "verdict": "ok"}
+{"id": "intent/stats/02058", "verdict": "ok"}
+{"id": "intent/state/02059", "verdict": "ok"}
+{"id": "intent/grid/02060", "verdict": "ok"}
+{"id": "intent/form/02061", "verdict": "ok"}
+{"id": "intent/list/02062", "verdict": "ok"}
+{"id": "intent/state/02063", "verdict": "ok"}
+{"id": "intent/detail/02064", "verdict": "ok"}
+{"id": "intent/dashboard/02065", "verdict": "ok"}
+{"id": "intent/grid/02066", "verdict": "ok"}
+{"id": "intent/list/02067", "verdict": "ok"}
+{"id": "intent/form/02068", "verdict": "ok"}
+{"id": "intent/grid/02069", "verdict": "ok"}
+{"id": "intent/detail/02070", "verdict": "ok"}
+{"id": "intent/form/02071", "verdict": "ok"}
+{"id": "intent/list/02072", "verdict": "ok"}
+{"id": "intent/list/02073", "verdict": "ok"}
+{"id": "intent/text_only/02074", "verdict": "ok"}
+{"id": "intent/state/02075", "verdict": "ok"}
+{"detail": "side by side at the top", "id": "intent/dashboard/02076", "verdict": "layout_copied"}
+{"id": "intent/stats/02077", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/02078", "verdict": "layout_copied"}
+{"id": "intent/text_only/02079", "verdict": "ok"}
+{"id": "intent/state/02080", "verdict": "ok"}
+{"id": "intent/grid/02081", "verdict": "ok"}
+{"id": "intent/form/02082", "verdict": "ok"}
+{"id": "intent/detail/02083", "verdict": "ok"}
+{"detail": "stacked one per line with the", "id": "intent/form/02084", "verdict": "layout_copied"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02085", "verdict": "layout_copied"}
+{"id": "intent/state/02086", "verdict": "ok"}
+{"id": "intent/dashboard/02087", "verdict": "ok"}
+{"id": "intent/state/02088", "verdict": "ok"}
+{"id": "intent/list/02089", "verdict": "ok"}
+{"id": "intent/grid/02090", "verdict": "ok"}
+{"id": "intent/list/02091", "verdict": "ok"}
+{"id": "intent/detail/02092", "verdict": "ok"}
+{"id": "intent/form/02093", "verdict": "ok"}
+{"id": "intent/stats/02094", "verdict": "ok"}
+{"id": "intent/state/02095", "verdict": "ok"}
+{"id": "intent/grid/02096", "verdict": "ok"}
+{"id": "intent/filter/02097", "verdict": "ok"}
+{"id": "intent/detail/02098", "verdict": "ok"}
+{"id": "intent/state/02099", "verdict": "ok"}
+{"id": "intent/form/02100", "verdict": "ok"}
+{"id": "intent/grid/02101", "verdict": "ok"}
+{"id": "intent/list/02102", "verdict": "ok"}
+{"id": "intent/stats/02103", "verdict": "ok"}
+{"id": "intent/dashboard/02104", "verdict": "ok"}
+{"id": "intent/filter/02105", "verdict": "ok"}
+{"id": "intent/filter/02106", "verdict": "ok"}
+{"id": "intent/dashboard/02107", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02108", "verdict": "layout_copied"}
+{"id": "intent/stats/02109", "verdict": "ok"}
+{"id": "intent/filter/02110", "verdict": "ok"}
+{"id": "intent/dashboard/02111", "verdict": "ok"}
+{"id": "intent/filter/02112", "verdict": "ok"}
+{"id": "intent/detail/02113", "verdict": "ok"}
+{"id": "intent/text_only/02114", "verdict": "ok"}
+{"id": "intent/form/02115", "verdict": "ok"}
+{"id": "intent/detail/02116", "verdict": "ok"}
+{"detail": 0.355, "id": "intent/filter/02117", "verdict": "near_dup_set"}
+{"id": "intent/stats/02118", "verdict": "ok"}
+{"id": "intent/grid/02119", "verdict": "ok"}
+{"id": "intent/filter/02120", "verdict": "ok"}
+{"id": "intent/detail/02121", "verdict": "ok"}
+{"id": "intent/state/02122", "verdict": "ok"}
+{"id": "intent/text_only/02123", "verdict": "ok"}
+{"id": "intent/filter/02124", "verdict": "ok"}
+{"detail": 0.366, "id": "intent/grid/02125", "verdict": "near_dup_set"}
+{"id": "intent/grid/02126", "verdict": "ok"}
+{"id": "intent/list/02127", "verdict": "ok"}
+{"id": "intent/grid/02128", "verdict": "ok"}
+{"id": "intent/stats/02129", "verdict": "ok"}
+{"id": "intent/grid/02130", "verdict": "ok"}
+{"id": "intent/state/02131", "verdict": "ok"}
+{"id": "intent/state/02132", "verdict": "ok"}
+{"id": "intent/detail/02133", "verdict": "ok"}
+{"id": "intent/stats/02134", "verdict": "ok"}
+{"id": "intent/filter/02135", "verdict": "ok"}
+{"id": "intent/list/02136", "verdict": "ok"}
+{"id": "intent/text_only/02137", "verdict": "ok"}
+{"id": "intent/dashboard/02138", "verdict": "ok"}
+{"id": "intent/detail/02139", "verdict": "ok"}
+{"id": "intent/detail/02140", "verdict": "ok"}
+{"id": "intent/dashboard/02141", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02142", "verdict": "layout_copied"}
+{"id": "intent/detail/02143", "verdict": "ok"}
+{"id": "intent/filter/02144", "verdict": "ok"}
+{"id": "intent/stats/02145", "verdict": "ok"}
+{"id": "intent/text_only/02146", "verdict": "ok"}
+{"id": "intent/detail/02147", "verdict": "ok"}
+{"id": "intent/list/02148", "verdict": "ok"}
+{"id": "intent/detail/02149", "verdict": "ok"}
+{"id": "intent/grid/02150", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02151", "verdict": "layout_copied"}
+{"detail": 0.402, "id": "intent/form/02152", "verdict": "near_dup_set"}
+{"detail": "one per record not a table", "id": "intent/list/02153", "verdict": "layout_copied"}
+{"id": "intent/detail/02154", "verdict": "ok"}
+{"id": "intent/grid/02155", "verdict": "ok"}
+{"id": "intent/dashboard/02156", "verdict": "ok"}
+{"id": "intent/dashboard/02157", "verdict": "ok"}
+{"detail": 0.382, "id": "intent/state/02158", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/02159", "verdict": "ok"}
+{"id": "intent/grid/02160", "verdict": "ok"}
+{"id": "intent/dashboard/02161", "verdict": "ok"}
+{"id": "intent/detail/02162", "verdict": "ok"}
+{"id": "intent/form/02163", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/02164", "verdict": "layout_copied"}
+{"id": "intent/stats/02165", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/02166", "verdict": "layout_copied"}
+{"id": "intent/list/02167", "verdict": "ok"}
+{"id": "intent/stats/02168", "verdict": "ok"}
+{"detail": ["stretch"], "id": "intent/grid/02169", "verdict": "register"}
+{"id": "intent/text_only/02170", "verdict": "ok"}
+{"id": "intent/detail/02171", "verdict": "ok"}
+{"id": "intent/grid/02172", "verdict": "ok"}
+{"id": "intent/list/02173", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02174", "verdict": "layout_copied"}
+{"id": "intent/grid/02175", "verdict": "ok"}
+{"id": "intent/text_only/02176", "verdict": "ok"}
+{"id": "intent/list/02177", "verdict": "ok"}
+{"detail": "fields stacked one per line with", "id": "intent/form/02178", "verdict": "layout_copied"}
+{"id": "intent/state/02179", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02180", "verdict": "layout_copied"}
+{"id": "intent/filter/02181", "verdict": "ok"}
+{"id": "intent/state/02182", "verdict": "ok"}
+{"id": "intent/detail/02183", "verdict": "ok"}
+{"id": "intent/stats/02184", "verdict": "ok"}
+{"id": "intent/dashboard/02185", "verdict": "ok"}
+{"id": "intent/text_only/02186", "verdict": "ok"}
+{"id": "intent/list/02187", "verdict": "ok"}
+{"id": "intent/detail/02188", "verdict": "ok"}
+{"detail": 0.392, "id": "intent/text_only/02189", "verdict": "near_dup_set"}
+{"id": "intent/grid/02190", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/02191", "verdict": "layout_copied"}
+{"id": "intent/stats/02192", "verdict": "ok"}
+{"id": "intent/grid/02193", "verdict": "ok"}
+{"detail": 0.352, "id": "intent/stats/02194", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/02195", "verdict": "ok"}
+{"id": "intent/detail/02196", "verdict": "ok"}
+{"id": "intent/dashboard/02197", "verdict": "ok"}
+{"id": "intent/grid/02198", "verdict": "ok"}
+{"id": "intent/stats/02199", "verdict": "ok"}
+{"id": "intent/grid/02200", "verdict": "ok"}
+{"id": "intent/state/02201", "verdict": "ok"}
+{"id": "intent/detail/02202", "verdict": "ok"}
+{"id": "intent/stats/02203", "verdict": "ok"}
+{"id": "intent/dashboard/02204", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/02205", "verdict": "layout_copied"}
+{"id": "intent/detail/02206", "verdict": "ok"}
+{"id": "intent/detail/02207", "verdict": "ok"}
+{"id": "intent/dashboard/02208", "verdict": "ok"}
+{"id": "intent/state/02209", "verdict": "ok"}
+{"id": "intent/dashboard/02210", "verdict": "ok"}
+{"id": "intent/detail/02211", "verdict": "ok"}
+{"id": "intent/dashboard/02212", "verdict": "ok"}
+{"detail": 0.374, "id": "intent/list/02213", "verdict": "near_dup_set"}
+{"id": "intent/list/02214", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02215", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02216", "verdict": "ok"}
+{"id": "intent/detail/02217", "verdict": "ok"}
+{"id": "intent/filter/02218", "verdict": "ok"}
+{"id": "intent/filter/02219", "verdict": "ok"}
+{"id": "intent/dashboard/02220", "verdict": "ok"}
+{"id": "intent/grid/02221", "verdict": "ok"}
+{"id": "intent/grid/02222", "verdict": "ok"}
+{"id": "intent/text_only/02223", "verdict": "ok"}
+{"id": "intent/detail/02224", "verdict": "ok"}
+{"id": "intent/state/02225", "verdict": "ok"}
+{"id": "intent/dashboard/02226", "verdict": "ok"}
+{"id": "intent/detail/02227", "verdict": "ok"}
+{"detail": "with the button at the bottom", "id": "intent/form/02228", "verdict": "layout_copied"}
+{"id": "intent/filter/02229", "verdict": "ok"}
+{"id": "intent/grid/02230", "verdict": "ok"}
+{"id": "intent/grid/02231", "verdict": "ok"}
+{"id": "intent/list/02232", "verdict": "ok"}
+{"detail": 0.533, "id": "intent/form/02233", "verdict": "near_dup_set"}
+{"id": "intent/detail/02234", "verdict": "ok"}
+{"detail": 0.357, "id": "intent/form/02235", "verdict": "near_dup_set"}
+{"id": "intent/text_only/02236", "verdict": "ok"}
+{"id": "intent/stats/02237", "verdict": "ok"}
+{"id": "intent/state/02238", "verdict": "ok"}
+{"id": "intent/state/02239", "verdict": "ok"}
+{"id": "intent/form/02240", "verdict": "ok"}
+{"id": "intent/list/02241", "verdict": "ok"}
+{"detail": 0.393, "id": "intent/form/02242", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/02243", "verdict": "ok"}
+{"id": "intent/dashboard/02244", "verdict": "ok"}
+{"id": "intent/dashboard/02245", "verdict": "ok"}
+{"id": "intent/detail/02246", "verdict": "ok"}
+{"id": "intent/filter/02247", "verdict": "ok"}
+{"id": "intent/detail/02248", "verdict": "ok"}
+{"id": "intent/filter/02249", "verdict": "ok"}
+{"detail": "details as label and value pairs", "id": "intent/detail/02250", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02251", "verdict": "ok"}
+{"id": "intent/stats/02252", "verdict": "ok"}
+{"id": "intent/state/02253", "verdict": "ok"}
+{"id": "intent/grid/02254", "verdict": "ok"}
+{"detail": "one record per line with the", "id": "intent/list/02255", "verdict": "layout_copied"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02256", "verdict": "layout_copied"}
+{"id": "intent/grid/02257", "verdict": "ok"}
+{"id": "intent/list/02258", "verdict": "ok"}
+{"id": "intent/state/02259", "verdict": "ok"}
+{"detail": "with the details in two columns", "id": "intent/detail/02260", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02261", "verdict": "ok"}
+{"id": "intent/grid/02262", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02263", "verdict": "layout_copied"}
+{"id": "intent/detail/02264", "verdict": "ok"}
+{"id": "intent/stats/02265", "verdict": "ok"}
+{"detail": 0.359, "id": "intent/detail/02266", "verdict": "near_dup_set"}
+{"detail": ["fit"], "id": "intent/form/02267", "verdict": "register"}
+{"id": "intent/grid/02268", "verdict": "ok"}
+{"id": "intent/list/02269", "verdict": "ok"}
+{"id": "intent/grid/02270", "verdict": "ok"}
+{"id": "intent/dashboard/02271", "verdict": "ok"}
+{"id": "intent/dashboard/02272", "verdict": "ok"}
+{"detail": "a simple list one record per", "id": "intent/state/02273", "verdict": "layout_copied"}
+{"id": "intent/filter/02274", "verdict": "ok"}
+{"id": "intent/dashboard/02275", "verdict": "ok"}
+{"id": "intent/filter/02276", "verdict": "ok"}
+{"id": "intent/detail/02277", "verdict": "ok"}
+{"id": "intent/filter/02278", "verdict": "ok"}
+{"id": "intent/dashboard/02279", "verdict": "ok"}
+{"id": "intent/detail/02280", "verdict": "ok"}
+{"id": "intent/detail/02281", "verdict": "ok"}
+{"id": "intent/grid/02282", "verdict": "ok"}
+{"id": "intent/dashboard/02283", "verdict": "ok"}
+{"id": "intent/form/02284", "verdict": "ok"}
+{"detail": 0.365, "id": "intent/grid/02285", "verdict": "near_dup_set"}
+{"id": "intent/state/02286", "verdict": "ok"}
+{"id": "intent/filter/02287", "verdict": "ok"}
+{"id": "intent/dashboard/02288", "verdict": "ok"}
+{"id": "intent/dashboard/02289", "verdict": "ok"}
+{"id": "intent/list/02290", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02291", "verdict": "layout_copied"}
+{"id": "intent/stats/02292", "verdict": "ok"}
+{"id": "intent/grid/02293", "verdict": "ok"}
+{"id": "intent/grid/02294", "verdict": "ok"}
+{"id": "intent/text_only/02295", "verdict": "ok"}
+{"id": "intent/detail/02296", "verdict": "ok"}
+{"id": "intent/detail/02297", "verdict": "ok"}
+{"id": "intent/detail/02298", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/02299", "verdict": "layout_copied"}
+{"detail": "a list of small cards one", "id": "intent/list/02300", "verdict": "layout_copied"}
+{"id": "intent/text_only/02301", "verdict": "ok"}
+{"id": "intent/dashboard/02302", "verdict": "ok"}
+{"id": "intent/text_only/02303", "verdict": "ok"}
+{"id": "intent/list/02304", "verdict": "ok"}
+{"detail": 0.351, "id": "intent/form/02305", "verdict": "near_dup_set"}
+{"id": "intent/form/02306", "verdict": "ok"}
+{"id": "intent/stats/02307", "verdict": "ok"}
+{"id": "intent/dashboard/02308", "verdict": "ok"}
+{"id": "intent/stats/02309", "verdict": "ok"}
+{"id": "intent/state/02310", "verdict": "ok"}
+{"id": "intent/filter/02311", "verdict": "ok"}
+{"id": "intent/detail/02312", "verdict": "ok"}
+{"id": "intent/state/02313", "verdict": "ok"}
+{"id": "intent/form/02314", "verdict": "ok"}
+{"id": "intent/list/02315", "verdict": "ok"}
+{"id": "intent/stats/02316", "verdict": "ok"}
+{"id": "intent/filter/02317", "verdict": "ok"}
+{"id": "intent/dashboard/02318", "verdict": "ok"}
+{"id": "intent/state/02319", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/02320", "verdict": "layout_copied"}
+{"id": "intent/grid/02321", "verdict": "ok"}
+{"id": "intent/dashboard/02322", "verdict": "ok"}
+{"id": "intent/form/02323", "verdict": "ok"}
+{"id": "intent/form/02324", "verdict": "ok"}
+{"detail": "the other details as label and", "id": "intent/detail/02325", "verdict": "layout_copied"}
+{"id": "intent/form/02326", "verdict": "ok"}
+{"id": "intent/detail/02327", "verdict": "ok"}
+{"id": "intent/filter/02328", "verdict": "ok"}
+{"id": "intent/grid/02329", "verdict": "ok"}
+{"id": "intent/grid/02330", "verdict": "ok"}
+{"id": "intent/list/02331", "verdict": "ok"}
+{"id": "intent/state/02332", "verdict": "ok"}
+{"detail": "as small cards in a row", "id": "intent/dashboard/02333", "verdict": "layout_copied"}
+{"id": "intent/list/02334", "verdict": "ok"}
+{"id": "intent/text_only/02335", "verdict": "ok"}
+{"id": "intent/stats/02336", "verdict": "ok"}
+{"id": "intent/state/02337", "verdict": "ok"}
+{"detail": 0.393, "id": "intent/form/02338", "verdict": "near_dup_set"}
+{"id": "intent/state/02339", "verdict": "ok"}
+{"id": "intent/dashboard/02340", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/02341", "verdict": "layout_copied"}
+{"id": "intent/state/02342", "verdict": "ok"}
+{"id": "intent/detail/02343", "verdict": "ok"}
+{"id": "intent/grid/02344", "verdict": "ok"}
+{"id": "intent/state/02345", "verdict": "ok"}
+{"id": "intent/list/02346", "verdict": "ok"}
+{"id": "intent/state/02347", "verdict": "ok"}
+{"id": "intent/form/02348", "verdict": "ok"}
+{"id": "intent/dashboard/02349", "verdict": "ok"}
+{"id": "intent/list/02350", "verdict": "ok"}
+{"id": "intent/list/02351", "verdict": "ok"}
+{"detail": "details as label and value pairs", "id": "intent/detail/02352", "verdict": "layout_copied"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/02353", "verdict": "layout_copied"}
+{"id": "intent/text_only/02354", "verdict": "ok"}
+{"id": "intent/state/02355", "verdict": "ok"}
+{"id": "intent/form/02356", "verdict": "ok"}
+{"id": "intent/stats/02357", "verdict": "ok"}
+{"detail": 0.365, "id": "intent/form/02358", "verdict": "near_dup_set"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02359", "verdict": "layout_copied"}
+{"id": "intent/list/02360", "verdict": "ok"}
+{"id": "intent/form/02361", "verdict": "ok"}
+{"id": "intent/form/02362", "verdict": "ok"}
+{"id": "intent/detail/02363", "verdict": "ok"}
+{"id": "intent/detail/02364", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02365", "verdict": "layout_copied"}
+{"id": "intent/grid/02366", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/02367", "verdict": "layout_copied"}
+{"id": "intent/text_only/02368", "verdict": "ok"}
+{"id": "intent/grid/02369", "verdict": "ok"}
+{"id": "intent/grid/02370", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02371", "verdict": "layout_copied"}
+{"detail": 0.364, "id": "intent/detail/02372", "verdict": "near_dup_set"}
+{"id": "intent/detail/02373", "verdict": "ok"}
+{"id": "intent/filter/02374", "verdict": "ok"}
+{"id": "intent/stats/02375", "verdict": "ok"}
+{"id": "intent/grid/02376", "verdict": "ok"}
+{"id": "intent/text_only/02377", "verdict": "ok"}
+{"id": "intent/stats/02378", "verdict": "ok"}
+{"detail": 0.433, "id": "intent/stats/02379", "verdict": "near_dup_set"}
+{"id": "intent/detail/02380", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/02381", "verdict": "layout_copied"}
+{"id": "intent/stats/02382", "verdict": "ok"}
+{"id": "intent/filter/02383", "verdict": "ok"}
+{"id": "intent/form/02384", "verdict": "ok"}
+{"id": "intent/dashboard/02385", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/02386", "verdict": "layout_copied"}
+{"id": "intent/filter/02387", "verdict": "ok"}
+{"id": "intent/state/02388", "verdict": "ok"}
+{"detail": 0.362, "id": "intent/state/02389", "verdict": "near_dup_set"}
+{"id": "intent/list/02390", "verdict": "ok"}
+{"id": "intent/stats/02391", "verdict": "ok"}
+{"detail": 0.408, "id": "intent/detail/02392", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/02393", "verdict": "ok"}
+{"id": "intent/detail/02394", "verdict": "ok"}
+{"id": "intent/stats/02395", "verdict": "ok"}
+{"id": "intent/state/02396", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02397", "verdict": "layout_copied"}
+{"id": "intent/filter/02398", "verdict": "ok"}
+{"id": "intent/list/02399", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02400", "verdict": "layout_copied"}
+{"detail": "two short fields side by side", "id": "intent/form/02401", "verdict": "layout_copied"}
+{"detail": "the other details as label and", "id": "intent/detail/02402", "verdict": "layout_copied"}
+{"id": "intent/grid/02403", "verdict": "ok"}
+{"id": "intent/dashboard/02404", "verdict": "ok"}
+{"id": "intent/text_only/02405", "verdict": "ok"}
+{"id": "intent/stats/02406", "verdict": "ok"}
+{"id": "intent/stats/02407", "verdict": "ok"}
+{"id": "intent/dashboard/02408", "verdict": "ok"}
+{"id": "intent/dashboard/02409", "verdict": "ok"}
+{"id": "intent/dashboard/02410", "verdict": "ok"}
+{"detail": 0.492, "id": "intent/form/02411", "verdict": "near_dup_set"}
+{"id": "intent/state/02412", "verdict": "ok"}
+{"id": "intent/grid/02413", "verdict": "ok"}
+{"id": "intent/grid/02414", "verdict": "ok"}
+{"id": "intent/list/02415", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02416", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02417", "verdict": "ok"}
+{"id": "intent/filter/02418", "verdict": "ok"}
+{"id": "intent/form/02419", "verdict": "ok"}
+{"id": "intent/detail/02420", "verdict": "ok"}
+{"id": "intent/detail/02421", "verdict": "ok"}
+{"id": "intent/filter/02422", "verdict": "ok"}
+{"id": "intent/filter/02423", "verdict": "ok"}
+{"id": "intent/form/02424", "verdict": "ok"}
+{"id": "intent/grid/02425", "verdict": "ok"}
+{"id": "intent/grid/02426", "verdict": "ok"}
+{"id": "intent/detail/02427", "verdict": "ok"}
+{"id": "intent/list/02428", "verdict": "ok"}
+{"id": "intent/list/02429", "verdict": "ok"}
+{"id": "intent/detail/02430", "verdict": "ok"}
+{"id": "intent/list/02431", "verdict": "ok"}
+{"id": "intent/dashboard/02432", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02433", "verdict": "layout_copied"}
+{"detail": 0.381, "id": "intent/stats/02434", "verdict": "near_dup_set"}
+{"id": "intent/list/02435", "verdict": "ok"}
+{"detail": 0.366, "id": "intent/dashboard/02436", "verdict": "near_dup_set"}
+{"detail": "figures side by side in one", "id": "intent/stats/02437", "verdict": "layout_copied"}
+{"id": "intent/filter/02438", "verdict": "ok"}
+{"id": "intent/grid/02439", "verdict": "ok"}
+{"detail": "the name on its own line", "id": "intent/list/02440", "verdict": "layout_copied"}
+{"id": "intent/grid/02441", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/02442", "verdict": "layout_copied"}
+{"id": "intent/detail/02443", "verdict": "ok"}
+{"id": "intent/list/02444", "verdict": "ok"}
+{"id": "intent/text_only/02445", "verdict": "ok"}
+{"detail": 0.356, "id": "intent/text_only/02446", "verdict": "near_dup_set"}
+{"id": "intent/grid/02447", "verdict": "ok"}
+{"id": "intent/list/02448", "verdict": "ok"}
+{"id": "intent/dashboard/02449", "verdict": "ok"}
+{"id": "intent/dashboard/02450", "verdict": "ok"}
+{"detail": "the details as label and value", "id": "intent/detail/02451", "verdict": "layout_copied"}
+{"id": "intent/grid/02452", "verdict": "ok"}
+{"id": "intent/detail/02453", "verdict": "ok"}
+{"id": "intent/detail/02454", "verdict": "ok"}
+{"id": "intent/list/02455", "verdict": "ok"}
+{"id": "intent/list/02456", "verdict": "ok"}
+{"id": "intent/grid/02457", "verdict": "ok"}
+{"id": "intent/grid/02458", "verdict": "ok"}
+{"id": "intent/dashboard/02459", "verdict": "ok"}
+{"id": "intent/text_only/02460", "verdict": "ok"}
+{"id": "intent/text_only/02461", "verdict": "ok"}
+{"id": "intent/detail/02462", "verdict": "ok"}
+{"id": "intent/stats/02463", "verdict": "ok"}
+{"detail": 0.411, "id": "intent/stats/02464", "verdict": "near_dup_set"}
+{"detail": 0.357, "id": "intent/form/02465", "verdict": "near_dup_set"}
+{"id": "intent/detail/02466", "verdict": "ok"}
+{"id": "intent/filter/02467", "verdict": "ok"}
+{"id": "intent/state/02468", "verdict": "ok"}
+{"id": "intent/filter/02469", "verdict": "ok"}
+{"id": "intent/state/02470", "verdict": "ok"}
+{"id": "intent/state/02471", "verdict": "ok"}
+{"id": "intent/dashboard/02472", "verdict": "ok"}
+{"id": "intent/detail/02473", "verdict": "ok"}
+{"id": "intent/list/02474", "verdict": "ok"}
+{"detail": 0.359, "id": "intent/form/02475", "verdict": "near_dup_set"}
+{"id": "intent/list/02476", "verdict": "ok"}
+{"id": "intent/stats/02477", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/02478", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02479", "verdict": "ok"}
+{"id": "intent/dashboard/02480", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/02481", "verdict": "layout_copied"}
+{"id": "intent/grid/02482", "verdict": "ok"}
+{"id": "intent/grid/02483", "verdict": "ok"}
+{"id": "intent/detail/02484", "verdict": "ok"}
+{"id": "intent/form/02485", "verdict": "ok"}
+{"id": "intent/grid/02486", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/02487", "verdict": "layout_copied"}
+{"id": "intent/grid/02488", "verdict": "ok"}
+{"id": "intent/filter/02489", "verdict": "ok"}
+{"id": "intent/list/02490", "verdict": "ok"}
+{"id": "intent/dashboard/02491", "verdict": "ok"}
+{"id": "intent/dashboard/02492", "verdict": "ok"}
+{"id": "intent/state/02493", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02494", "verdict": "layout_copied"}
+{"id": "intent/filter/02495", "verdict": "ok"}
+{"id": "intent/grid/02496", "verdict": "ok"}
+{"id": "intent/stats/02497", "verdict": "ok"}
+{"id": "intent/list/02498", "verdict": "ok"}
+{"id": "intent/list/02499", "verdict": "ok"}
+{"id": "intent/stats/02500", "verdict": "ok"}
+{"id": "intent/state/02501", "verdict": "ok"}
+{"id": "intent/grid/02502", "verdict": "ok"}
+{"id": "intent/stats/02503", "verdict": "ok"}
+{"id": "intent/grid/02504", "verdict": "ok"}
+{"detail": 0.375, "id": "intent/state/02505", "verdict": "near_dup_set"}
+{"id": "intent/form/02506", "verdict": "ok"}
+{"id": "intent/dashboard/02507", "verdict": "ok"}
+{"detail": 0.355, "id": "intent/dashboard/02508", "verdict": "near_dup_set"}
+{"detail": ["`"], "id": "intent/stats/02509", "verdict": "register"}
+{"id": "intent/dashboard/02510", "verdict": "ok"}
+{"id": "intent/text_only/02511", "verdict": "ok"}
+{"id": "intent/detail/02512", "verdict": "ok"}
+{"id": "intent/detail/02513", "verdict": "ok"}
+{"id": "intent/dashboard/02514", "verdict": "ok"}
+{"detail": 0.366, "id": "intent/grid/02515", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/02516", "verdict": "ok"}
+{"id": "intent/state/02517", "verdict": "ok"}
+{"detail": 0.367, "id": "intent/form/02518", "verdict": "near_dup_set"}
+{"id": "intent/stats/02519", "verdict": "ok"}
+{"id": "intent/detail/02520", "verdict": "ok"}
+{"id": "intent/dashboard/02521", "verdict": "ok"}
+{"detail": "search box side by side above", "id": "intent/filter/02522", "verdict": "layout_copied"}
+{"detail": "name on its own line and", "id": "intent/list/02523", "verdict": "layout_copied"}
+{"id": "intent/list/02524", "verdict": "ok"}
+{"id": "intent/form/02525", "verdict": "ok"}
+{"id": "intent/dashboard/02526", "verdict": "ok"}
+{"id": "intent/dashboard/02527", "verdict": "ok"}
+{"id": "intent/state/02528", "verdict": "ok"}
+{"detail": 0.415, "id": "intent/form/02529", "verdict": "near_dup_set"}
+{"id": "intent/form/02530", "verdict": "ok"}
+{"detail": 0.449, "id": "intent/form/02531", "verdict": "near_dup_set"}
+{"id": "intent/filter/02532", "verdict": "ok"}
+{"id": "intent/grid/02533", "verdict": "ok"}
+{"id": "intent/list/02534", "verdict": "ok"}
+{"id": "intent/dashboard/02535", "verdict": "ok"}
+{"detail": "side by side above the table", "id": "intent/filter/02536", "verdict": "layout_copied"}
+{"id": "intent/grid/02537", "verdict": "ok"}
+{"id": "intent/dashboard/02538", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02539", "verdict": "layout_copied"}
+{"id": "intent/text_only/02540", "verdict": "ok"}
+{"detail": 0.351, "id": "intent/detail/02541", "verdict": "near_dup_set"}
+{"id": "intent/dashboard/02542", "verdict": "ok"}
+{"detail": ["fit"], "id": "intent/form/02543", "verdict": "register"}
+{"detail": "in two columns side by side", "id": "intent/detail/02544", "verdict": "layout_copied"}
+{"detail": "side by side above the table", "id": "intent/filter/02545", "verdict": "layout_copied"}
+{"id": "intent/state/02546", "verdict": "ok"}
+{"id": "intent/stats/02547", "verdict": "ok"}
+{"id": "intent/stats/02548", "verdict": "ok"}
+{"id": "intent/grid/02549", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/02550", "verdict": "layout_copied"}
+{"id": "intent/stats/02551", "verdict": "ok"}
+{"id": "intent/state/02552", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/02553", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02554", "verdict": "ok"}
+{"detail": 0.438, "id": "intent/detail/02555", "verdict": "near_dup_set"}
+{"id": "intent/detail/02556", "verdict": "ok"}
+{"id": "intent/text_only/02557", "verdict": "ok"}
+{"id": "intent/grid/02558", "verdict": "ok"}
+{"id": "intent/state/02559", "verdict": "ok"}
+{"id": "intent/state/02560", "verdict": "ok"}
+{"id": "intent/state/02561", "verdict": "ok"}
+{"id": "intent/detail/02562", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02563", "verdict": "layout_copied"}
+{"detail": "a simple list one record per", "id": "intent/state/02564", "verdict": "layout_copied"}
+{"detail": "with the buttons at the bottom", "id": "intent/detail/02565", "verdict": "layout_copied"}
+{"id": "intent/filter/02566", "verdict": "ok"}
+{"detail": 0.432, "id": "intent/stats/02567", "verdict": "near_dup_set"}
+{"id": "intent/grid/02568", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02569", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02570", "verdict": "ok"}
+{"id": "intent/list/02571", "verdict": "ok"}
+{"id": "intent/dashboard/02572", "verdict": "ok"}
+{"id": "intent/filter/02573", "verdict": "ok"}
+{"id": "intent/dashboard/02574", "verdict": "ok"}
+{"id": "intent/form/02575", "verdict": "ok"}
+{"id": "intent/grid/02576", "verdict": "ok"}
+{"id": "intent/list/02577", "verdict": "ok"}
+{"id": "intent/detail/02578", "verdict": "ok"}
+{"id": "intent/detail/02579", "verdict": "ok"}
+{"id": "intent/list/02580", "verdict": "ok"}
+{"detail": 0.387, "id": "intent/form/02581", "verdict": "near_dup_set"}
+{"id": "intent/form/02582", "verdict": "ok"}
+{"id": "intent/detail/02583", "verdict": "ok"}
+{"id": "intent/filter/02584", "verdict": "ok"}
+{"id": "intent/dashboard/02585", "verdict": "ok"}
+{"id": "intent/grid/02586", "verdict": "ok"}
+{"id": "intent/filter/02587", "verdict": "ok"}
+{"id": "intent/state/02588", "verdict": "ok"}
+{"id": "intent/grid/02589", "verdict": "ok"}
+{"id": "intent/text_only/02590", "verdict": "ok"}
+{"id": "intent/form/02591", "verdict": "ok"}
+{"id": "intent/detail/02592", "verdict": "ok"}
+{"id": "intent/grid/02593", "verdict": "ok"}
+{"id": "intent/grid/02594", "verdict": "ok"}
+{"id": "intent/dashboard/02595", "verdict": "ok"}
+{"id": "intent/stats/02596", "verdict": "ok"}
+{"id": "intent/grid/02597", "verdict": "ok"}
+{"id": "intent/form/02598", "verdict": "ok"}
+{"id": "intent/filter/02599", "verdict": "ok"}
+{"id": "intent/detail/02600", "verdict": "ok"}
+{"detail": 0.351, "id": "intent/text_only/02601", "verdict": "near_dup_set"}
+{"id": "intent/stats/02602", "verdict": "ok"}
+{"id": "intent/grid/02603", "verdict": "ok"}
+{"id": "intent/state/02604", "verdict": "ok"}
+{"id": "intent/dashboard/02605", "verdict": "ok"}
+{"id": "intent/filter/02606", "verdict": "ok"}
+{"detail": 0.387, "id": "intent/form/02607", "verdict": "near_dup_set"}
+{"id": "intent/stats/02608", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/02609", "verdict": "layout_copied"}
+{"id": "intent/detail/02610", "verdict": "ok"}
+{"id": "intent/list/02611", "verdict": "ok"}
+{"id": "intent/dashboard/02612", "verdict": "ok"}
+{"id": "intent/stats/02613", "verdict": "ok"}
+{"detail": "figures side by side at the", "id": "intent/dashboard/02614", "verdict": "layout_copied"}
+{"detail": "with the name on its own", "id": "intent/list/02615", "verdict": "layout_copied"}
+{"id": "intent/grid/02616", "verdict": "ok"}
+{"id": "intent/state/02617", "verdict": "ok"}
+{"id": "intent/filter/02618", "verdict": "ok"}
+{"id": "intent/form/02619", "verdict": "ok"}
+{"id": "intent/dashboard/02620", "verdict": "ok"}
+{"id": "intent/dashboard/02621", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/02622", "verdict": "layout_copied"}
+{"id": "intent/filter/02623", "verdict": "ok"}
+{"id": "intent/grid/02624", "verdict": "ok"}
+{"id": "intent/stats/02625", "verdict": "ok"}
+{"id": "intent/stats/02626", "verdict": "ok"}
+{"id": "intent/dashboard/02627", "verdict": "ok"}
+{"id": "intent/state/02628", "verdict": "ok"}
+{"id": "intent/dashboard/02629", "verdict": "ok"}
+{"id": "intent/grid/02630", "verdict": "ok"}
+{"id": "intent/detail/02631", "verdict": "ok"}
+{"id": "intent/grid/02632", "verdict": "ok"}
+{"id": "intent/text_only/02633", "verdict": "ok"}
+{"id": "intent/grid/02634", "verdict": "ok"}
+{"id": "intent/state/02635", "verdict": "ok"}
+{"id": "intent/state/02636", "verdict": "ok"}
+{"id": "intent/stats/02637", "verdict": "ok"}
+{"id": "intent/state/02638", "verdict": "ok"}
+{"id": "intent/grid/02639", "verdict": "ok"}
+{"id": "intent/dashboard/02640", "verdict": "ok"}
+{"id": "intent/dashboard/02641", "verdict": "ok"}
+{"id": "intent/state/02642", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02643", "verdict": "layout_copied"}
+{"id": "intent/state/02644", "verdict": "ok"}
+{"id": "intent/state/02645", "verdict": "ok"}
+{"id": "intent/dashboard/02646", "verdict": "ok"}
+{"id": "intent/stats/02647", "verdict": "ok"}
+{"id": "intent/grid/02648", "verdict": "ok"}
+{"id": "intent/text_only/02649", "verdict": "ok"}
+{"id": "intent/dashboard/02650", "verdict": "ok"}
+{"id": "intent/filter/02651", "verdict": "ok"}
+{"id": "intent/text_only/02652", "verdict": "ok"}
+{"id": "intent/grid/02653", "verdict": "ok"}
+{"id": "intent/detail/02654", "verdict": "ok"}
+{"detail": "side by side in one row", "id": "intent/stats/02655", "verdict": "layout_copied"}
+{"id": "intent/grid/02656", "verdict": "ok"}
+{"id": "intent/list/02657", "verdict": "ok"}
+{"id": "intent/dashboard/02658", "verdict": "ok"}
+{"id": "intent/stats/02659", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/02660", "verdict": "layout_copied"}
+{"id": "intent/list/02661", "verdict": "ok"}
+{"id": "intent/state/02662", "verdict": "ok"}
+{"id": "intent/state/02663", "verdict": "ok"}
+{"id": "intent/form/02664", "verdict": "ok"}
+{"id": "intent/grid/02665", "verdict": "ok"}
+{"id": "intent/text_only/02666", "verdict": "ok"}
+{"detail": "on its own line and the", "id": "intent/list/02667", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02668", "verdict": "ok"}
+{"id": "intent/detail/02669", "verdict": "ok"}
+{"id": "intent/text_only/02670", "verdict": "ok"}
+{"id": "intent/state/02671", "verdict": "ok"}
+{"detail": 0.4, "id": "intent/form/02672", "verdict": "near_dup_set"}
+{"id": "intent/filter/02673", "verdict": "ok"}
+{"detail": "per line with the name first", "id": "intent/list/02674", "verdict": "layout_copied"}
+{"id": "intent/state/02675", "verdict": "ok"}
+{"id": "intent/detail/02676", "verdict": "ok"}
+{"id": "intent/state/02677", "verdict": "ok"}
+{"id": "intent/stats/02678", "verdict": "ok"}
+{"detail": 0.358, "id": "intent/stats/02679", "verdict": "near_dup_set"}
+{"id": "intent/form/02680", "verdict": "ok"}
+{"detail": "with the name on its own", "id": "intent/list/02681", "verdict": "layout_copied"}
+{"detail": "two short fields side by side", "id": "intent/form/02682", "verdict": "layout_copied"}
+{"id": "intent/detail/02683", "verdict": "ok"}
+{"id": "intent/form/02684", "verdict": "ok"}
+{"id": "intent/text_only/02685", "verdict": "ok"}
+{"detail": "side by side at the top", "id": "intent/dashboard/02686", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02687", "verdict": "ok"}
+{"id": "intent/grid/02688", "verdict": "ok"}
+{"id": "intent/grid/02689", "verdict": "ok"}
+{"id": "intent/grid/02690", "verdict": "ok"}
+{"id": "intent/dashboard/02691", "verdict": "ok"}
+{"id": "intent/filter/02692", "verdict": "ok"}
+{"id": "intent/list/02693", "verdict": "ok"}
+{"id": "intent/state/02694", "verdict": "ok"}
+{"id": "intent/dashboard/02695", "verdict": "ok"}
+{"id": "intent/stats/02696", "verdict": "ok"}
+{"id": "intent/stats/02697", "verdict": "ok"}
+{"id": "intent/stats/02698", "verdict": "ok"}
+{"detail": "name on its own line and", "id": "intent/list/02699", "verdict": "layout_copied"}
+{"detail": "figures side by side in one", "id": "intent/stats/02700", "verdict": "layout_copied"}
+{"id": "intent/state/02701", "verdict": "ok"}
+{"id": "intent/list/02702", "verdict": "ok"}
+{"id": "intent/detail/02703", "verdict": "ok"}
+{"id": "intent/state/02704", "verdict": "ok"}
+{"detail": 0.357, "id": "intent/grid/02705", "verdict": "near_dup_set"}
+{"id": "intent/filter/02706", "verdict": "ok"}
+{"id": "intent/list/02707", "verdict": "ok"}
+{"id": "intent/state/02708", "verdict": "ok"}
+{"id": "intent/form/02709", "verdict": "ok"}
+{"id": "intent/state/02710", "verdict": "ok"}
+{"id": "intent/stats/02711", "verdict": "ok"}
+{"detail": 0.369, "id": "intent/form/02712", "verdict": "near_dup_set"}
+{"id": "intent/list/02713", "verdict": "ok"}
+{"id": "intent/form/02714", "verdict": "ok"}
+{"id": "intent/grid/02715", "verdict": "ok"}
+{"id": "intent/text_only/02716", "verdict": "ok"}
+{"id": "intent/list/02717", "verdict": "ok"}
+{"id": "intent/form/02718", "verdict": "ok"}
+{"id": "intent/list/02719", "verdict": "ok"}
+{"id": "intent/grid/02720", "verdict": "ok"}
+{"detail": "stacked one per line with the", "id": "intent/form/02721", "verdict": "layout_copied"}
+{"id": "intent/form/02722", "verdict": "ok"}
+{"id": "intent/list/02723", "verdict": "ok"}
+{"id": "intent/dashboard/02724", "verdict": "ok"}
+{"id": "intent/grid/02725", "verdict": "ok"}
+{"id": "intent/filter/02726", "verdict": "ok"}
+{"detail": "two short fields side by side", "id": "intent/form/02727", "verdict": "layout_copied"}
+{"id": "intent/grid/02728", "verdict": "ok"}
+{"detail": 0.356, "id": "intent/stats/02729", "verdict": "near_dup_set"}
+{"id": "intent/stats/02730", "verdict": "ok"}
+{"id": "intent/form/02731", "verdict": "ok"}
+{"detail": "figures side by side in one", "id": "intent/stats/02732", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02733", "verdict": "ok"}
+{"id": "intent/text_only/02734", "verdict": "ok"}
+{"id": "intent/list/02735", "verdict": "ok"}
+{"id": "intent/stats/02736", "verdict": "ok"}
+{"id": "intent/list/02737", "verdict": "ok"}
+{"id": "intent/form/02738", "verdict": "ok"}
+{"id": "intent/state/02739", "verdict": "ok"}
+{"id": "intent/dashboard/02740", "verdict": "ok"}
+{"detail": 0.42, "id": "intent/state/02741", "verdict": "near_dup_set"}
+{"id": "intent/text_only/02742", "verdict": "ok"}
+{"id": "intent/detail/02743", "verdict": "ok"}
+{"id": "intent/text_only/02744", "verdict": "ok"}
+{"id": "intent/grid/02745", "verdict": "ok"}
+{"detail": "side by side at the top", "id": "intent/dashboard/02746", "verdict": "layout_copied"}
+{"id": "intent/form/02747", "verdict": "ok"}
+{"id": "intent/dashboard/02748", "verdict": "ok"}
+{"id": "intent/list/02749", "verdict": "ok"}
+{"detail": 0.407, "id": "intent/form/02750", "verdict": "near_dup_set"}
+{"id": "intent/filter/02751", "verdict": "ok"}
+{"detail": "the filter and the search box", "id": "intent/filter/02752", "verdict": "layout_copied"}
+{"detail": 0.429, "id": "intent/form/02753", "verdict": "near_dup_set"}
+{"detail": "as small cards in a grid", "id": "intent/stats/02754", "verdict": "layout_copied"}
+{"detail": 0.379, "id": "intent/state/02755", "verdict": "near_dup_set"}
+{"id": "intent/state/02756", "verdict": "ok"}
+{"id": "intent/list/02757", "verdict": "ok"}
+{"id": "intent/filter/02758", "verdict": "ok"}
+{"id": "intent/detail/02759", "verdict": "ok"}
+{"id": "intent/grid/02760", "verdict": "ok"}
+{"detail": "the fields stacked one per line", "id": "intent/form/02761", "verdict": "layout_copied"}
+{"id": "intent/filter/02762", "verdict": "ok"}
+{"detail": "a list of small cards one", "id": "intent/list/02763", "verdict": "layout_copied"}
+{"id": "intent/dashboard/02764", "verdict": "ok"}
+{"id": "intent/grid/02765", "verdict": "ok"}
+{"id": "intent/list/02766", "verdict": "ok"}
+{"id": "intent/grid/02767", "verdict": "ok"}
+{"id": "intent/state/02768", "verdict": "ok"}
+{"id": "intent/text_only/02769", "verdict": "ok"}
+{"id": "intent/form/02770", "verdict": "ok"}
+{"id": "intent/list/02771", "verdict": "ok"}
+{"id": "intent/state/02772", "verdict": "ok"}
+{"id": "intent/grid/02773", "verdict": "ok"}
+{"id": "intent/grid/02774", "verdict": "ok"}
+{"id": "intent/list/02775", "verdict": "ok"}
+{"id": "intent/grid/02776", "verdict": "ok"}
+{"detail": 0.39, "id": "intent/form/02777", "verdict": "near_dup_set"}
+{"id": "intent/stats/02778", "verdict": "ok"}
+{"id": "intent/state/02779", "verdict": "ok"}
+{"detail": "as label and value pairs with", "id": "intent/detail/02780", "verdict": "layout_copied"}
+{"detail": "side by side above the table", "id": "intent/filter/02781", "verdict": "layout_copied"}
+{"id": "intent/list/02782", "verdict": "ok"}
+{"id": "intent/detail/02783", "verdict": "ok"}
+{"detail": ["Button"], "id": "intent/form/02784", "verdict": "register"}
+{"id": "intent/form/02785", "verdict": "ok"}
+{"id": "intent/list/02786", "verdict": "ok"}
+{"id": "intent/dashboard/02787", "verdict": "ok"}
+{"detail": "details as label and value pairs", "id": "intent/detail/02788", "verdict": "layout_copied"}
+{"id": "intent/detail/02789", "verdict": "ok"}
+{"id": "intent/update/02790", "verdict": "ok"}
+{"id": "intent/update/02791", "verdict": "ok"}
+{"id": "intent/update/02792", "verdict": "ok"}
+{"id": "intent/update/02793", "verdict": "ok"}
+{"id": "intent/update/02794", "verdict": "ok"}
+{"id": "intent/update/02795", "verdict": "ok"}
+{"id": "intent/update/02796", "verdict": "ok"}
+{"id": "intent/update/02797", "verdict": "ok"}
+{"id": "intent/update/02798", "verdict": "ok"}
+{"id": "intent/update/02799", "verdict": "ok"}
+{"id": "intent/update/02800", "verdict": "ok"}
+{"id": "intent/update/02801", "verdict": "ok"}
+{"id": "intent/update/02802", "verdict": "ok"}
+{"id": "intent/update/02803", "verdict": "ok"}
+{"id": "intent/update/02804", "verdict": "ok"}
+{"id": "intent/update/02805", "verdict": "ok"}
+{"id": "intent/update/02806", "verdict": "ok"}
+{"id": "intent/update/02807", "verdict": "ok"}
+{"id": "intent/update/02808", "verdict": "ok"}
+{"id": "intent/update/02809", "verdict": "ok"}
+{"id": "intent/update/02810", "verdict": "ok"}
+{"id": "intent/update/02811", "verdict": "ok"}
+{"detail": 0.4, "id": "intent/update/02812", "verdict": "near_dup_set"}
+{"id": "intent/update/02813", "verdict": "ok"}
+{"id": "intent/update/02814", "verdict": "ok"}
+{"id": "intent/update/02815", "verdict": "ok"}
+{"id": "intent/update/02816", "verdict": "ok"}
+{"id": "intent/update/02817", "verdict": "ok"}
+{"id": "intent/update/02818", "verdict": "ok"}
+{"id": "intent/update/02819", "verdict": "ok"}
+{"id": "intent/update/02820", "verdict": "ok"}
+{"id": "intent/update/02821", "verdict": "ok"}
+{"id": "intent/update/02822", "verdict": "ok"}
+{"id": "intent/update/02823", "verdict": "ok"}
+{"id": "intent/update/02824", "verdict": "ok"}
+{"id": "intent/update/02825", "verdict": "ok"}
+{"id": "intent/update/02826", "verdict": "ok"}
+{"id": "intent/update/02827", "verdict": "ok"}
+{"id": "intent/update/02828", "verdict": "ok"}
+{"id": "intent/update/02829", "verdict": "ok"}
+{"id": "intent/update/02830", "verdict": "ok"}
+{"id": "intent/update/02831", "verdict": "ok"}
+{"id": "intent/update/02832", "verdict": "ok"}
+{"id": "intent/update/02833", "verdict": "ok"}
+{"id": "intent/update/02834", "verdict": "ok"}
+{"id": "intent/update/02835", "verdict": "ok"}
+{"id": "intent/update/02836", "verdict": "ok"}
+{"id": "intent/update/02837", "verdict": "ok"}
+{"id": "intent/update/02838", "verdict": "ok"}
+{"id": "intent/update/02839", "verdict": "ok"}
+{"id": "intent/update/02840", "verdict": "ok"}
+{"id": "intent/update/02841", "verdict": "ok"}
+{"id": "intent/update/02842", "verdict": "ok"}
+{"id": "intent/update/02843", "verdict": "ok"}
+{"id": "intent/update/02844", "verdict": "ok"}
+{"id": "intent/update/02845", "verdict": "ok"}
+{"id": "intent/update/02846", "verdict": "ok"}
+{"id": "intent/update/02847", "verdict": "ok"}
+{"id": "intent/update/02848", "verdict": "ok"}
+{"id": "intent/update/02849", "verdict": "ok"}
+{"id": "intent/update/02850", "verdict": "ok"}
+{"id": "intent/update/02851", "verdict": "ok"}
+{"id": "intent/update/02852", "verdict": "ok"}
+{"id": "intent/update/02853", "verdict": "ok"}
+{"id": "intent/update/02854", "verdict": "ok"}
+{"id": "intent/update/02855", "verdict": "ok"}
+{"id": "intent/update/02856", "verdict": "ok"}
+{"id": "intent/update/02857", "verdict": "ok"}
+{"id": "intent/update/02858", "verdict": "ok"}
+{"id": "intent/update/02859", "verdict": "ok"}
+{"id": "intent/update/02860", "verdict": "ok"}
+{"id": "intent/update/02861", "verdict": "ok"}
+{"id": "intent/update/02862", "verdict": "ok"}
+{"id": "intent/update/02863", "verdict": "ok"}
+{"id": "intent/update/02864", "verdict": "ok"}
+{"id": "intent/update/02865", "verdict": "ok"}
+{"id": "intent/update/02866", "verdict": "ok"}
+{"id": "intent/update/02867", "verdict": "ok"}
+{"detail": 0.37, "id": "intent/update/02868", "verdict": "near_dup_set"}
+{"id": "intent/update/02869", "verdict": "ok"}
+{"id": "intent/update/02870", "verdict": "ok"}
+{"id": "intent/update/02871", "verdict": "ok"}
+{"id": "intent/update/02872", "verdict": "ok"}
+{"id": "intent/update/02873", "verdict": "ok"}
+{"id": "intent/update/02874", "verdict": "ok"}
+{"id": "intent/update/02875", "verdict": "ok"}
+{"id": "intent/update/02876", "verdict": "ok"}
+{"id": "intent/update/02877", "verdict": "ok"}
+{"id": "intent/update/02878", "verdict": "ok"}
+{"id": "intent/update/02879", "verdict": "ok"}
+{"id": "intent/update/02880", "verdict": "ok"}
+{"id": "intent/update/02881", "verdict": "ok"}
+{"id": "intent/update/02882", "verdict": "ok"}
+{"id": "intent/update/02883", "verdict": "ok"}
+{"id": "intent/update/02884", "verdict": "ok"}
+{"id": "intent/update/02885", "verdict": "ok"}
+{"id": "intent/update/02886", "verdict": "ok"}
+{"id": "intent/update/02887", "verdict": "ok"}
+{"id": "intent/update/02888", "verdict": "ok"}
+{"id": "intent/update/02889", "verdict": "ok"}
+{"id": "intent/update/02890", "verdict": "ok"}
+{"id": "intent/update/02891", "verdict": "ok"}
+{"id": "intent/update/02892", "verdict": "ok"}
+{"id": "intent/update/02893", "verdict": "ok"}
+{"id": "intent/update/02894", "verdict": "ok"}
+{"id": "intent/update/02895", "verdict": "ok"}
+{"id": "intent/update/02896", "verdict": "ok"}
+{"id": "intent/update/02897", "verdict": "ok"}
+{"id": "intent/update/02898", "verdict": "ok"}
+{"id": "intent/update/02899", "verdict": "ok"}
+{"id": "intent/update/02900", "verdict": "ok"}
+{"id": "intent/update/02901", "verdict": "ok"}
+{"id": "intent/update/02902", "verdict": "ok"}
+{"id": "intent/update/02903", "verdict": "ok"}
+{"id": "intent/update/02904", "verdict": "ok"}
+{"id": "intent/update/02905", "verdict": "ok"}
+{"id": "intent/update/02906", "verdict": "ok"}
+{"id": "intent/update/02907", "verdict": "ok"}
+{"id": "intent/update/02908", "verdict": "ok"}
+{"id": "intent/update/02909", "verdict": "ok"}
+{"id": "intent/update/02910", "verdict": "ok"}
+{"id": "intent/update/02911", "verdict": "ok"}
+{"id": "intent/update/02912", "verdict": "ok"}
+{"id": "intent/update/02913", "verdict": "ok"}
+{"id": "intent/update/02914", "verdict": "ok"}
+{"id": "intent/update/02915", "verdict": "ok"}
+{"id": "intent/update/02916", "verdict": "ok"}
+{"id": "intent/update/02917", "verdict": "ok"}
+{"id": "intent/update/02918", "verdict": "ok"}
+{"id": "intent/update/02919", "verdict": "ok"}
+{"id": "intent/update/02920", "verdict": "ok"}
+{"id": "intent/update/02921", "verdict": "ok"}
+{"id": "intent/update/02922", "verdict": "ok"}
+{"id": "intent/update/02923", "verdict": "ok"}
+{"id": "intent/update/02924", "verdict": "ok"}
+{"id": "intent/update/02925", "verdict": "ok"}
+{"id": "intent/update/02926", "verdict": "ok"}
+{"id": "intent/update/02927", "verdict": "ok"}
+{"id": "intent/update/02928", "verdict": "ok"}
+{"id": "intent/update/02929", "verdict": "ok"}
+{"id": "intent/update/02930", "verdict": "ok"}
+{"id": "intent/update/02931", "verdict": "ok"}
+{"id": "intent/update/02932", "verdict": "ok"}
+{"id": "intent/update/02933", "verdict": "ok"}
+{"id": "intent/update/02934", "verdict": "ok"}
+{"id": "intent/update/02935", "verdict": "ok"}
+{"id": "intent/update/02936", "verdict": "ok"}
+{"id": "intent/update/02937", "verdict": "ok"}
+{"id": "intent/update/02938", "verdict": "ok"}
+{"id": "intent/update/02939", "verdict": "ok"}
+{"id": "intent/update/02940", "verdict": "ok"}
+{"id": "intent/update/02941", "verdict": "ok"}
+{"id": "intent/update/02942", "verdict": "ok"}
+{"id": "intent/update/02943", "verdict": "ok"}
+{"id": "intent/update/02944", "verdict": "ok"}
+{"id": "intent/update/02945", "verdict": "ok"}
+{"id": "intent/update/02946", "verdict": "ok"}
+{"id": "intent/update/02947", "verdict": "ok"}
+{"id": "intent/update/02948", "verdict": "ok"}
+{"id": "intent/update/02949", "verdict": "ok"}
+{"id": "intent/update/02950", "verdict": "ok"}
+{"id": "intent/update/02951", "verdict": "ok"}
+{"id": "intent/update/02952", "verdict": "ok"}
+{"id": "intent/update/02953", "verdict": "ok"}
+{"detail": ["`"], "id": "intent/update/02954", "verdict": "register"}
+{"id": "intent/update/02955", "verdict": "ok"}
+{"id": "intent/update/02956", "verdict": "ok"}
+{"id": "intent/update/02957", "verdict": "ok"}
+{"id": "intent/update/02958", "verdict": "ok"}
+{"id": "intent/update/02959", "verdict": "ok"}
+{"id": "intent/update/02960", "verdict": "ok"}
+{"id": "intent/update/02961", "verdict": "ok"}
+{"id": "intent/update/02962", "verdict": "ok"}
+{"id": "intent/update/02963", "verdict": "ok"}
+{"id": "intent/update/02964", "verdict": "ok"}
+{"id": "intent/update/02965", "verdict": "ok"}
+{"id": "intent/update/02966", "verdict": "ok"}
+{"id": "intent/update/02967", "verdict": "ok"}
+{"id": "intent/update/02968", "verdict": "ok"}
+{"id": "intent/update/02969", "verdict": "ok"}
+{"id": "intent/update/02970", "verdict": "ok"}
+{"id": "intent/update/02971", "verdict": "ok"}
+{"id": "intent/update/02972", "verdict": "ok"}
+{"id": "intent/update/02973", "verdict": "ok"}
+{"id": "intent/update/02974", "verdict": "ok"}
+{"id": "intent/update/02975", "verdict": "ok"}
+{"id": "intent/update/02976", "verdict": "ok"}
+{"id": "intent/update/02977", "verdict": "ok"}
+{"id": "intent/update/02978", "verdict": "ok"}
+{"id": "intent/update/02979", "verdict": "ok"}
+{"id": "intent/update/02980", "verdict": "ok"}
+{"id": "intent/update/02981", "verdict": "ok"}
+{"id": "intent/update/02982", "verdict": "ok"}
+{"id": "intent/update/02983", "verdict": "ok"}
+{"id": "intent/update/02984", "verdict": "ok"}
+{"id": "intent/update/02985", "verdict": "ok"}
+{"id": "intent/update/02986", "verdict": "ok"}
+{"id": "intent/update/02987", "verdict": "ok"}
+{"id": "intent/update/02988", "verdict": "ok"}
+{"id": "intent/update/02989", "verdict": "ok"}
+{"id": "intent/update/02990", "verdict": "ok"}
+{"id": "intent/update/02991", "verdict": "ok"}
+{"id": "intent/update/02992", "verdict": "ok"}
+{"id": "intent/update/02993", "verdict": "ok"}
+{"id": "intent/update/02994", "verdict": "ok"}
+{"id": "intent/update/02995", "verdict": "ok"}
+{"id": "intent/update/02996", "verdict": "ok"}
+{"id": "intent/update/02997", "verdict": "ok"}
+{"id": "intent/update/02998", "verdict": "ok"}
+{"id": "intent/update/02999", "verdict": "ok"}
