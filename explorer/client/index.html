@@ -78,6 +78,11 @@
       }
       explorer-app .topbar :focus-visible { outline-color: var(--on-ink); } /* accent is too dark on ink */
       explorer-app .topbar button:hover:not(:disabled) { background: color-mix(in srgb, var(--on-ink) 10%, transparent); }
+      /* Selected Workspace or Settings: inverted, since the top bar's own text colour wins over a pale fill. */
+      explorer-app .topbar button[aria-pressed=true],
+      explorer-app .topbar button[aria-pressed=true]:hover:not(:disabled) {
+        background: var(--on-ink); color: var(--ink); border-color: var(--on-ink);
+      }
 
       explorer-app .shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
       explorer-app .sidebar {
@@ -120,7 +125,6 @@
       /* Workspaces (specs/workspaces/SPEC.md phase 1) */
       explorer-app .workspaces { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
       explorer-app .workspace { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      explorer-app .workspace.selected { background: var(--accent-soft); border-color: var(--accent-line); }
       explorer-app .workspace.unavailable { color: var(--faint); border-style: dashed; }
       explorer-app .workspace .reason { font-size: 0.85em; }
       explorer-app .retry-workspace, explorer-app .open-current, explorer-app .saved-list button { padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
@@ -134,7 +138,6 @@
       /* Settings (Workspaces SPEC phase 2): the bootstrap views, from explorer/bootstrap/ui/index.html */
       explorer-app [hidden] { display: none !important; } /* Settings stays mounted while hidden */
       explorer-app .settings-toggle { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      explorer-app .settings-toggle.selected { background: var(--accent-soft); border-color: var(--accent-line); }
       explorer-app .settings-page { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 64px; background: var(--canvas); }
       explorer-settings { display: block; max-width: 1200px; margin: 0 auto; --ok: #15803d; --warn: #b45309; --bad: var(--error); --muted-ink: var(--muted); }
       explorer-settings .steps { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0 0 16px; padding: 0; }
@@ -160,6 +163,8 @@
       explorer-settings button { padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
       explorer-settings button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
       explorer-settings button:disabled { opacity: .5; }
+      /* Review's and Boards' file tabs: one row (their `tab` class also picks up the Explorer's tab look). */
+      explorer-settings [role=tablist] { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 8px 0 0; }
       explorer-settings [role=tab][aria-selected=true] { font-weight: 700; border-bottom: 2px solid var(--accent); }
       explorer-settings .claim { margin: 12px 0; } explorer-settings .claim.dismissed { opacity: .6; }
       explorer-settings label.schema { display: block; }

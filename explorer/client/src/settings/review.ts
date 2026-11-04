@@ -175,6 +175,13 @@ export class BsReview extends LitElement {
     }
   }
 
+  /** Bring the Export section into view, as "Continue to Export" on the Boards step asks. */
+  focusExport() {
+    const h = this.querySelector<HTMLElement>('#export-h');
+    h?.scrollIntoView?.({ block: 'start' });
+    h?.focus();
+  }
+
   /** Save pending file and comment edits on the server (validate stores them) before leaving. */
   async leaveForReport() {
     clearTimeout(this.timer);
@@ -241,7 +248,7 @@ export class BsReview extends LitElement {
       <bs-claims .claims=${this.claims} .edited=${this.edited} .badExpect=${this.badExpect} ?busy=${this.busy}
         @claim-edit=${this.onClaimEdit} @claim-dismiss=${this.onDismiss} @claims-rerun=${() => void this.rerunClaims()}></bs-claims>
 
-      <h3>Export</h3>
+      <h3 id="export-h" tabindex="-1">Export</h3>
       <div class="row">
         ${this.workspaceMode && this.fixedName
           ? html`<span class="name-fixed">Regenerating <strong>${this.fixedName}</strong> (replaced files are backed up)</span>`

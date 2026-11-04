@@ -179,7 +179,7 @@ describe('Settings: the Boards step (U7, ported from bootstrap-app)', () => {
       'GET /api/connections': () => [200, { connections: [], current: null }],
       'POST /api/estimate': () => [200, ESTIMATE],
       'POST /api/validate': () => [200, { errors: [], context_chars: 10 }],
-      'GET /api/boards': () => [404, { error: 'no Boards yet' }],
+      'GET /api/boards': () => [200, null], // no Boards yet: an answer, not a console 404 (M1)
       'POST /api/boards/estimate': () => [200, ESTIMATE],
       'POST /api/boards/draft': () => [200, { run_id: 'b1' }],
       'GET /api/draft/b1/events': () =>
@@ -213,5 +213,54 @@ describe('Settings: the Boards step (U7, ported from bootstrap-app)', () => {
     expect(el.querySelector('.steps li.current')!.textContent!.trim()).toBe('Review');
     expect((el.querySelector('button.export') as HTMLButtonElement).disabled).toBe(true);
     expect(el.querySelector('.blockers')!.textContent).toContain('A Board has problems');
+  });
+});
+
+// M1 (2026-11-05): Export was only on Review, and going back from Boards rebuilt Review from the
+// server's draft, so a typed Workspace name and dismissed claims were lost on the way.
+describe('Settings: Export from the Boards step', () => {
+  it('continues to Export with the name and dismissed claims kept, and says nothing about run.sh', async () => {
+    let polls = 0;
+    const draft = makeDraft([claim('verified'), claim('failed')]);
+    const f = fakeFetch({
+      'GET /api/connection': () => [200, { host: 'h', name: 'db', schemas: [] }],
+      'GET /api/workspaces': () => [200, { workspaces: [] }],
+      'GET /api/connections': () => [200, { connections: [], current: null }],
+      'POST /api/estimate': () => [200, ESTIMATE],
+      'POST /api/validate': () => [200, { errors: [], context_chars: 10 }],
+      'GET /api/boards': () => [200, null],
+      'POST /api/boards/estimate': () => [200, ESTIMATE],
+      'POST /api/boards/draft': () => [200, { run_id: 'b1' }],
+      'GET /api/draft/b1/events': () =>
+        ++polls === 1 ? [200, { events: [], next: 0, done: false }] : [200, { events: [], next: 0, done: true, boards: state() }],
+      'GET /api/draft': () => [200, { draft, validation: { errors: [], context_chars: 10 } }],
+      'POST /api/draft': () => [200, { run_id: 'd1' }],
+      'GET /api/draft/d1/events': () => [200, { events: [], next: 0, done: true, draft, validation: { errors: [], context_chars: 10 } }],
+    });
+    const el = document.createElement('explorer-settings') as ExplorerSettings;
+    el.api = new Api(f.fn);
+    el.pollMs = 0;
+    el.confirmFn = () => true;
+    document.body.appendChild(el);
+    await settle(el);
+    await el.startDraft('meta/muse-spark-1.3', 'low');
+    await settle(el);
+    const name = el.querySelector('bs-review input.name') as HTMLInputElement;
+    name.value = 'mine';
+    name.dispatchEvent(new Event('input'));
+    (el.querySelectorAll('bs-review button.dismiss')[1] as HTMLButtonElement).click();
+    await settle(el);
+    (el.querySelector('button.to-boards') as HTMLButtonElement).click();
+    await settle(el, 20);
+    expect(el.querySelector('bs-boards')!.textContent).not.toContain('run.sh');
+    expect(el.querySelector('bs-boards button.to-export')).toBeNull(); // nothing to export with yet
+    (el.querySelector('button.draft-boards') as HTMLButtonElement).click();
+    await settle(el, 20);
+    (el.querySelector('bs-boards button.to-export') as HTMLButtonElement).click();
+    await settle(el, 20);
+    expect(el.querySelector('.steps li.current')!.textContent!.trim()).toBe('Review');
+    expect((el.querySelector('bs-review input.name') as HTMLInputElement).value).toBe('mine');
+    expect((el.querySelector('button.export') as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement?.id).toBe('export-h');
   });
 });

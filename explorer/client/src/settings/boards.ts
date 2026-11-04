@@ -10,7 +10,7 @@ const fmt = new Intl.NumberFormat('en');
 /**
  * Step 4 (phase 3): draft the Boards, edit each as TOML, see its problems and its preview.
  * Fires `estimate` and `draft-boards` with {model, effort}, `boards-changed` with the state after
- * each re-validation, and `back`.
+ * each re-validation, `back`, and `to-export` (Review's Export section, once there are Boards).
  */
 @customElement('bs-boards')
 export class BsBoards extends LitElement {
@@ -124,12 +124,15 @@ export class BsBoards extends LitElement {
     return html`<section aria-labelledby="boards-h">
       <h2 id="boards-h">Boards</h2>
       <p>The Explorer Board and up to a few Entity Boards, drafted from the reviewed files. Each is checked by the
-        agent's own startup check and previewed with one cold render. Open the exported Dataset with
-        <code>./run.sh --real</code> to see the Boards themselves before committing.</p>
+        agent's own startup check and previewed with one cold render. Export writes them with the Dataset, and the
+        Workspace then opens on its Explorer Board.</p>
       <div class="row">
-        <button class="primary draft-boards" ?disabled=${this.running} @click=${() => this.fire('draft-boards')}>
+        <button class="${s ? '' : 'primary '}draft-boards" ?disabled=${this.running} @click=${() => this.fire('draft-boards')}>
           ${this.running ? 'Drafting Boards…' : s ? `Draft the Boards again with ${this.model}` : `Draft Boards with ${this.model}`}
         </button>
+        ${s && !this.running
+          ? html`<button class="primary to-export" @click=${() => this.dispatchEvent(new CustomEvent('to-export'))}>Continue to Export</button>`
+          : ''}
         <button class="back" @click=${() => this.dispatchEvent(new CustomEvent('back'))}>Back to Review</button>
       </div>
       ${this.estimate

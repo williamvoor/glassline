@@ -6,12 +6,13 @@
 import {LitElement, html} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 
-import {Api, ApiError, type SettingsWorkspace} from './api.js';
+import {Api, type SettingsWorkspace} from './api.js';
 import './connect.js';
 import './report.js';
 import './review.js';
 import './boards.js';
 import type {ReportSelection} from './connect.js';
+import type {BsReview} from './review.js';
 import {usd} from './report.js';
 import {MODELS, boardProblems} from './types.js';
 import type {BoardsState, Connection, Draft, DraftEvent, Estimate, Report, Validation} from './types.js';
@@ -218,14 +219,17 @@ export class ExplorerSettings extends LitElement {
     });
   }
 
+  /** From Boards: Review stayed mounted, so its name, dismissed claims and edits are as left. */
+  async toReview(focusExport: boolean) {
+    this.step = 'review';
+    if (!focusExport) return;
+    await this.updateComplete;
+    this.querySelector<BsReview>('bs-review')?.focusExport();
+  }
+
   async toBoards() {
     await this.guard(async () => {
-      try {
-        this.boards = await this.api.currentBoards();
-      } catch (e) {
-        if (!(e instanceof ApiError && e.status === 404)) throw e;
-        this.boards = null;
-      }
+      this.boards = await this.api.currentBoards();
       this.boardEvents = [];
       this.boardsEstimate = null;
       this.step = 'boards';
@@ -309,6 +313,16 @@ export class ExplorerSettings extends LitElement {
     </section>`;
   }
 
+  /** Review stays mounted (hidden) on the Boards step: its unsaved state (the Workspace name,
+   * dismissed claims) lives only in the component until Export. */
+  private renderReview() {
+    return html`<div class="review-step" ?hidden=${this.step !== 'review'}><bs-review .api=${this.api} .draft=${this.draft}
+        .validation=${this.validation} .boardProblems=${boardProblems(this.boards)} workspaceMode .fixedName=${this.regenerating}
+        @rerun-report=${() => void this.rerunReport()}
+        @exported=${(e: CustomEvent<{workspace?: string; reloaded?: boolean}>) => void this.exported(e.detail)}
+        @to-boards=${() => void this.toBoards()}></bs-review></div>`;
+  }
+
   private renderStep() {
     switch (this.step) {
       case 'workspaces':
@@ -324,18 +338,14 @@ export class ExplorerSettings extends LitElement {
         ></bs-report>
         ${this.draft ? html`<button class="to-review" @click=${() => void this.backToDraft()}>Back to the draft</button>` : ''}`;
       case 'review':
-        return html`<bs-review .api=${this.api} .draft=${this.draft} .validation=${this.validation}
-          .boardProblems=${boardProblems(this.boards)} workspaceMode .fixedName=${this.regenerating}
-          @rerun-report=${() => void this.rerunReport()}
-          @exported=${(e: CustomEvent<{workspace?: string; reloaded?: boolean}>) => void this.exported(e.detail)}
-          @to-boards=${() => void this.toBoards()}></bs-review>`;
+        return ''; // rendered by render(), so it survives the Boards step
       case 'boards':
         return html`<bs-boards .api=${this.api} .boards=${this.boards} .estimate=${this.boardsEstimate} .events=${this.boardEvents}
           ?running=${this.boardsRunning} .model=${this.model || this.defaultModel} .effort=${this.effort}
           @estimate=${(e: CustomEvent<{model: string; effort: string}>) => void this.refreshBoardsEstimate(e.detail.model, e.detail.effort)}
           @draft-boards=${(e: CustomEvent<{model: string; effort: string}>) => void this.startBoards(e.detail.model, e.detail.effort)}
           @boards-changed=${(e: CustomEvent<BoardsState>) => (this.boards = e.detail)}
-          @back=${() => void this.backToDraft()}></bs-boards>`;
+          @back=${() => void this.toReview(false)} @to-export=${() => void this.toReview(true)}></bs-boards>`;
     }
   }
 
@@ -356,6 +366,7 @@ export class ExplorerSettings extends LitElement {
       ${this.regenerating ? html`<p class="regenerating">Regenerating <strong>${this.regenerating}</strong>.</p>` : ''}
       ${this.notice ? html`<p class="ok notice-settings" role="status">${this.notice}</p>` : ''}
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : ''}
+      ${this.step === 'review' || this.step === 'boards' ? this.renderReview() : ''}
       ${this.renderStep()}
     </div>`;
   }

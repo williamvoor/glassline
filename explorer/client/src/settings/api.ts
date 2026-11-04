@@ -84,8 +84,9 @@ export class Api {
   startBoards(model: string, effort: string) {
     return this.call<{ run_id: string }>('/api/boards/draft', { model, effort });
   }
+  /** null before any Boards. */
   currentBoards() {
-    return this.call<BoardsState>('/api/boards');
+    return this.call<BoardsState | null>('/api/boards');
   }
   validateBoards(boards: BoardFile[]) {
     return this.call<BoardsState>('/api/boards/validate', { boards });

@@ -63,3 +63,49 @@ describe('theme tokens', () => {
     expect(block(css, /^\s*:root\s*\{/m)).toMatch(/color-scheme:\s*light dark/);
   });
 });
+
+// M1 (2026-11-05): the selected Workspace and Settings buttons showed white text on a pale fill.
+describe('selected top bar buttons', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+  const darkTokens = block(block(style, /@media \(prefers-color-scheme: dark\)\s*\{/), /:root\s*\{/);
+
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  for (const theme of ['light', 'dark'] as const) {
+    it(`have readable text in the ${theme} theme`, () => {
+      document.head.innerHTML = `<style>${style}${theme === 'dark' ? `:root{${darkTokens}}` : ''}</style>`;
+      document.body.innerHTML = `<explorer-app><header class="topbar">
+        <div class="workspaces"><button class="workspace selected" aria-pressed="true">alpha</button></div>
+        <button class="settings-toggle selected" aria-pressed="true">Settings</button></header></explorer-app>`;
+      for (const button of document.querySelectorAll('button')) {
+        const s = getComputedStyle(button);
+        expect(s.color, button.textContent!).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(s.backgroundColor, button.textContent!).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(contrast(s.color, s.backgroundColor), button.textContent!).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+});
+
+// M1 (2026-11-05): Review's dataset.toml / notes.md / glossary.md tabs sat on top of each other:
+// they took the Explorer's `explorer-app .tab { display: flex }` and nothing laid out their strip.
+describe('Settings tab strips', () => {
+  it('lay their tabs out in a row', () => {
+    const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+    document.head.innerHTML = `<style>${style}</style>`;
+    document.body.innerHTML = `<explorer-app><explorer-settings><div role="tablist" aria-label="Drafted files">
+      <button role="tab" class="tab" aria-selected="true">dataset.toml</button>
+      <button role="tab" class="tab" aria-selected="false">notes.md</button></div></explorer-settings></explorer-app>`;
+    const strip = getComputedStyle(document.querySelector('[role=tablist]')!);
+    expect(strip.display).toBe('flex');
+    expect(strip.flexDirection === '' || strip.flexDirection === 'row').toBe(true);
+  });
+});
