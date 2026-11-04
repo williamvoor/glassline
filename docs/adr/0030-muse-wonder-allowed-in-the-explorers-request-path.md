@@ -51,3 +51,31 @@ Spark stays a supported model. Which model is the default for answers is decided
   reported, not gated. 3 runs per scenario, from one clean commit, with only `MODEL` different;
   5 runs if `scenarios.py compare` calls it close. The result is added here as a further dated
   note.
+
+## Note (2026-11-04): the A/B result, Spark stays the default
+
+Run from commit `9857cd6` with a clean agent and Dataset, `REASONING_EFFORT=minimal`, and 3 runs
+of each of the 19 reviewed scenarios per model. Spark ran first and Wonder straight after. Files
+are in `docs/scenarios/austender/`: `runs-20261104T094134Z.jsonl` (Spark),
+`runs-20261104T095004Z.jsonl` (Wonder) and
+`compare-runs-20261104T094134Z-vs-runs-20261104T095004Z.md`.
+
+**Verdict: A stays (clear).** Gate 1 failed. Gates 2 and 3 held.
+
+| Set | Model | Passes | Median wall | p90 wall | Mean prompt / cached / output tokens |
+|---|---|---|---|---|---|
+| Board | Spark | 27/27 | 6.2 s | 10.4 s | 23,388 / 22,259 / 646 |
+| Board | Wonder | 27/27 | 6.4 s | 8.7 s | 20,827 / 19,163 / 714 |
+| Typed | Spark | 26/27 | 7.9 s | 10.7 s | 21,840 / 20,974 / 656 |
+| Typed | Wonder | 26/27 | 7.0 s | 10.3 s | 20,312 / 19,124 / 723 |
+
+- Both models passed every Board scenario, so Wonder had no gain to show. The typed miss was
+  `no-such-agency` (prose) for both.
+- No Repairs. One `write_attempted` flag on Spark (`board-ask-within-defence-thales`, run 2),
+  reported, not gated.
+- Cost isn't computed here, because the prices aren't in the code. Token use per answer is about
+  the same for both models, so the estimate above (about 3.5×) still stands.
+- **What this can't show.** The Board set was at the ceiling for both models after the
+  scenario review. Each (a) question now says "in this view", where the Spark probe, with the
+  earlier wording, had dropped the filter twice. A harder Board set might separate the models.
+  Until then, the faster and cheaper model stays.

@@ -2895,7 +2895,10 @@ Where a test file differs from the table above, these notes win.
 ## 21. Amendment: slice 5, the answer model A/B, with runtime Board drafts deferred (2026-11-04)
 
 Status: **approved** (2026-11-04: the user asked for slice 5 to be built), revision 2 after a
-refuter FAIL on revision 1 (fixes in the harness amendment's "Review round 1"). It details §18's slice 5. The
+refuter FAIL on revision 1 (fixes in the harness amendment's "Review round 1"). **5b built and run** (2026-11-04): harness `9857cd6`, then the A/B
+from that commit: **A stays (clear)**, Spark remains the default. Both models passed all 27
+Board-set runs, and 26 of 27 typed. The result is in ADR 0030's note of the same date. `MODEL`'s
+default doesn't change. It details §18's slice 5. The
 harness half is the amendment "scored Board scenarios and the model A/B" in
 `specs/scenarios/SPEC.md`. Decisions: ADR 0030 (accepted), with the dated note this amendment
 adds. Settled in a grilling session (2026-11-04), where the user asked for the recommendations
