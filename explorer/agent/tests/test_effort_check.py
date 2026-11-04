@@ -470,3 +470,19 @@ def test_surface_summary_counts_board_rows_as_drillable():
     ]
     summary = ec.surface_summary([{"updateComponents": {"surfaceId": "turn-1-1-x", "components": comps}}])
     assert summary["visuals"][0]["drillable"] is True
+
+
+async def test_ask_and_act_send_viewing():
+    """BS4/BS5: `viewing` goes in the message metadata as `explorerViewing`; without it, nothing changes."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content)["params"]["message"])
+        return sse_response(sse(status_event("ok", final=True)))
+
+    async with mock_client(handler) as c:
+        await ec.ask(c, "q", "ctx-1", viewing="t3")
+        await ec.act(c, "ask", "s1", "top__2", {"source": "v1", "row": 0}, "ctx-1", viewing="t3")
+        await ec.ask(c, "q", "ctx-1")
+        await ec.act(c, "ask", "s1", "top__2", {"source": "v1", "row": 0}, "ctx-1")
+    assert [m["metadata"] for m in seen] == [{**ec.CAPS, "explorerViewing": "t3"}] * 2 + [ec.CAPS] * 2

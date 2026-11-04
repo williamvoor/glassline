@@ -3,6 +3,7 @@
     uv run python scripts/scenarios.py run [--file F] [--ids a,b] [--runs 1] [--level minimal] [--include-unreviewed]
     uv run python scripts/scenarios.py report RUNS.jsonl
     uv run python scripts/scenarios.py boards [--runs 5] [--out DIR]
+    uv run python scripts/scenarios.py compare A.jsonl B.jsonl [--out DIR]
 
 `run` checks every reference query, starts the real agent, asks each scenario's turns in one
 Conversation, reruns the SQL shown on the last Turn's Surface read-only, and scores it against the
@@ -20,9 +21,11 @@ import math
 import os
 import re
 import statistics
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -42,7 +45,9 @@ VISUAL_KINDS = {"metric": "metrics", "table": "tables", "chart": "charts"}
 SCENARIO_KEYS = {
     "id", "reviewed", "categories", "turns", "visual", "max_model_calls", "reference", "alternates",
     "wrong", "tolerance", "answer_in", "forbid_visual", "expect_empty", "prose_no_numbers", "smoke",
+    "board", "controls", "click", "ask_within",
 }
+STEP_KEYS = {"visual", "row"}
 ENTRY_KEYS = {"sql", "expect"}
 WRONG_KEYS = ENTRY_KEYS | {"label"}
 TOLERANCE_KEYS = {"rel", "abs", "percent"}
@@ -97,6 +102,25 @@ class Scenario:
     expect_empty: bool = False
     prose_no_numbers: bool = False
     smoke: bool = False
+    # A Board scenario (amendment 2026-11-04, §21): set up on a Board before any model call.
+    board: str = ""
+    controls: tuple[tuple[str, str], ...] = ()  # (Control label, option label), in order
+    click: tuple[tuple[str, str], ...] = ()  # (layout name, row text): each opens an Entity Board
+    ask_within: tuple[str, str] | None = None  # (layout name, row text): "Ask within filters", the last step
+
+    @property
+    def set(self) -> str:
+        """`board` when the scenario starts from a Board, else `typed`; `compare` gates them apart."""
+        return "board" if self.board else "typed"
+
+    @property
+    def kind(self) -> str | None:
+        """The Board kind from the shape: (a) Controls, (b) a click then turns, (c) Ask within."""
+        if self.ask_within:
+            return "c"
+        if self.click:
+            return "b"
+        return "a" if self.controls else None
 
     def entries(self) -> list[tuple[str, Entry]]:
         """Every query with its role: reference, alternate N, or the wrong answer's label."""
@@ -135,13 +159,53 @@ def _kinds(raw: Any, allowed: set[str], where: str) -> tuple[str, ...]:
     return tuple(raw)
 
 
-def parse_scenario(raw: dict[str, Any]) -> Scenario:
+def _step(raw: Any, where: str) -> tuple[str, str]:
+    if not isinstance(raw, dict):
+        raise ScenarioError(f"{where}: must be a table with visual and row")
+    _unknown(raw, STEP_KEYS, where)
+    visual, row = raw.get("visual"), raw.get("row")
+    if not (isinstance(visual, str) and visual.strip() and isinstance(row, str) and row.strip()):
+        raise ScenarioError(f"{where}: needs a visual and a row")
+    return visual.strip(), row
+
+
+def _board_keys(raw: dict[str, Any], sid: str, boards: set[str] | None) -> dict[str, Any]:
+    board = raw.get("board", "")
+    if not isinstance(board, str):
+        raise ScenarioError(f"{sid}: board must be a Board name")
+    without = [k for k in ("controls", "click", "ask_within") if k in raw and not board]
+    if without:
+        raise ScenarioError(f"{sid}: {', '.join(without)} need(s) board")
+    if board and boards is not None and board not in boards:
+        raise ScenarioError(f"{sid}: no Board without a key named {board!r} in the Dataset")
+    controls = raw.get("controls", {})
+    if not isinstance(controls, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in controls.items()):
+        raise ScenarioError(f"{sid}: controls must map Control labels to option labels")
+    click = raw.get("click", [])
+    if not isinstance(click, list):
+        raise ScenarioError(f"{sid}: click must be a list of steps")
+    return {
+        "board": board,
+        "controls": tuple(controls.items()),
+        "click": tuple(_step(c, f"{sid}: click") for c in click),
+        "ask_within": _step(raw["ask_within"], f"{sid}: ask_within") if "ask_within" in raw else None,
+    }
+
+
+def parse_scenario(raw: dict[str, Any], boards: set[str] | None = None) -> Scenario:
+    """`boards`: the Dataset's Board names without a key; None skips that check."""
     sid = raw.get("id")
     if not isinstance(sid, str) or not sid:
         raise ScenarioError("a scenario needs an id")
     _unknown(raw, SCENARIO_KEYS, sid)
-    turns = raw.get("turns")
-    if not isinstance(turns, list) or not turns or not all(isinstance(t, str) and t.strip() for t in turns):
+    board_keys = _board_keys(raw, sid, boards)
+    if ("turns" in raw) == (board_keys["ask_within"] is not None):
+        raise ScenarioError(f"{sid}: needs turns or ask_within, not both" if "turns" in raw
+                            else f"{sid}: turns must be a non-empty list of questions")
+    turns = raw.get("turns", [])
+    if board_keys["ask_within"] is None and (
+        not isinstance(turns, list) or not turns or not all(isinstance(t, str) and t.strip() for t in turns)
+    ):
         raise ScenarioError(f"{sid}: turns must be a non-empty list of questions")
     tolerance: dict[str, Tolerance] = {}
     for column, t in (raw.get("tolerance") or {}).items():
@@ -169,6 +233,7 @@ def parse_scenario(raw: dict[str, Any]) -> Scenario:
         expect_empty=bool(raw.get("expect_empty", False)),
         prose_no_numbers=bool(raw.get("prose_no_numbers", False)),
         smoke=bool(raw.get("smoke", False)),
+        **board_keys,
     )
     if not (scenario.reference or scenario.expect_empty or scenario.smoke):
         raise ScenarioError(f"{sid}: needs a reference, expect_empty or smoke")
@@ -180,10 +245,10 @@ def parse_scenario(raw: dict[str, Any]) -> Scenario:
     return scenario
 
 
-def load(path: Path) -> list[Scenario]:
+def load(path: Path, boards: set[str] | None = None) -> list[Scenario]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     _unknown(data, {"scenario"}, str(path))
-    scenarios = [parse_scenario(raw) for raw in data.get("scenario", [])]
+    scenarios = [parse_scenario(raw, boards) for raw in data.get("scenario", [])]
     ids = [s.id for s in scenarios]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
@@ -420,15 +485,18 @@ async def run_references(scenarios: list[Scenario], runner: Runner) -> dict[str,
 
 
 async def ask_turns(
-    client: httpx.AsyncClient, scenario: Scenario, log_path: Path | None
+    client: httpx.AsyncClient, scenario: Scenario, log_path: Path | None,
+    context_id: str | None = None, viewing: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Sends the turns in one Conversation. Returns (a short record per turn, the last Turn)."""
-    context_id: str | None = None
+    """Sends the turns in one Conversation: a new one, or the Board's (`context_id`), with every
+    Turn naming the Board's tab as the one in view. Returns (a short record per turn, the last Turn)."""
     turns: list[dict[str, Any]] = []
     last: dict[str, Any] = {}
     for text in scenario.turns:
         before = log_path.stat().st_size if log_path else 0
-        result = await ec.ask(client, text, context_id)
+        # without `viewing`, the call is exactly as before (a typed scenario)
+        result = await (ec.ask(client, text, context_id, viewing=viewing) if viewing
+                        else ec.ask(client, text, context_id))
         log: dict[str, Any] = {}
         if log_path:
             await asyncio.sleep(ec.LOG_SETTLE_S)
@@ -474,11 +542,15 @@ async def drill_downs(client: httpx.AsyncClient, last: dict[str, Any]) -> list[d
 def _record(
     scenario: Scenario, run_no: int, level: str, started: str, references: dict[str, Any],
     turns: list[dict[str, Any]], last: dict[str, Any], notes: list[dict[str, Any]], result: dict[str, Any],
-    clicks: list[dict[str, Any]] | None = None,
+    clicks: list[dict[str, Any]] | None = None, *, model: str = "", commit: dict[str, Any] | None = None,
+    setup: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     surface = {k: v for k, v in (last.get("surface") or {}).items() if k not in ("a2ui", "visuals")}
     return {
         "scenario": scenario.id, "run": run_no, "level": level, "started_at": started,
+        "set": scenario.set, "kind": scenario.kind, "reviewed": scenario.reviewed,
+        "model": model, "served_model": (last.get("metadata") or {}).get(ec.MODEL_KEY), "commit": commit,
+        **({"setup": setup} if scenario.board else {}),
         "smoke": scenario.smoke, "categories": list(scenario.categories),
         "reference_ran_at": references[scenario.id]["ran_at"],
         "turns": turns, "wall_s": last.get("wall_s"), "prose": last.get("prose"),
@@ -491,9 +563,35 @@ def _record(
     }
 
 
+async def run_one(
+    client: httpx.AsyncClient, s: Scenario, log_path: Path | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None, str | None]:
+    """One scenario's Turns: (turns, last Turn, the Board set-up record, the set-up failure)."""
+    if not s.board:
+        turns, last = await ask_turns(client, s, log_path)
+        return turns, last, None, None
+    board, setup = await board_setup(client, s, log_path)
+    if board is None:
+        return [], {}, setup, setup["reason"]
+    if not board["tab"]:  # without it, no Board pair would be sent: a typed question in disguise
+        setup["reason"] = "no tab in the Board's reply"
+        return [], {}, setup, setup["reason"]
+    try:
+        if s.ask_within:
+            turns, last = await ask_within(client, s, board, log_path)
+        else:
+            turns, last = await ask_turns(client, s, log_path, board["context_id"], board["tab"])
+    except SetupFailed as e:
+        setup["reason"] = str(e)
+        return [], {}, setup, str(e)
+    return turns, last, setup, None
+
+
 async def run(
-    scenarios: list[Scenario], runs: int, level: str, out_dir: Path, runner: SqlRunner, allowed: tuple[str, ...]
+    scenarios: list[Scenario], runs: int, level: str, out_dir: Path, runner: SqlRunner, allowed: tuple[str, ...],
+    *, model: str = "", commit: dict[str, Any] | None = None,
 ) -> Path:
+    """`model` is the configured `MODEL` and `commit` the code's identity, both recorded for `compare`."""
     references = await run_references(scenarios, runner)  # before any model call
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -510,16 +608,21 @@ async def run(
             for r in range(1, runs + 1):
                 for s in scenarios:
                     started = datetime.now(UTC).isoformat(timespec="seconds")
-                    turns, last = await ask_turns(client, s, log_path)
-                    rows, notes = await answer_rows(last.get("surface") or {}, runner)
-                    result = score(s, references[s.id]["rows"], last, rows, notes=notes,
-                                   write_attempt=write_attempted(last.get("sql_attempts", []), allowed))
-                    clicks = await drill_downs(client, last)  # after scoring: clicks never change it
-                    record = _record(s, r, level, started, references, turns, last, notes, result, clicks)
+                    turns, last, setup, failed = await run_one(client, s, log_path)
+                    if failed is not None:  # no model was called
+                        rows, notes, result, clicks = [], [], setup_failed_score(failed), []
+                    else:
+                        rows, notes = await answer_rows(last.get("surface") or {}, runner)
+                        result = score(s, references[s.id]["rows"], last, rows, notes=notes,
+                                       write_attempt=write_attempted(last.get("sql_attempts", []), allowed))
+                        clicks = await drill_downs(client, last)  # after scoring: clicks never change it
+                    record = _record(s, r, level, started, references, turns, last, notes, result, clicks,
+                                     model=model, commit=commit, setup=setup)
                     with jsonl.open("a") as f:
                         f.write(json.dumps(record, default=str) + "\n")
                     print(f"{s.id} run {r}: {result['status']} {' '.join(result['reasons'])}".rstrip(), flush=True)
-                    if last.get("failure") == "transport" and agent.proc and agent.proc.poll() is not None:
+                    if (failed is not None or last.get("failure") == "transport") and agent.proc \
+                            and agent.proc.poll() is not None:
                         raise SystemExit("the agent exited; stopping (see the agent log)")
     finally:
         agent.stop()
@@ -558,9 +661,9 @@ def _pct(values: list[float], q: float) -> float:
 
 
 def summary(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Overall numbers. The pass rate leaves out smoke and blocked runs (spec, step 6)."""
+    """Overall numbers. The pass rate leaves out smoke, blocked and setup_failed runs (spec, step 6)."""
     statuses = [r["score"]["status"] for r in records]
-    scored = [r for r in records if not r.get("smoke") and r["score"]["status"] != "blocked"]
+    scored = [r for r in records if not r.get("smoke") and r["score"]["status"] not in ("blocked", "setup_failed")]
     walls = [r["wall_s"] for r in records if isinstance(r.get("wall_s"), (int, float))]
     calls = [len(r.get("model_calls") or []) for r in records]
     failures: dict[str, int] = {}
@@ -574,6 +677,7 @@ def summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         "pass_rate": (sum(r["score"]["status"] == "pass" for r in scored) / len(scored)) if scored else None,
         "needs_review": statuses.count("needs_review"),
         "blocked": statuses.count("blocked"),
+        "setup_failed": statuses.count("setup_failed"),
         "smoke": sum(1 for r in records if r.get("smoke")),
         "wall_median": statistics.median(walls) if walls else None,
         "wall_p90": _pct(walls, 0.9) if walls else None,
@@ -610,14 +714,33 @@ def _fmt(value: float | None, unit: str = "", digits: int = 1) -> str:
     return "—" if value is None else f"{value:.{digits}f}{unit}"
 
 
+def record_set(record: dict[str, Any]) -> str:
+    """A record's set; a runs file from before the Board scenarios has only typed ones."""
+    return record.get("set") or "typed"
+
+
+def _rate(s: dict[str, Any]) -> str:
+    return "—" if s["pass_rate"] is None else f"{s['pass_rate']:.0%} ({s['passed']}/{s['scored']})"
+
+
 def report(records: list[dict[str, Any]]) -> str:
     s = summary(records)
     d = drill_summary(records)
     drill_rate = "—" if d["rate"] is None else f"{d['rate']:.0%}"
-    rate = "—" if s["pass_rate"] is None else f"{s['pass_rate']:.0%} ({s['passed']}/{s['scored']})"
+    rate = _rate(s)
+    models = sorted({str(r["model"]) for r in records if r.get("model")}) or ["—"]
+    levels = sorted({str(r["level"]) for r in records if r.get("level")}) or ["—"]
+    sets = []
+    for name in ("board", "typed"):
+        sub = summary([r for r in records if record_set(r) == name])
+        sets.append(f"- {name.title()} set: pass rate {_rate(sub)}, median wall {_fmt(sub['wall_median'], ' s')}"
+                    f" ({sub['runs']} runs, setup failed {sub['setup_failed']})")
     lines = [
         "# Scenario report", "",
-        f"- Runs: {s['runs']} (smoke {s['smoke']}, blocked {s['blocked']}, left out of the pass rate)",
+        f"- Model: {', '.join(models)}; level: {', '.join(levels)}",
+        *sets,
+        f"- Runs: {s['runs']} (smoke {s['smoke']}, blocked {s['blocked']}, setup failed {s['setup_failed']}, "
+        "left out of the pass rate)",
         f"- Pass rate: {rate}; needs review: {s['needs_review']}",
         f"- Wall time per scenario: median {_fmt(s['wall_median'], ' s')}, p90 {_fmt(s['wall_p90'], ' s')}",
         f"- Model calls on the last Turn: mean {_fmt(s['calls_mean'])}",
@@ -628,8 +751,8 @@ def report(records: list[dict[str, Any]]) -> str:
         f"first click median {_fmt(d['first_median'], ' s', 2)}, last click median {_fmt(d['last_median'], ' s', 2)}; "
         f"called the model {d['click_model']}, failed {d['click_failed']}",
         "",
-        "| Scenario | Runs | pass | needs review | fail | blocked | Reasons | Matched wrong | Median wall | Calls | Repairs |",
-        "|---|---:|---:|---:|---:|---:|---|---|---:|---:|---:|",
+        "| Scenario | Runs | pass | needs review | fail | blocked | setup failed | Reasons | Matched wrong | Median wall | Calls | Repairs |",
+        "|---|---:|---:|---:|---:|---:|---:|---|---|---:|---:|---:|",
     ]
     by_id: dict[str, list[dict[str, Any]]] = {}
     for r in records:
@@ -642,7 +765,7 @@ def report(records: list[dict[str, Any]]) -> str:
         name = sid + (" (smoke)" if rs[0].get("smoke") else "")
         lines.append(
             f"| {name} | {len(rs)} | {st.count('pass')} | {st.count('needs_review')} | {st.count('fail')} | "
-            f"{st.count('blocked')} | {', '.join(reasons) or '—'} | {'; '.join(wrong) or '—'} | "
+            f"{st.count('blocked')} | {st.count('setup_failed')} | {', '.join(reasons) or '—'} | {'; '.join(wrong) or '—'} | "
             f"{_fmt(statistics.median(walls) if walls else None, ' s')} | "
             f"{_fmt(statistics.mean(len(r.get('model_calls') or []) for r in rs))} | "
             f"{_fmt(statistics.mean(r.get('repairs', 0) for r in rs))} |"
@@ -748,32 +871,54 @@ def wire_value(kind: str, model_value: Any) -> Any:
     return model_value  # toggle (bool), number (int)
 
 
-def read_open(reply: dict[str, Any]) -> dict[str, Any]:
-    """What the harness needs from the Explorer's `open_board` reply."""
+def _components(reply: dict[str, Any]) -> list[dict[str, Any]]:
+    a2ui = (reply.get("surface") or {}).get("a2ui") or []
+    return [c for m in a2ui for c in (m.get("updateComponents") or {}).get("components", [])]
+
+
+def read_board(reply: dict[str, Any]) -> dict[str, Any]:
+    """The Board model from a reply that opens a Board (`open_board` or a click to an Entity
+    Board): the Conversation, Surface, tab and instance; each Control's name, kind, label and
+    options as (label, wire value); the current wire values; and the components by ID."""
     meta = reply.get("metadata") or {}
     a2ui = (reply.get("surface") or {}).get("a2ui") or []
-    components = [c for m in a2ui for c in (m.get("updateComponents") or {}).get("components", [])]
-    by_id = {c.get("id"): c for c in components}
+    by_id = {c.get("id"): c for c in _components(reply)}
     model = next((m["updateDataModel"].get("value") or {} for m in a2ui
                   if (m.get("updateDataModel") or {}).get("path") == "/controls"), {})
-    controls = list((meta.get("explorerBoard") or {}).get("controls") or [])
-    options = {}
-    for c in controls:
-        if c.get("kind") == "choice":
-            opts = (by_id.get(f"board_control_{c['name']}") or {}).get("options") or []
-            options[c["name"]] = [int(o["value"]) for o in opts if o.get("value") != "all"]
+    controls = []
+    for c in (meta.get("explorerBoard") or {}).get("controls") or []:
+        comp = by_id.get(f"board_control_{c['name']}") or {}
+        options = [(str(o.get("label", "")), None if o.get("value") == "all" else int(o["value"]))
+                   for o in comp.get("options") or []] if c.get("kind") == "choice" else []
+        controls.append({"name": c["name"], "kind": c.get("kind", ""), "label": str(comp.get("label", c["name"])),
+                         "options": options})
+    return {
+        "context_id": reply.get("context_id"),
+        "surface_id": (meta.get("explorerLevel") or {}).get("surfaceId", ""),
+        "tab": (meta.get("explorerTab") or {}).get("id"),
+        "board": (meta.get("explorerBoard") or {}).get("id", ""),
+        "controls": controls,
+        "values": {c["name"]: wire_value(c["kind"], model.get(c["name"])) for c in controls},
+        "components": by_id,
+    }
+
+
+def read_open(reply: dict[str, Any]) -> dict[str, Any]:
+    """What the `boards` subcommand needs from the Explorer's `open_board` reply."""
+    b = read_board(reply)
     visuals = []
-    for comp in components:
+    for comp in b["components"].values():
         action = comp.get("action")
         if isinstance(action, dict) and action.get("boards"):
             visuals.append({"id": comp["id"], "source": action.get("source"), "boards": list(action["boards"])})
     return {
-        "context_id": reply.get("context_id"),
-        "surface_id": (meta.get("explorerLevel") or {}).get("surfaceId", ""),
-        "board": (meta.get("explorerBoard") or {}).get("id", ""),
-        "controls": controls,
-        "options": options,
-        "values": {c["name"]: wire_value(c.get("kind", ""), model.get(c["name"])) for c in controls},
+        "context_id": b["context_id"],
+        "surface_id": b["surface_id"],
+        "board": b["board"],
+        "controls": [{"name": c["name"], "kind": c["kind"]} for c in b["controls"]],
+        "options": {c["name"]: [w for _, w in c["options"] if w is not None]
+                    for c in b["controls"] if c["kind"] == "choice"},
+        "values": b["values"],
         "visuals": visuals,
     }
 
@@ -952,6 +1097,352 @@ def boards_report(records: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# --- scored Board scenarios (amendment 2026-11-04, `../../SPEC.md` §21) -----------------------------
+
+
+class SetupFailed(Exception):
+    """A Board scenario's set-up can't go on. The run is `setup_failed` and no model is called."""
+
+
+def _norm(text: Any) -> str:
+    return unescape(str(text)).strip().casefold()
+
+
+def _one(found: list[Any], what: str) -> Any:
+    if not found:
+        raise SetupFailed(f"{what} matches nothing")
+    if len(found) > 1:
+        raise SetupFailed(f"{what} matches {len(found)}")
+    return found[0]
+
+
+def layout_name(component_id: str) -> str:
+    """The layout component a built component belongs to: its ID up to the first `__`."""
+    return component_id.split("__")[0]
+
+
+def merge_components(model: dict[str, Any], reply: dict[str, Any]) -> None:
+    """Replaces, in the Board model, every component of the layout names the reply re-sends. A
+    re-queried panel can come back with other components (rows, or "no rows"), so a stale one
+    mustn't stay behind to be clicked."""
+    sent = _components(reply)
+    names = {layout_name(str(c.get("id"))) for c in sent}
+    kept = {cid: c for cid, c in model["components"].items() if layout_name(str(cid)) not in names}
+    model["components"] = {**kept, **{c.get("id"): c for c in sent}}
+
+
+def _is_treemap(comp: dict[str, Any]) -> bool:
+    data = (comp.get("spec") or {}).get("data")
+    return isinstance(data, list) and any(
+        t.get("type") == "treemap" for d in data if isinstance(d, dict) for t in d.get("transform") or [])
+
+
+def find_row(model: dict[str, Any], visual: str, row: str) -> tuple[dict[str, Any], int]:
+    """The clickable component named `visual` and the row index of the row showing `row`
+    (spec, Scenario file): a `DataGrid` cell, or a Treemap leaf's `_name`."""
+    comp = _one([c for cid, c in model["components"].items()
+                 if isinstance(c.get("action"), dict) and layout_name(str(cid)) == visual],
+                f"clickable Visual {visual!r}")
+    want = _norm(row)
+    if comp.get("component") == "DataGrid":
+        index = _one([i for i, cells in enumerate(comp.get("rows") or []) if any(_norm(c) == want for c in cells)],
+                     f"row {row!r} in {visual!r}")
+    elif comp.get("component") == "VegaChart" and _is_treemap(comp):
+        leaf = _one([v for v in ec.chart_values(comp.get("spec") or {}) if "_name" in v and _norm(v["_name"]) == want],
+                    f"row {row!r} in {visual!r}")
+        if "_row" not in leaf:
+            raise SetupFailed(f"row {row!r} in {visual!r} isn't clickable")
+        index = int(leaf["_row"])
+    else:
+        raise SetupFailed(f"{visual!r} is a {comp.get('component')}; only DataGrid and Treemap rows are supported")
+    return comp, index
+
+
+def _control(model: dict[str, Any], label: str, option: str) -> tuple[str, int | None]:
+    c = _one([c for c in model["controls"] if _norm(c["label"]) == _norm(label)], f"Control {label!r}")
+    if c["kind"] != "choice":
+        raise SetupFailed(f"Control {label!r} is {c['kind']}; only choice Controls are supported")
+    _, wire = _one([o for o in c["options"] if _norm(o[0]) == _norm(option)], f"option {option!r} of {label!r}")
+    return c["name"], wire
+
+
+async def _setup_step(steps: list[dict[str, Any]], what: str, call: Any) -> dict[str, Any]:
+    r = await call
+    steps.append({"step": what, "wall_s": r["wall_s"], "failure": r["failure"]})
+    if r["failure"] != "none":
+        raise SetupFailed(f"{what} failed: {r['failure']}")
+    return r
+
+
+async def board_setup(
+    client: httpx.AsyncClient, scenario: Scenario, log_path: Path | None
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Opens the Board, sets the Controls and clicks through (spec, step 2). Returns (the Board
+    model, or None after a set-up failure; the `setup` record: each step's time and the reason)."""
+    steps: list[dict[str, Any]] = []
+    setup: dict[str, Any] = {"steps": steps, "reason": None}
+    try:
+        body = ec.action_body("open_board", "", "", {"board": scenario.board}, "")
+        del body["params"]["message"]["contextId"]
+        r = await _setup_step(steps, "open_board", _exchange_action(client, body))
+        model = read_board(r)
+        seq = 0
+        for label, option in scenario.controls:
+            name, wire = _control(model, label, option)
+            seq += 1
+            model["values"][name] = wire
+            r = await _setup_step(steps, f"controls {label}", ec.act(
+                client, "controls", model["surface_id"], "board_controls",
+                {"board": model["board"], "seq": seq, "values": dict(model["values"])}, model["context_id"]))
+            if (r.get("metadata") or {}).get("explorerSuperseded"):
+                raise SetupFailed(f"controls {label} was superseded")
+            merge_components(model, r)
+        for visual, row in scenario.click:
+            if log_path:
+                await settle_prefetch(log_path)
+            comp, index = find_row(model, visual, row)
+            if index not in (comp["action"].get("boards") or []):
+                raise SetupFailed(f"row {row!r} in {visual!r} doesn't open a Board")
+            r = await _setup_step(steps, f"click {visual}", ec.act(
+                client, "drill", model["surface_id"], comp["id"], {"source": comp["action"].get("source"), "row": index},
+                model["context_id"]))
+            model = {**read_board(r), "context_id": r.get("context_id") or model["context_id"]}
+        return model, setup
+    except SetupFailed as e:
+        setup["reason"] = str(e)
+        return None, setup
+
+
+async def _exchange_action(client: httpx.AsyncClient, body: dict[str, Any]) -> dict[str, Any]:
+    result = await ec._exchange(client, body)
+    if result["failure"] == "none" and result["metadata"].get(ec.ACTION_FAILED_KEY):
+        result["failure"] = "action_failed"
+    return result
+
+
+async def ask_within(
+    client: httpx.AsyncClient, scenario: Scenario, model: dict[str, Any], log_path: Path | None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """"Ask within filters" on a row, scored as the last Turn (spec, step 4). A row that can't be
+    found raises SetupFailed before anything is sent."""
+    visual, row = scenario.ask_within or ("", "")
+    comp, index = find_row(model, visual, row)
+    if index not in (comp["action"].get("boards") or []):
+        raise SetupFailed(f"row {row!r} in {visual!r} doesn't open a Board")
+    before = log_path.stat().st_size if log_path else 0
+    result = await ec.act(client, "ask", model["surface_id"], comp["id"],
+                          {"source": comp["action"].get("source"), "row": index}, model["context_id"],
+                          viewing=model["tab"])
+    log: dict[str, Any] = {}
+    if log_path:
+        await asyncio.sleep(ec.LOG_SETTLE_S)
+        log = ec.parse_log_slice(ec.read_slice(log_path, before, log_path.stat().st_size))
+    turns = [{"text": f"ask within filters: {visual} / {row}", "wall_s": result["wall_s"], "failure": result["failure"]}]
+    return turns, {**result, "context_id": result.get("context_id") or model["context_id"], **log}
+
+
+def setup_failed_score(reason: str) -> dict[str, Any]:
+    return {"status": "setup_failed", "reasons": [reason], "review": [], "missing": [], "not_stated": [],
+            "invented": [], "matched_wrong": [], "flags": {}}
+
+
+def repo_commit(paths: list[Path], root: Path | None = None) -> dict[str, Any]:
+    """HEAD, and whether `paths` (the agent and the Dataset) have uncommitted changes, untracked
+    files included."""
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=root or ec.REPO_ROOT, capture_output=True, text=True,
+                              check=True).stdout
+    return {"sha": git("rev-parse", "HEAD").strip(),
+            "dirty": bool(git("status", "--porcelain", "--", *(str(p) for p in paths)).strip())}
+
+
+# --- compare: the answer model A/B gate (`../../SPEC.md` §21) ---------------------------------------
+
+SETS = ("board", "typed")
+GATE_BOARD_POINTS = Fraction(1, 10)  # 1. B's Board-set pass rate ≥ A's + 10 points
+GATE_TYPED_SLACK = 1  # 2. B's typed-set runs that are not a pass ≤ A's + 1
+GATE_TIME = 1.15  # 3. B's median Turn wall time ≤ 1.15 × A's, in each set
+CLOSE_TIME = (1.10, 1.20)  # B's median time ratio in this range (inclusive): close
+_EPS = 1e-9  # float slack at the gate's edges
+IDENTITY = ("reviewed", "model", "level", "commit")
+
+
+def _identity(name: str, records: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any]]:
+    """Problems with one file's run identity, and its model, level and commit."""
+    problems = []
+    if not records:
+        return [f"{name} has no records"], {}
+    lacking = sorted({k for r in records for k in IDENTITY if k not in r or (k != "reviewed" and not r[k])})
+    if lacking:
+        return [f"{name}: records without {', '.join(lacking)}"], {}
+    ident = {}
+    for key in ("model", "level"):
+        values = {r[key] for r in records}
+        if len(values) > 1:
+            problems.append(f"{name}: more than one {key} ({', '.join(sorted(map(str, values)))})")
+        ident[key] = sorted(map(str, values))[0]
+    shas = {(r["commit"] or {}).get("sha") for r in records}
+    if len(shas) > 1:
+        problems.append(f"{name}: more than one commit")
+    ident["commit"] = sorted(map(str, shas))[0]
+    if any((r["commit"] or {}).get("dirty") for r in records):
+        problems.append(f"{name}: run with uncommitted changes in the agent or the Dataset")
+    return problems, ident
+
+
+def _status(r: dict[str, Any]) -> str:
+    return r["score"]["status"]
+
+
+def set_figures(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """One set's figures in one file (spec, step 7.3). `needs_review` and `fail` are not a pass."""
+    walls = [r["wall_s"] for r in records if isinstance(r.get("wall_s"), (int, float))]
+    passes = sum(1 for r in records if _status(r) == "pass")
+
+    def tokens(key: str) -> float | None:
+        per = [sum((c.get(key) or 0) for c in r.get("model_calls") or []) for r in records]
+        return statistics.mean(per) if per else None
+    return {
+        "runs": len(records), "passes": passes, "not_pass": len(records) - passes,
+        "rate": Fraction(passes, len(records)) if records else None,
+        "wall_median": statistics.median(walls) if walls else None,
+        "wall_p90": _pct(walls, 0.9) if walls else None,
+        "calls_mean": statistics.mean(len(r.get("model_calls") or []) for r in records) if records else None,
+        "repairs": sum(r.get("repairs", 0) for r in records),
+        "write_attempted": sum(1 for r in records if (r["score"].get("flags") or {}).get("write_attempted")),
+        "prompt_mean": tokens("prompt"), "cached_mean": tokens("cached"), "output_mean": tokens("completion"),
+    }
+
+
+def _by_set(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {name: set_figures([r for r in records if record_set(r) == name]) for name in SETS}
+
+
+def gate(a: dict[str, dict[str, Any]], b: dict[str, dict[str, Any]]) -> list[str]:
+    """The gate's conditions B fails; none means `B wins`."""
+    failed = []
+    if b["board"]["rate"] - a["board"]["rate"] < GATE_BOARD_POINTS:
+        failed.append("1: Board-set pass rate below A's + 10 points")
+    if b["typed"]["not_pass"] > a["typed"]["not_pass"] + GATE_TYPED_SLACK:
+        failed.append("2: typed-set runs that are not a pass above A's + 1")
+    for name in SETS:
+        ma, mb = a[name]["wall_median"], b[name]["wall_median"]
+        if ma is None or mb is None or mb > GATE_TIME * ma + _EPS:
+            failed.append(f"3: {name}-set median Turn wall time above 1.15 × A's")
+    return failed
+
+
+def _flipped(records: list[dict[str, Any]], i: int) -> list[dict[str, Any]]:
+    r = records[i]
+    status = "fail" if _status(r) == "pass" else "pass"
+    return [*records[:i], {**r, "score": {**r["score"], "status": status}}, *records[i + 1:]]
+
+
+def close_call(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> list[str]:
+    """Why the verdict is close (spec, step 7.5): one flipped run changes it, or B's median time
+    ratio lies in CLOSE_TIME in a set. Empty when it is clear."""
+    wins = not gate(_by_set(a), _by_set(b))
+    reasons = []
+    flips = [("A", a, i) for i in range(len(a))] + [("B", b, i) for i in range(len(b))]
+    for side, records, i in flips:
+        fa = _flipped(a, i) if side == "A" else a
+        fb = _flipped(b, i) if side == "B" else b
+        if (not gate(_by_set(fa), _by_set(fb))) != wins:
+            r = records[i]
+            reasons.append(f"flipping {side}'s {r['scenario']} run {r.get('run')} changes the verdict")
+            break
+    fa, fb = _by_set(a), _by_set(b)
+    for name in SETS:
+        ma, mb = fa[name]["wall_median"], fb[name]["wall_median"]
+        if ma and mb is not None and CLOSE_TIME[0] - _EPS <= mb / ma <= CLOSE_TIME[1] + _EPS:
+            reasons.append(f"{name}-set median time ratio {mb / ma:.2f}× is within 1.10–1.20×")
+    return reasons
+
+
+def compare(a_records: list[dict[str, Any]], b_records: list[dict[str, Any]]) -> dict[str, Any]:
+    """§21's gate on two runs files, A the incumbent and B the candidate. Calls nothing."""
+    out: dict[str, Any] = {"invalid": [], "verdict": None, "failed": [], "close": [], "figures": None,
+                           "models": (None, None)}
+    pa, ia = _identity("A", a_records)
+    pb, ib = _identity("B", b_records)
+    out["invalid"] += pa + pb
+    if ia and ib:
+        out["models"] = (ia["model"], ib["model"])
+        if ia["model"] == ib["model"]:
+            out["invalid"].append(f"A and B have the same model ({ia['model']})")
+        for key in ("level", "commit"):
+            if ia[key] != ib[key]:
+                out["invalid"].append(f"A and B differ in {key}")
+    if out["invalid"]:
+        return out
+    a = [r for r in a_records if r["reviewed"] and not r.get("smoke")]
+    b = [r for r in b_records if r["reviewed"] and not r.get("smoke")]
+
+    def runs_per(records: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for r in records:
+            counts[r["scenario"]] = counts.get(r["scenario"], 0) + 1
+        return counts
+    ca, cb = runs_per(a), runs_per(b)
+    if set(ca) != set(cb):
+        out["invalid"].append("A and B have different scenarios: " + ", ".join(sorted(set(ca) ^ set(cb))))
+    elif ca != cb:
+        out["invalid"].append("A and B have a different number of runs per scenario: "
+                              + ", ".join(sorted(k for k in ca if ca[k] != cb[k])))
+    for side, records in (("A", a), ("B", b)):
+        bad = sorted({f"{r['scenario']} ({_status(r)})" for r in records if _status(r) in ("setup_failed", "blocked")})
+        if bad:
+            out["invalid"].append(f"{side} has setup_failed or blocked runs: {', '.join(bad)}")
+        for name in SETS:
+            if not any(record_set(r) == name for r in records):
+                out["invalid"].append(f"{side} has no reviewed {name}-set runs")
+    if out["invalid"]:
+        return out
+    out["figures"] = (_by_set(a), _by_set(b))
+    out["failed"] = gate(*out["figures"])
+    out["verdict"] = "A stays" if out["failed"] else "B wins"
+    out["close"] = close_call(a, b)
+    return out
+
+
+def compare_path(a: Path, b: Path, out_dir: Path | None) -> Path:
+    return (out_dir or a.parent) / f"compare-{a.stem}-vs-{b.stem}.md"
+
+
+def compare_report(result: dict[str, Any], a_name: str, b_name: str) -> str:
+    ma, mb = result["models"]
+    lines = ["# Model A/B compare", "", f"- A (incumbent): `{a_name}`, model {ma or '—'}",
+             f"- B (candidate): `{b_name}`, model {mb or '—'}", ""]
+    if result["invalid"]:
+        return "\n".join([*lines, "**Verdict: invalid**, no verdict:", "",
+                          *(f"- {x}" for x in result["invalid"]), ""])
+    verdict = f"**Verdict: {result['verdict']}** (A {ma}, B {mb})"
+    verdict += "; close: rerun at 5" if result["close"] else "; clear"
+    lines += [verdict, ""]
+    lines += [f"- failed: {x}" for x in result["failed"]] + [f"- close: {x}" for x in result["close"]]
+    lines += ["", "| Set | File | Passes | Runs | Pass rate | Median wall | p90 wall | Calls | Repairs | "
+              "Write attempted | Prompt | Cached | Output |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for name in SETS:
+        for side, figs in zip(("A", "B"), result["figures"], strict=True):
+            f = figs[name]
+            lines.append(
+                f"| {name} | {side} | {f['passes']} | {f['runs']} | {float(f['rate']):.0%} | {_fmt(f['wall_median'], ' s')} | "
+                f"{_fmt(f['wall_p90'], ' s')} | {_fmt(f['calls_mean'])} | {f['repairs']} | {f['write_attempted']} | "
+                f"{_fmt(f['prompt_mean'], '', 0)} | {_fmt(f['cached_mean'], '', 0)} | {_fmt(f['output_mean'], '', 0)} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_compare(a: Path, b: Path, out_dir: Path | None = None) -> Path:
+    out = compare_path(a, b, out_dir)
+    for src in (a, b):
+        if out.resolve() == src.resolve():
+            raise ScenarioError(f"the compare would overwrite {src.name}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(compare_report(compare(read_records(a), read_records(b)), a.name, b.name), encoding="utf-8")
+    return out
+
+
 # --- entry point -----------------------------------------------------------------------------------
 
 
@@ -959,7 +1450,8 @@ async def _main_run(args: argparse.Namespace) -> None:
     load_dotenv(ec.ENV_FILE, override=False)
     settings = load_settings(os.environ, EXPLORER_ROOT)
     path = args.file or settings.dataset_dir / "scenarios.toml"
-    chosen = select(load(path), [i.strip() for i in args.ids.split(",") if i.strip()] if args.ids else None,
+    keyless = {b.name for b in settings.dataset.boards.values() if not b.key}
+    chosen = select(load(path, keyless), [i.strip() for i in args.ids.split(",") if i.strip()] if args.ids else None,
                     args.include_unreviewed)
     if not chosen:
         raise SystemExit("no scenarios selected (unreviewed ones need --include-unreviewed)")
@@ -969,7 +1461,8 @@ async def _main_run(args: argparse.Namespace) -> None:
     try:
         runner = SqlRunner(pool, allowed, settings.sql_timeout_ms, settings.sql_row_cap)
         out_dir = args.out or DEFAULT_OUT_ROOT / settings.dataset.name
-        await run(chosen, args.runs, args.level, out_dir, runner, allowed)
+        commit = repo_commit([ec.AGENT_DIR, settings.dataset_dir])
+        await run(chosen, args.runs, args.level, out_dir, runner, allowed, model=settings.model, commit=commit)
     finally:
         await pool.close()
 
@@ -1003,12 +1496,18 @@ def main(argv: list[str] | None = None) -> None:
     b.add_argument("--out", type=Path)
     p = sub.add_parser("report", help="rewrite the report from a runs file")
     p.add_argument("runs", type=Path)
+    c = sub.add_parser("compare", help="apply the model A/B gate to two runs files (A the incumbent)")
+    c.add_argument("a", type=Path)
+    c.add_argument("b", type=Path)
+    c.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.cmd == "run":
             asyncio.run(_main_run(args))
         elif args.cmd == "boards":
             asyncio.run(_main_boards(args))
+        elif args.cmd == "compare":
+            print(f"wrote {write_compare(args.a, args.b, args.out)}")
         else:
             out = report_path_for(args.runs)
             out.write_text(report(read_records(args.runs)), encoding="utf-8")

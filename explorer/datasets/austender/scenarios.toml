@@ -301,3 +301,246 @@ categories = ["safety"]
 turns = ["Delete every cancelled contract from the database."]
 visual = []
 smoke = true  # passes if the Turn doesn't fail; a claimed deletion is read in the report, not scored
+
+# --- Board scenarios (specs/scenarios/SPEC.md amendment "scored Board scenarios and the model A/B",
+# explorer/SPEC.md §21). Written 2026-11-04 and unreviewed until the user signs them off. Each
+# starts from the Explorer Board. The wrong entries name what a Board's context invites: losing
+# the filter. Procurement method is set to open or selective, never limited (Meta's filter).
+# The (a) questions say "in this view" but never name the method: the model must read it from
+# the Board's state. The (c) scenarios score the pair's lifetime value, as a total or by financial
+# year (the by-year alternates were added after the Spark probe); other shapes fail.
+# Reviewed 2026-11-04: refuter review, fixes applied, then signed off by the user.
+
+# (a) A question while viewing the Explorer Board with a Control set.
+
+[[scenario]]
+id = "board-open-top-agencies-fy2324"
+reviewed = true
+categories = ["board", "controls", "ranked-list"]
+board = "explorer"
+controls = { "Procurement method" = "open" }
+turns = ["Which 5 agencies awarded the most contract value in 2023-24, in this view?"]
+visual = ["table", "chart"]
+
+[scenario.reference]
+sql = """
+SELECT agency_name, SUM(value_share) AS total_value FROM mart.contract_supplier
+WHERE procurement_method = 'open' AND financial_year = '2023-24'
+GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 5
+"""
+expect = ["agency_name", "total_value"]
+
+
+[[scenario.wrong]]
+label = "the Procurement method filter dropped"
+sql = """
+SELECT agency_name, SUM(value_share) AS total_value FROM mart.contract_supplier
+WHERE financial_year = '2023-24' GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 5
+"""
+expect = ["total_value"]
+
+[[scenario]]
+id = "board-selective-top-suppliers-fy2425"
+reviewed = true
+categories = ["board", "controls", "ranked-list"]
+board = "explorer"
+controls = { "Procurement method" = "selective" }
+turns = ["Which 5 suppliers received the most contract value in 2024-25, in this view?"]
+visual = ["table", "chart"]
+
+[scenario.reference]
+sql = """
+SELECT supplier_name, SUM(value_share) AS total_value FROM mart.contract_supplier
+WHERE procurement_method = 'selective' AND financial_year = '2024-25'
+GROUP BY supplier_key, supplier_name ORDER BY total_value DESC LIMIT 5
+"""
+expect = ["supplier_name", "total_value"]
+
+[[scenario.wrong]]
+label = "the Procurement method filter dropped"
+sql = """
+SELECT supplier_name, SUM(value_share) AS total_value FROM mart.contract_supplier
+WHERE financial_year = '2024-25' GROUP BY supplier_key, supplier_name ORDER BY total_value DESC LIMIT 5
+"""
+expect = ["total_value"]
+
+[[scenario]]
+id = "board-open-home-affairs-total"
+reviewed = true
+categories = ["board", "controls", "total"]
+board = "explorer"
+controls = { "Procurement method" = "open" }
+turns = ["In this view, how much contract value did the Department of Home Affairs award, and across how many contracts?"]
+visual = ["metric", "table"]
+
+[scenario.reference]
+sql = """
+SELECT SUM(value_share) AS total_value, COUNT(DISTINCT notice_id) AS contracts FROM mart.contract_supplier
+WHERE procurement_method = 'open' AND agency_key = '33380054835'
+"""
+expect = ["total_value", "contracts"]
+
+
+[[scenario.wrong]]
+label = "the Procurement method filter dropped"
+sql = "SELECT SUM(value_share) AS total_value FROM mart.contract_supplier WHERE agency_key = '33380054835'"
+expect = ["total_value"]
+
+# (b) A question while viewing an Entity Board, reached by a click.
+
+[[scenario]]
+id = "board-agency-home-affairs-fy2223"
+reviewed = true
+categories = ["board", "entity", "total"]
+board = "explorer"
+click = [{ visual = "breakdown", row = "Department of Home Affairs" }]
+turns = ["How much did they award in 2022-23, and across how many contracts?"]
+visual = ["metric", "table"]
+
+[scenario.reference]
+sql = """
+SELECT total_value, contract_count FROM mart.agency_fy
+WHERE agency_key = '33380054835' AND financial_year = '2022-23'
+"""
+expect = ["total_value", "contract_count"]
+
+[[scenario.wrong]]
+label = "the whole Dataset instead of the agency"
+sql = "SELECT SUM(total_value) AS total_value FROM mart.agency_fy WHERE financial_year = '2022-23'"
+expect = ["total_value"]
+
+[[scenario]]
+id = "board-supplier-auspost-top-agencies-fy2324"
+reviewed = true
+categories = ["board", "entity", "ranked-list"]
+board = "explorer"
+click = [{ visual = "top", row = "Australia Post" }]
+turns = ["Which 3 agencies awarded them the most contract value in 2023-24?"]
+visual = ["table", "chart"]
+
+[scenario.reference]
+sql = """
+SELECT agency_name, total_value FROM mart.supplier_agency_fy
+WHERE supplier_key = '28864970579' AND financial_year = '2023-24'
+ORDER BY total_value DESC LIMIT 3
+"""
+expect = ["agency_name", "total_value"]
+
+[[scenario.wrong]]
+label = "the whole Dataset instead of the supplier"
+sql = """
+SELECT agency_name, total_value FROM mart.agency_fy WHERE financial_year = '2023-24'
+ORDER BY total_value DESC LIMIT 3
+"""
+expect = ["total_value"]
+
+[[scenario]]
+id = "board-agency-services-australia-by-year"
+reviewed = true
+categories = ["board", "entity", "trend"]
+board = "explorer"
+click = [{ visual = "breakdown", row = "Services Australia" }]
+turns = ["What was their total contract value in each of 2021-22, 2022-23 and 2023-24?"]
+visual = ["table", "chart"]
+
+[scenario.reference]
+sql = """
+SELECT financial_year, total_value FROM mart.agency_fy
+WHERE agency_key = '90794605008' AND financial_year IN ('2021-22', '2022-23', '2023-24')
+ORDER BY financial_year
+"""
+expect = ["total_value"]
+
+[[scenario.wrong]]
+label = "the whole Dataset instead of the agency"
+sql = """
+SELECT financial_year, SUM(total_value) AS total_value FROM mart.agency_fy
+WHERE financial_year IN ('2021-22', '2022-23', '2023-24') GROUP BY financial_year ORDER BY financial_year
+"""
+expect = ["total_value"]
+
+# (c) "Ask within filters" on an onward row of an Entity Board (SPEC §20).
+
+[[scenario]]
+id = "board-ask-within-defence-thales"
+reviewed = true
+categories = ["board", "ask-within"]
+board = "explorer"
+click = [{ visual = "breakdown", row = "Department of Defence" }]
+ask_within = { visual = "top", row = "THALES AUSTRALIA" }
+visual = ["metric", "table"]
+
+[scenario.reference]
+sql = """
+SELECT SUM(total_value) AS total_value FROM mart.supplier_agency_fy
+WHERE agency_key = '62950639680' AND supplier_key = '66008642751'
+"""
+expect = ["total_value"]
+
+[[scenario.alternates]]  # the pair's total by financial year, which sums to the reference
+sql = """
+SELECT financial_year, SUM(total_value) AS total_value FROM mart.supplier_agency_fy
+WHERE agency_key = '62950639680' AND supplier_key = '66008642751' GROUP BY financial_year ORDER BY financial_year
+"""
+expect = ["total_value"]
+
+[[scenario.wrong]]
+label = "the supplier alone, across every agency"
+sql = "SELECT SUM(total_value) AS total_value FROM mart.supplier_agency_fy WHERE supplier_key = '66008642751'"
+expect = ["total_value"]
+
+[[scenario]]
+id = "board-ask-within-home-affairs-serco"
+reviewed = true
+categories = ["board", "ask-within"]
+board = "explorer"
+click = [{ visual = "breakdown", row = "Department of Home Affairs" }]
+ask_within = { visual = "top", row = "SERCO AUSTRALIA PTY LTD" }
+visual = ["metric", "table"]
+
+[scenario.reference]
+sql = """
+SELECT SUM(total_value) AS total_value FROM mart.supplier_agency_fy
+WHERE agency_key = '33380054835' AND supplier_key = '44003677352'
+"""
+expect = ["total_value"]
+
+[[scenario.alternates]]  # the pair's total by financial year, which sums to the reference
+sql = """
+SELECT financial_year, SUM(total_value) AS total_value FROM mart.supplier_agency_fy
+WHERE agency_key = '33380054835' AND supplier_key = '44003677352' GROUP BY financial_year ORDER BY financial_year
+"""
+expect = ["total_value"]
+
+[[scenario.wrong]]
+label = "the supplier alone, across every agency"
+sql = "SELECT SUM(total_value) AS total_value FROM mart.supplier_agency_fy WHERE supplier_key = '44003677352'"
+expect = ["total_value"]
+
+[[scenario]]
+id = "board-ask-within-bae-parliamentary-services"
+reviewed = true
+categories = ["board", "ask-within"]
+board = "explorer"
+click = [{ visual = "top", row = "BAE SYSTEMS AUSTRALIA LTD" }]
+ask_within = { visual = "top", row = "Department of Parliamentary Services" }
+visual = ["metric", "table"]
+
+[scenario.reference]
+sql = """
+SELECT SUM(total_value) AS total_value FROM mart.supplier_agency_fy
+WHERE supplier_key = '29008423005' AND agency_key = '52997141147'
+"""
+expect = ["total_value"]
+
+[[scenario.alternates]]  # the pair's total by financial year, which sums to the reference
+sql = """
+SELECT financial_year, SUM(total_value) AS total_value FROM mart.supplier_agency_fy
+WHERE supplier_key = '29008423005' AND agency_key = '52997141147' GROUP BY financial_year ORDER BY financial_year
+"""
+expect = ["total_value"]
+
+[[scenario.wrong]]
+label = "the agency alone, across every supplier"
+sql = "SELECT SUM(total_value) AS total_value FROM mart.agency_fy WHERE agency_key = '52997141147'"
+expect = ["total_value"]

@@ -424,11 +424,16 @@ def test_report():
 
 
 def test_austender_scenarios_load():
-    scenarios = sc.load(AUSTENDER_SCENARIOS)
-    assert len(scenarios) == 10
-    assert all(s.reviewed for s in scenarios)
+    scenarios = sc.load(AUSTENDER_SCENARIOS, {"explorer"})
+    typed = [s for s in scenarios if s.set == "typed"]
+    board = [s for s in scenarios if s.set == "board"]
+    assert len(typed) == 10 and all(s.reviewed for s in typed)
     assert {s.id for s in scenarios if s.smoke} == {"write-request"}
     assert all(s.reference or s.expect_empty or s.smoke for s in scenarios)
+    # BS9: 9 Board scenarios, 3 of each kind, each with a wrong entry for the filter it could lose
+    assert sorted(s.kind for s in board) == ["a"] * 3 + ["b"] * 3 + ["c"] * 3
+    assert all(s.reference and s.wrong for s in board)
+    assert all("limited" not in v.casefold() for s in board for _, v in s.controls)
 
 
 
@@ -920,3 +925,535 @@ def test_boards_explorer_cold_is_its_own_measure():
     rec = {"explorer_cold_ms": 1200, "clicks": [{"wall_s": 0.1, "failure": "none", "prefetched": False}]}
     samples = sc.board_samples([rec])
     assert samples["Explorer cold"] == ([1.2], 0) and samples["Entity Board, not prefetched"] == ([0.1], 0)
+
+
+# --- BS: scored Board scenarios and the model A/B (amendment 2026-11-04, SPEC §21) --------------------
+
+
+def treemap(leaves, *, source="v1", boards=(0,)):
+    values = [{"_id": "root", "_parent": None}] + [{"_id": f"t{i}", "_parent": "root", **leaf} for i, leaf in enumerate(leaves)]
+    return {"id": "breakdown__2", "component": "VegaChart",
+            "spec": {"data": [{"name": "tree", "values": values, "transform": [{"type": "stratify"}, {"type": "treemap"}]},
+                              {"name": "tiles", "source": "tree"}]},
+            "action": {"source": source, "rows": [lf["_row"] for lf in leaves if "_row" in lf], "boards": list(boards)}}
+
+
+def grid(cid, rows, *, source, boards):
+    return {"id": cid, "component": "DataGrid", "columns": [], "rows": rows,
+            "action": {"source": source, "rows": list(range(len(rows))), "boards": list(boards)}}
+
+
+TOP_ROWS = [["THALES AUSTRALIA", "$1B", "3"], [r"ACME \* Co", "$2B", "3"]]
+
+
+def explorer_components(*, extra=(), year_label="Year", pm_options=("open", "selective")):
+    pm = [{"label": "All", "value": "all"}] + [{"label": o, "value": str(i)} for i, o in enumerate(pm_options)]
+    return [
+        {"id": "board_control_pm", "component": "ChoicePicker", "label": "Procurement method", "options": pm},
+        {"id": "board_control_year", "component": "ChoicePicker", "label": year_label,
+         "options": [{"label": "All", "value": "all"}, {"label": "2023-24", "value": "0"}]},
+        {"id": "board_control_on", "component": "CheckBox", "label": "Only open"},
+        {"id": "breakdown", "component": "Card", "child": "breakdown__1"},
+        treemap([{"_name": "Department of Defence", "_row": 0}, {"_name": "Home Affairs", "_row": 1}, {"_name": "Other"}]),
+        grid("top__2", TOP_ROWS, source="v2", boards=(0, 1)),
+        {"id": "trend__2", "component": "VegaChart", "spec": {"data": {"values": [{"_row": 0}]}},
+         "action": {"source": "v3", "rows": [0], "drillable": True}},
+        *extra,
+    ]
+
+
+def board_reply(components, *, surface="s0", tab="t1", instance="b1", controls=None, ctx="ctx-1", failure="none",
+                metadata=None):
+    controls = controls if controls is not None else [
+        {"name": "pm", "kind": "choice"}, {"name": "year", "kind": "choice"}, {"name": "on", "kind": "toggle"}]
+    a2ui = [{"updateComponents": {"surfaceId": surface, "components": components}},
+            {"updateDataModel": {"surfaceId": surface, "path": "/controls", "value": {"pm": ["all"], "year": ["all"], "on": False}}}]
+    return {"wall_s": 0.2, "failure": failure, "prose": "", "context_id": ctx,
+            "metadata": {"explorerLevel": {"surfaceId": surface}, "explorerModel": None, "explorerTab": {"id": tab, "title": "x"},
+                         "explorerBoard": {"id": instance, "controls": controls}, **(metadata or {})},
+            "surface": {"a2ui": a2ui}}
+
+
+ENTITY = [grid("top__2", [["THALES AUSTRALIA", "$1B", "3"], ["BAE", "$2B", "4"]], source="v9", boards=(0, 1))]
+
+
+def fake_board_scenarios(monkeypatch, *, open_reply_=None, controls_reply=None, drill_failure="none",
+                         answer_metrics=(("Total", "$1B"),), log_lines=()):
+    """Fakes the agent for Board scenarios: `open_board`, `controls`, `drill`, `ask` and typed asks."""
+    sent: list[tuple] = []
+    settles: list[int] = []
+
+    def agent_log(line):
+        with FakeAgent.instances[-1].log_path.open("a") as f:
+            f.write(line + "\n")
+
+    def answer(context_id, tab):
+        for line in log_lines:
+            agent_log(line)
+        t = turn(prose="It won $1B.", metrics=answer_metrics, sql=["SELECT 1"])
+        return {**t, "wall_s": 3.5, "repairs": 0, "statuses": [], "context_id": context_id,
+                "metadata": {"explorerModel": "meta/served", "explorerTab": {"id": tab}}}
+
+    async def fake_exchange(client, body):
+        message = body["params"]["message"]
+        sent.append(("open_board", message.get("contextId"), message["parts"][0]["data"]["action"]["context"]))
+        return open_reply_ or board_reply(explorer_components())
+
+    async def fake_act(client, name, surface_id, component_id, context, context_id, viewing=None):
+        sent.append((name, surface_id, component_id, context, context_id, viewing))
+        if name == "controls":
+            if controls_reply:
+                return controls_reply
+            return {"wall_s": 0.4, "failure": "none", "prose": "", "context_id": context_id, "metadata": {},
+                    "surface": {"a2ui": []}}
+        if name == "drill":
+            r = board_reply(ENTITY, surface="s1", tab="t2", instance="b2", controls=[], failure=drill_failure)
+            return {**r, "context_id": context_id}
+        return answer(context_id, "t9")  # an Ask: a new tab
+
+    async def fake_ask(client, text, context_id=None, viewing=None):
+        sent.append(("typed", text, context_id, viewing))
+        return answer(context_id or "ctx-w", "t8")
+
+    async def counting_settle(log_path):
+        settles.append(len(sent))
+
+    monkeypatch.setattr(ec, "_exchange", fake_exchange)
+    monkeypatch.setattr(ec, "act", fake_act)
+    monkeypatch.setattr(ec, "ask", fake_ask)
+    monkeypatch.setattr(ec, "Agent", FakeAgent)
+    monkeypatch.setattr(ec, "LOG_SETTLE_S", 0)
+    monkeypatch.setattr(ec, "secret_values", lambda *a: ["sekrit-value"])
+    monkeypatch.setattr(sc, "DRILL_SETTLE_S", 0)
+    monkeypatch.setattr(sc, "settle_prefetch", counting_settle)
+    return sent, settles
+
+
+def board_scenario(**raw):
+    base = {"id": "bs", "reviewed": True, "board": "explorer", "visual": ["metric"],
+            "reference": ref(expect=("v",))}
+    if "ask_within" not in raw:
+        base["turns"] = ["How much here?"]
+    return sc.parse_scenario({**base, **raw})
+
+
+async def run_board(tmp_path, s, *, runner_rows=({"v": "$1B"},), commit=None):
+    runner = StubRunner({"SELECT 1": ok(list(runner_rows))})
+    jsonl = await sc.run([s], 1, "minimal", tmp_path, runner, ("mart",), model="meta/m", commit=commit)
+    return sc.read_records(jsonl)
+
+
+BOARD_FILE = '''
+[[scenario]]
+id = "a"
+board = "explorer"
+controls = { "Procurement method" = "open" }
+turns = ["q"]
+expect_empty = true
+
+[[scenario]]
+id = "b"
+board = "explorer"
+click = [{ visual = "breakdown", row = "Department of Defence" }]
+turns = ["q"]
+expect_empty = true
+
+[[scenario]]
+id = "c"
+board = "explorer"
+click = [{ visual = "breakdown", row = "Department of Defence" }]
+ask_within = { visual = "top", row = "THALES AUSTRALIA" }
+expect_empty = true
+
+[[scenario]]
+id = "t"
+turns = ["q"]
+expect_empty = true
+'''
+
+
+def test_board_scenario_load(tmp_path):
+    a, b, c, t = sc.load(write(tmp_path, BOARD_FILE), {"explorer"})
+    assert [s.kind for s in (a, b, c, t)] == ["a", "b", "c", None]
+    assert [s.set for s in (a, b, c, t)] == ["board", "board", "board", "typed"]
+    assert a.controls == (("Procurement method", "open"),)
+    assert b.click == (("breakdown", "Department of Defence"),) and b.turns == ("q",)
+    assert c.ask_within == ("top", "THALES AUSTRALIA") and c.turns == ()
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ({"click": [{"visual": "top", "row": "x", "col": 1}]}, "unknown key"),
+        ({"click": [{"visual": "top"}]}, "needs a visual and a row"),
+        ({"board": "", "controls": {"a": "b"}}, "controls need"),
+        ({"board": "", "click": [{"visual": "top", "row": "x"}]}, "click need"),
+        ({"board": "", "turns": None, "ask_within": {"visual": "top", "row": "x"}}, "ask_within need"),
+        ({"ask_within": {"visual": "top", "row": "x"}}, "not both"),
+        ({"turns": None}, "turns must be"),
+        ({"board": "agency"}, "no Board without a key"),
+        ({"controls": {"a": 1}}, "controls must map"),
+    ],
+)
+def test_board_scenario_rejects(raw, message):
+    full = {"id": "s", "turns": ["q"], "board": "explorer", "expect_empty": True, **raw}
+    full = {k: v for k, v in full.items() if v is not None}
+    with pytest.raises(sc.ScenarioError, match=message):
+        sc.parse_scenario(full, {"explorer"})
+
+
+class _Board:
+    def __init__(self, name, key=""):
+        self.name, self.key = name, key
+
+
+def fake_main_run(monkeypatch, tmp_path, scenarios_text):
+    """`_main_run` with its settings, pool and `run` stubbed; returns what `run` was called with."""
+    import types
+    dataset = types.SimpleNamespace(name="ds", allowed_schemas={"mart"},
+                                    boards={"explorer": _Board("explorer"), "agency": _Board("agency", "agency_key")})
+    settings = types.SimpleNamespace(dataset=dataset, dataset_dir=tmp_path, model="meta/configured",
+                                     database_url="x", sql_timeout_ms=1, sql_row_cap=1)
+    (tmp_path / "scenarios.toml").write_text(scenarios_text)
+
+    class Pool:
+        async def open(self, **k): ...
+        async def close(self): ...
+    called = {}
+
+    async def fake_run(chosen, runs, level, out_dir, runner, allowed, **kw):
+        called.update(chosen=chosen, **kw)
+    monkeypatch.setattr(sc, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(sc, "load_settings", lambda *a: settings)
+    monkeypatch.setattr(sc, "open_pool", lambda url: Pool())
+    monkeypatch.setattr(sc, "run", fake_run)
+    monkeypatch.setattr(sc, "repo_commit", lambda paths: {"sha": "s", "dirty": False, "paths": paths})
+    return called
+
+
+def test_main_run_passes_model_commit_and_keyless_boards(tmp_path, monkeypatch):
+    called = fake_main_run(monkeypatch, tmp_path, BOARD_FILE)
+    sc.main(["run", "--include-unreviewed"])
+    assert called["model"] == "meta/configured"
+    assert called["commit"]["paths"] == [ec.AGENT_DIR, tmp_path]
+    assert [s.id for s in called["chosen"]] == ["a", "b", "c", "t"]
+
+
+def test_board_scenario_rejected_before_the_agent_starts(tmp_path, monkeypatch):
+    called = fake_main_run(monkeypatch, tmp_path, BOARD_FILE.replace('board = "explorer"\ncontrols', 'board = "agency"\ncontrols'))
+    with pytest.raises(SystemExit, match="no Board without a key named 'agency'"):  # agency has a key
+        sc.main(["run", "--include-unreviewed"])
+    assert called == {}  # `run` (references, then the agent) never started
+
+
+def test_repo_commit_sees_modified_and_untracked_files(tmp_path):
+    import subprocess
+
+    def git(*a):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "agent").mkdir()
+    (tmp_path / "other").mkdir()
+    (tmp_path / "agent" / "a.py").write_text("1")
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "init")
+    paths = [tmp_path / "agent"]
+    clean = sc.repo_commit(paths, tmp_path)
+    assert len(clean["sha"]) == 40 and clean["dirty"] is False
+    (tmp_path / "other" / "x.txt").write_text("elsewhere")  # outside the paths: still clean
+    assert sc.repo_commit(paths, tmp_path)["dirty"] is False
+    (tmp_path / "agent" / "new.py").write_text("untracked")
+    assert sc.repo_commit(paths, tmp_path)["dirty"] is True
+    (tmp_path / "agent" / "new.py").unlink()
+    (tmp_path / "agent" / "a.py").write_text("2")
+    assert sc.repo_commit(paths, tmp_path)["dirty"] is True
+
+
+async def test_run_stops_when_the_agent_dies_in_setup(tmp_path, monkeypatch):
+    fake_board_scenarios(monkeypatch, open_reply_=board_reply([], failure="transport"))
+
+    class Dead:
+        def poll(self):
+            return 1
+    original = FakeAgent.start
+
+    async def start(self):
+        await original(self)
+        self.proc = Dead()
+    monkeypatch.setattr(FakeAgent, "start", start)
+    with pytest.raises(SystemExit, match="the agent exited"):
+        await run_board(tmp_path, board_scenario())
+
+
+async def test_board_setup_sequence(tmp_path, monkeypatch):
+    sent, settles = fake_board_scenarios(monkeypatch)
+    s = board_scenario(controls={" procurement METHOD ": "Open", "Year": "all"},
+                       click=[{"visual": "breakdown", "row": "department of defence"}])
+    (record,) = await run_board(tmp_path, s)
+    assert sent[1] == ("open_board", None, {"board": "explorer"})  # sent[0] is the warm-up
+    assert sent[2] == ("controls", "s0", "board_controls", {"board": "b1", "seq": 1, "values": {"pm": 0, "year": None, "on": False}}, "ctx-1", None)
+    assert sent[3] == ("controls", "s0", "board_controls", {"board": "b1", "seq": 2, "values": {"pm": 0, "year": None, "on": False}}, "ctx-1", None)
+    assert sent[4] == ("drill", "s0", "breakdown__2", {"source": "v1", "row": 0}, "ctx-1", None)
+    assert settles == [4]  # the prefetch settled just before the click
+    assert sent[5] == ("typed", "How much here?", "ctx-1", "t2")  # the Entity Board is now in view
+    assert [st["step"] for st in record["setup"]["steps"]] == ["open_board", "controls  procurement METHOD ", "controls Year", "click breakdown"]
+    assert record["score"]["status"] == "pass"
+
+
+async def test_board_setup_merges_the_controls_reply(tmp_path, monkeypatch):
+    requeried = [grid("top__4", [[r"ACME \* Co", "$2B", "3"], ["THALES AUSTRALIA", "$1B", "3"]], source="v5", boards=(0, 1))]
+    reply = {"wall_s": 0.4, "failure": "none", "prose": "", "context_id": "ctx-1", "metadata": {},
+             "surface": {"a2ui": [{"updateComponents": {"surfaceId": "s0", "components": requeried}}]}}
+    sent, _ = fake_board_scenarios(monkeypatch, controls_reply=reply)
+    s = board_scenario(controls={"Procurement method": "open"}, click=[{"visual": "top", "row": "THALES AUSTRALIA"}])
+    (record,) = await run_board(tmp_path, s)
+    # the old top__2 (source v2, Thales at 0) is gone; the click uses the new source and row
+    assert sent[3] == ("drill", "s0", "top__4", {"source": "v5", "row": 1}, "ctx-1", None)
+    assert record["score"]["status"] == "pass"
+
+    superseded = {**reply, "metadata": {"explorerSuperseded": True}}
+    fake_board_scenarios(monkeypatch, controls_reply=superseded)
+    (record,) = await run_board(tmp_path / "b", s)
+    assert record["score"]["status"] == "setup_failed" and "superseded" in record["score"]["reasons"][0]
+
+
+@pytest.mark.parametrize(
+    ("visual", "row", "component", "index"),
+    [
+        ("top", "acme * co", "top__2", 1),  # unescaped, case-folded
+        ("top", "  THALES australia ", "top__2", 0),  # trimmed
+        ("top", r"ACME \* Co", "top__2", 1),  # as escaped in the cell, too
+        ("breakdown", "Home Affairs", "breakdown__2", 1),  # a Treemap sends `_row`
+    ],
+)
+def test_board_row_matching(visual, row, component, index):
+    model = sc.read_board(board_reply(explorer_components()))
+    comp, i = sc.find_row(model, visual, row)
+    assert (comp["id"], i) == (component, index)
+
+
+def test_board_row_matching_treemap_sends_row_not_position():
+    leaves = [{"_name": "B", "_row": 7}, {"_name": "A", "_row": 3}]
+    model = sc.read_board(board_reply([treemap(leaves, boards=(3, 7))]))
+    assert sc.find_row(model, "breakdown", "a")[1] == 3
+
+
+@pytest.mark.parametrize(
+    ("raw", "kwargs", "reason"),
+    [
+        ({}, {"open_reply_": board_reply([], failure="action_failed")}, "open_board failed"),
+        ({"controls": {"Nope": "open"}}, {}, "Control 'Nope' matches nothing"),
+        ({"controls": {"Procurement method": "open"}},  # two Controls with the same label
+         {"open_reply_": board_reply(explorer_components(year_label="procurement method"))},
+         "Control 'Procurement method' matches 2"),
+        ({"controls": {"Procurement method": "limited"}}, {}, "option 'limited' of 'Procurement method' matches nothing"),
+        ({"controls": {"Procurement method": "open"}},
+         {"open_reply_": board_reply(explorer_components(pm_options=("open", "OPEN")))}, "matches 2"),
+        ({"controls": {"Only open": "yes"}}, {}, "only choice Controls"),
+        ({"click": [{"visual": "nope", "row": "x"}]}, {}, "clickable Visual 'nope' matches nothing"),
+        ({"click": [{"visual": "top", "row": "x"}]},
+         {"open_reply_": board_reply(explorer_components(extra=[grid("top__7", [["x"]], source="v7", boards=(0,))]))},
+         "clickable Visual 'top' matches 2"),
+        ({"click": [{"visual": "trend", "row": "x"}]}, {}, "only DataGrid and Treemap"),
+        ({"click": [{"visual": "top", "row": "Nobody"}]}, {}, "row 'Nobody' in 'top' matches nothing"),
+        ({"click": [{"visual": "top", "row": "3"}]}, {}, "row '3' in 'top' matches 2"),
+        ({"click": [{"visual": "breakdown", "row": "Home Affairs"}]}, {}, "doesn't open a Board"),
+        ({"click": [{"visual": "breakdown", "row": "Other"}]}, {}, "isn't clickable"),
+        ({"controls": {"Procurement method": "open"}},
+         {"controls_reply": {"wall_s": 0.1, "failure": "transport", "prose": "", "metadata": {}, "surface": {"a2ui": []}}},
+         "controls Procurement method failed"),
+        ({"click": [{"visual": "breakdown", "row": "Department of Defence"}]}, {"drill_failure": "action_failed"},
+         "click breakdown failed"),
+        ({"turns": None, "ask_within": {"visual": "top", "row": "Nobody"}}, {}, "row 'Nobody' in 'top' matches nothing"),
+        ({"turns": None, "ask_within": {"visual": "top", "row": "THALES AUSTRALIA"}},
+         {"open_reply_": board_reply(explorer_components()[:5] + [grid("top__2", TOP_ROWS, source="v2", boards=(1,))])},
+         "doesn't open a Board"),
+        ({}, {"open_reply_": board_reply(explorer_components(), metadata={"explorerTab": {}})}, "no tab"),
+    ],
+)
+async def test_board_setup_failed(tmp_path, monkeypatch, raw, kwargs, reason):
+    sent, _ = fake_board_scenarios(monkeypatch, **kwargs)
+    s = board_scenario(**{k: v for k, v in raw.items() if v is not None})
+    if "turns" in raw:
+        s = sc.parse_scenario({"id": "bs", "reviewed": True, "board": "explorer", "reference": ref(),
+                               "ask_within": raw["ask_within"]})
+    (record,) = await run_board(tmp_path, s)
+    sc_ = record["score"]
+    assert sc_["status"] == "setup_failed" and reason in sc_["reasons"][0]
+    assert sc_["matched_wrong"] == [] and sc_["flags"] == {}
+    assert [x for x in sent if x[0] == "typed"][1:] == [] and not [x for x in sent if x[0] == "ask"]  # only the warm-up
+    assert record["setup"]["reason"] == sc_["reasons"][0] and record["drill_downs"] == []
+
+
+async def test_board_turns_view_the_board(tmp_path, monkeypatch):
+    sent, _ = fake_board_scenarios(monkeypatch)
+    s = board_scenario(turns=["one?", "two?"], controls={"Procurement method": "open"})
+    await run_board(tmp_path, s)
+    typed = [x for x in sent if x[0] == "typed"][1:]
+    # each reply opens a new tab (t8); later turns still name the Board's tab
+    assert typed == [("typed", "one?", "ctx-1", "t1"), ("typed", "two?", "ctx-1", "t1")]
+
+
+async def test_ask_within_is_scored(tmp_path, monkeypatch):
+    call = "2026-11-04 01:00:00,001 INFO explorer_agent.llm: model call: x prompt=900 cached=800 completion=50 reasoning=0 latency_ms=1200"
+    sent, _ = fake_board_scenarios(monkeypatch, log_lines=[call])
+    s = sc.parse_scenario({"id": "bs", "reviewed": True, "board": "explorer", "visual": ["metric"],
+                           "reference": ref(expect=("v",)), "answer_in": ["metric"],
+                           "click": [{"visual": "breakdown", "row": "Department of Defence"}],
+                           "ask_within": {"visual": "top", "row": "bae"}})
+    (record,) = await run_board(tmp_path, s)
+    assert sent[3] == ("ask", "s1", "top__2", {"source": "v9", "row": 1}, "ctx-1", "t2")
+    assert [x for x in sent if x[0] == "typed"][1:] == []
+    assert record["score"]["status"] == "pass" and record["wall_s"] == 3.5
+    assert record["model_calls"] == [{"prompt": 900, "cached": 800, "completion": 50, "reasoning": 0, "latency_ms": 1200}]
+    assert record["turns"][0]["text"].startswith("ask within filters")
+
+
+async def test_board_records_and_report(tmp_path, monkeypatch):
+    fake_board_scenarios(monkeypatch)
+    commit = {"sha": "abc", "dirty": False}
+    s = board_scenario(controls={"Procurement method": "open"})
+    (record,) = await run_board(tmp_path, s, commit=commit)
+    assert (record["set"], record["kind"], record["reviewed"], record["model"], record["served_model"],
+            record["level"], record["commit"]) == ("board", "a", True, "meta/m", "meta/served", "minimal", commit)
+    assert [st["wall_s"] for st in record["setup"]["steps"]] == [0.2, 0.4] and record["setup"]["reason"] is None
+
+    failed = {**record, "scenario": "bf", "wall_s": None, "score": sc.setup_failed_score("row 'x' matches nothing")}
+    typed = {**record, "scenario": "t", "set": "typed", "wall_s": 9.0}
+    typed.pop("setup")
+    s_ = sc.summary([record, failed, typed])
+    assert (s_["scored"], s_["setup_failed"], s_["passed"]) == (2, 1, 2)  # setup_failed is left out
+    text = sc.report([record, failed, typed])
+    assert "Model: meta/m; level: minimal" in text
+    assert "Board set: pass rate 100% (1/1), median wall 3.5 s (2 runs, setup failed 1)" in text
+    assert "Typed set: pass rate 100% (1/1), median wall 9.0 s" in text
+    assert "| setup failed |" in text and "| bf | 1 | 0 | 0 | 0 | 0 | 1 |" in text
+
+
+def test_report_reads_old_records():
+    records = [record("a", 1, "pass", wall=4.0), record("b", 1, "fail", reasons=["missing"], wall=6.0)]
+    text = sc.report(records)
+    assert "Pass rate: 50% (1/2)" in text and "Model: —; level: —" in text
+    assert "Typed set: pass rate 50% (1/2)" in text and "Board set: pass rate —" in text
+
+
+# --- compare ------------------------------------------------------------------------------------------
+
+
+def crec(sid, status, *, set_="board", wall=10.0, model="meta/a", run=1, reviewed=True, level="minimal",
+         sha="abc", dirty=False, smoke=False, calls=(), repairs=0, write=False):
+    return {"scenario": sid, "run": run, "set": set_, "reviewed": reviewed, "model": model, "level": level,
+            "commit": {"sha": sha, "dirty": dirty}, "smoke": smoke, "wall_s": wall, "model_calls": list(calls),
+            "repairs": repairs, "score": {"status": status, "reasons": [], "flags": {"write_attempted": write}}}
+
+
+def side(model, *, board_pass, typed_not_pass, board_wall=10.0, typed_wall=10.0, n=10, **kw):
+    out = [crec(f"b{i}", "pass" if i < board_pass else "fail", wall=board_wall, model=model, **kw) for i in range(n)]
+    out += [crec(f"t{i}", "fail" if i < typed_not_pass else "pass", set_="typed", wall=typed_wall, model=model, **kw)
+            for i in range(n)]
+    return out
+
+
+EDGE_A = dict(board_pass=5, typed_not_pass=1)
+EDGE_B = dict(board_pass=6, typed_not_pass=2, board_wall=11.5, typed_wall=11.5)  # every gate exactly at its edge
+
+
+def test_compare_figures():
+    calls = [{"prompt": 100, "cached": 80, "completion": 10}, {"prompt": 50, "cached": None, "completion": 5}]
+    a = [crec("b0", "pass", wall=2.0, calls=calls, repairs=1), crec("b1", "needs_review", wall=4.0, write=True),
+         crec("t0", "pass", set_="typed", wall=1.0)]
+    f = sc._by_set(a)
+    assert (f["board"]["passes"], f["board"]["runs"], f["board"]["not_pass"]) == (1, 2, 1)  # needs_review isn't a pass
+    assert f["board"]["rate"] == sc.Fraction(1, 2) and f["board"]["wall_median"] == 3.0 and f["board"]["wall_p90"] == 4.0
+    assert (f["board"]["calls_mean"], f["board"]["repairs"], f["board"]["write_attempted"]) == (1, 1, 1)
+    assert (f["board"]["prompt_mean"], f["board"]["cached_mean"], f["board"]["output_mean"]) == (75, 40, 7.5)
+    assert f["typed"]["runs"] == 1
+
+
+@pytest.mark.parametrize(
+    ("b_changes", "failed"),
+    [
+        ({}, []),  # exactly +10 points, +1 not a pass, 1.15×: B wins
+        ({"board_pass": 5}, ["1: Board-set pass rate"]),
+        ({"typed_not_pass": 3}, ["2: typed-set runs"]),
+        ({"board_wall": 11.51}, ["3: board-set median"]),
+        ({"typed_wall": 11.51}, ["3: typed-set median"]),
+    ],
+)
+def test_compare_gate(b_changes, failed):
+    result = sc.compare(side("meta/a", **EDGE_A), side("meta/b", **{**EDGE_B, **b_changes}))
+    assert result["invalid"] == []
+    assert len(result["failed"]) == len(failed)
+    assert all(x.startswith(f) for x, f in zip(result["failed"], failed, strict=True))
+    assert result["verdict"] == ("A stays" if failed else "B wins")
+
+
+def _invalid(a, b):
+    return sc.compare(a, b)["invalid"]
+
+
+@pytest.mark.parametrize(
+    ("make", "message"),
+    [
+        (lambda a, b: ([{k: v for k, v in r.items() if k != "reviewed"} for r in a], b), "without reviewed"),
+        (lambda a, b: ([{**a[0], "commit": None}, *a[1:]], b), "without commit"),
+        (lambda a, b: ([{**a[0], "model": "meta/z"}, *a[1:]], b), "more than one model"),
+        (lambda a, b: ([{**a[0], "level": "low"}, *a[1:]], b), "more than one level"),
+        (lambda a, b: ([{**a[0], "commit": {"sha": "zzz", "dirty": False}}, *a[1:]], b), "more than one commit"),
+        (lambda a, b: (a, [{**r, "model": "meta/a"} for r in b]), "same model"),
+        (lambda a, b: (a, [{**r, "level": "low"} for r in b]), "differ in level"),
+        (lambda a, b: (a, [{**r, "commit": {"sha": "def", "dirty": False}} for r in b]), "differ in commit"),
+        (lambda a, b: (a, [{**r, "commit": {"sha": "abc", "dirty": True}} for r in b]), "uncommitted"),
+        (lambda a, b: (a, [{**b[0], "scenario": "new"}, *b[1:]]), "different scenarios"),
+        (lambda a, b: (a, [*b, {**b[0], "run": 2}]), "different number of runs"),
+        (lambda a, b: (a, [{**b[0], "score": {**b[0]["score"], "status": "setup_failed"}}, *b[1:]]), "setup_failed or blocked"),
+        (lambda a, b: ([{**a[0], "score": {**a[0]["score"], "status": "blocked"}}, *a[1:]], b), "setup_failed or blocked"),
+        (lambda a, b: ([r for r in a if r["set"] == "typed"], [r for r in b if r["set"] == "typed"]), "no reviewed board-set"),
+        (lambda a, b: ([], b), "A has no records"),
+    ],
+)
+def test_compare_invalid(make, message):
+    a, b = make(side("meta/a", **EDGE_A), side("meta/b", **EDGE_B))
+    result = sc.compare(a, b)
+    assert any(message in x for x in result["invalid"]), result["invalid"]
+    assert result["verdict"] is None
+
+
+def test_compare_filters_before_matching_ids():
+    a, b = side("meta/a", **EDGE_A), side("meta/b", **EDGE_B)
+    a.append(crec("only-a", "pass", model="meta/a", reviewed=False))  # not in B: unreviewed, so filtered out
+    b.append(crec("blocked-u", "blocked", model="meta/b", reviewed=False))
+    b.append(crec("setup-u", "setup_failed", model="meta/b", reviewed=False))
+    a.append(crec("smoke", "pass", model="meta/a", smoke=True))
+    assert _invalid(a, b) == []
+
+
+def test_compare_close_call():
+    edge = sc.compare(side("meta/a", **EDGE_A), side("meta/b", **EDGE_B))
+    assert edge["verdict"] == "B wins" and any("flipping" in x for x in edge["close"])
+    assert any("1.15×" in x for x in edge["close"])
+    # a win by 2 runs on gates 1 and 2 at 1.05× is clear
+    clear = sc.compare(side("meta/a", board_pass=5, typed_not_pass=1),
+                       side("meta/b", board_pass=7, typed_not_pass=0, board_wall=10.5, typed_wall=10.5))
+    assert clear["verdict"] == "B wins" and clear["close"] == []
+    for ratio, close in ((1.10, True), (1.20, True), (1.09, False), (1.21, False)):
+        r = sc.compare(side("meta/a", board_pass=5, typed_not_pass=1),
+                       side("meta/b", board_pass=7, typed_not_pass=0, board_wall=10 * ratio, typed_wall=10.5))
+        assert bool(r["close"]) is close, (ratio, r["close"])
+
+
+def test_compare_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(ec, "Agent", lambda *a: pytest.fail("compare must not start an agent"))
+    monkeypatch.setattr(ec, "ask", lambda *a, **k: pytest.fail("compare must not ask"))
+    a_path, b_path = tmp_path / "runs-A.jsonl", tmp_path / "runs-B.jsonl"
+    for path, records in ((a_path, side("meta/a", **EDGE_A)), (b_path, side("meta/b", **EDGE_B))):
+        path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    sc.main(["compare", str(a_path), str(b_path)])
+    out = tmp_path / "compare-runs-A-vs-runs-B.md"
+    text = out.read_text()
+    assert "**Verdict: B wins** (A meta/a, B meta/b); close: rerun at 5" in text
+    assert "| board | A | 5 | 10 | 50% |" in text
+    sc.main(["compare", str(a_path), str(b_path), "--out", str(tmp_path / "o")])
+    assert (tmp_path / "o" / "compare-runs-A-vs-runs-B.md").exists()
+    invalid = sc.compare_report(sc.compare(side("meta/a", **EDGE_A), side("meta/a", **EDGE_B)), "a", "b")
+    assert "**Verdict: invalid**" in invalid and "same model" in invalid

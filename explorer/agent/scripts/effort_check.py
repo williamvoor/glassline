@@ -33,7 +33,7 @@ import httpx
 from dotenv import dotenv_values
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
-from explorer_agent.executor import ACTION_FAILED_KEY, GENERIC_ERROR, MODEL_KEY, UI_ERROR_PREFIX
+from explorer_agent.executor import ACTION_FAILED_KEY, GENERIC_ERROR, MODEL_KEY, UI_ERROR_PREFIX, VIEWING_KEY
 from explorer_agent.ui import BARE_NUMBERS_LOG
 from explorer_agent.llm import (
     CONTENT_POLICY_PROSE,
@@ -125,10 +125,15 @@ def _envelope(message: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/stream", "params": {"message": message}}
 
 
-def message_body(text: str, context_id: str | None = None) -> dict[str, Any]:
+def _metadata(viewing: str | None) -> dict[str, Any]:
+    """The request metadata: the catalog, plus the selected tab's ID when one is given (SPEC §18)."""
+    return {**CAPS, VIEWING_KEY: viewing} if viewing else CAPS
+
+
+def message_body(text: str, context_id: str | None = None, viewing: str | None = None) -> dict[str, Any]:
     message = {
         "kind": "message", "role": "user", "messageId": str(uuid.uuid4()),
-        "parts": [{"kind": "text", "text": text}], "metadata": CAPS,
+        "parts": [{"kind": "text", "text": text}], "metadata": _metadata(viewing),
     }
     if context_id:  # continue a Conversation (scenarios with several turns)
         message["contextId"] = context_id
@@ -136,9 +141,11 @@ def message_body(text: str, context_id: str | None = None) -> dict[str, Any]:
 
 
 def action_body(
-    name: str, surface_id: str, component_id: str, context: dict[str, Any], context_id: str
+    name: str, surface_id: str, component_id: str, context: dict[str, Any], context_id: str,
+    viewing: str | None = None,
 ) -> dict[str, Any]:
-    """The A2UI action message the client sends for a click (client/src/a2a.ts `act`)."""
+    """The A2UI action message the client sends for a click (client/src/a2a.ts `act`). `viewing` is
+    the tab the click was made in, sent as `explorerViewing` like the client does."""
     action = {
         "name": name, "surfaceId": surface_id, "sourceComponentId": component_id,
         "timestamp": datetime.now(UTC).isoformat(), "context": context,
@@ -147,7 +154,7 @@ def action_body(
         "kind": "message", "role": "user", "messageId": str(uuid.uuid4()), "contextId": context_id,
         "parts": [{"kind": "data", "data": {"version": "v0.9", "action": action},
                    "metadata": {"mimeType": "application/json+a2ui"}}],
-        "metadata": CAPS,
+        "metadata": _metadata(viewing),
     })
 
 
@@ -210,19 +217,22 @@ async def _exchange(client: httpx.AsyncClient, body: dict[str, Any]) -> dict[str
     }
 
 
-async def ask(client: httpx.AsyncClient, text: str, context_id: str | None = None) -> dict[str, Any]:
+async def ask(
+    client: httpx.AsyncClient, text: str, context_id: str | None = None, viewing: str | None = None
+) -> dict[str, Any]:
     """Sends `text` in a fresh Conversation, or in `context_id`'s. Never raises for transport
-    problems. The result's `context_id` is the reply's, for a following Turn."""
-    return await _exchange(client, message_body(text, context_id))
+    problems. The result's `context_id` is the reply's, for a following Turn. `viewing` names the
+    tab in view (a Board scenario)."""
+    return await _exchange(client, message_body(text, context_id, viewing))
 
 
 async def act(
     client: httpx.AsyncClient, name: str, surface_id: str, component_id: str, context: dict[str, Any],
-    context_id: str,
+    context_id: str, viewing: str | None = None,
 ) -> dict[str, Any]:
     """Sends a click (SPEC §17). Like `ask`, plus the final message's `metadata`; an Action the
     agent rejects (`explorerActionFailed`) has `failure: "action_failed"`."""
-    result = await _exchange(client, action_body(name, surface_id, component_id, context, context_id))
+    result = await _exchange(client, action_body(name, surface_id, component_id, context, context_id, viewing))
     if result["failure"] == "none" and result["metadata"].get(ACTION_FAILED_KEY):
         result["failure"] = "action_failed"
     return result

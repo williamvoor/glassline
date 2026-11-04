@@ -674,6 +674,69 @@ The refuter gave a FAIL. Fixed in revision 2:
 - The label-matching rules are stated, and chart matching is narrowed to the Treemap `_name`.
 - The example uses `open`, not `limited`.
 
+### Build notes (2026-11-04)
+
+Where the build had to decide, these notes win over the text above.
+- **Merging a `controls` reply** replaces every component of each layout name the reply
+  re-sends (the ID up to the first `__`), not just the components with the same IDs. A
+  re-queried panel can come back with other components, for example "no rows" instead of a
+  table. A stale clickable component left behind would then match a second time.
+- **Kind:** a Board scenario with neither `controls` nor `click` nor `ask_within` loads, with
+  kind null. It belongs to the Board set, but to none of the three kinds.
+- **`ask_within`'s row must be in the Visual's `boards`**, as in a `click` step. A row that can't
+  be found is a `setup_failed` reason. It is found before the `ask` is sent, so no model is
+  called.
+- **Refuter round (PASS-WITH-NOTES), fixed:**
+  - a Board reply without a tab ID is `setup_failed`, since no Board pair would be sent;
+  - a set-up failure from a dead agent stops the run, as a transport failure in a Turn does;
+  - tests were added for `repo_commit` (untracked files count, other paths don't), for
+    `_main_run` (`model`, `commit` paths, Board names without a key, and an unknown Board
+    stopping before `run`), and for `ask_within` on a row that isn't in `boards`.
+
+  Deferred: `model` comes from the repo root's `.env` even when the agent reads
+  `EXPLORER_ENV_FILE`. This predates the amendment. `served_model` is recorded next to it.
+- **Record fields:** `commit` is `{sha, dirty}`. Records also carry `kind`. A Board record's
+  `setup` is `{steps: [{step, wall_s, failure}], reason}`.
+- **`compare` identity:** a record lacks `model`, `level` or `commit` when the key is missing or
+  empty. A missing `reviewed` key also counts, but `reviewed: false` doesn't. The gate's
+  comparisons allow a float slack of 1e-9 at the edges, so exactly 1.15× passes gate 3.
+- **`load(path, boards)`:** `run` passes the Dataset's Board names that have no key, so an unknown
+  `board` stops the run before the reference queries and the agent.
+- **austender's 9 scenarios:**
+  - (a): `board-open-top-agencies-fy2324`, `board-selective-top-suppliers-fy2425` and
+    `board-open-home-affairs-total`;
+  - (b): `board-agency-home-affairs-fy2223`, `board-supplier-auspost-top-agencies-fy2324` and
+    `board-agency-services-australia-by-year`;
+  - (c): `board-ask-within-defence-thales`, `board-ask-within-home-affairs-serco` and
+    `board-ask-within-bae-parliamentary-services`.
+
+  All their reference and wrong queries ran on 2026-11-04, and every wrong entry differed from
+  its reference.
+- **Spark probe (2026-11-04, one run each, `docs/scenarios/austender/runs-20261104T092340Z.jsonl`):**
+  - every set-up worked, with no `setup_failed`;
+  - Meta's filter blocked nothing;
+  - Spark dropped the Procurement method filter in both (a) list questions (fail, the wrong
+    entry matched). `board-open-home-affairs-total` showed both readings (`needs_review`);
+  - all 3 (b) passed;
+  - in (c), the Thales and BAE answers were right but showed the pair's total by financial year
+    in their tables, so each (c) scenario gained an alternate for that breakdown. Rescored from
+    the saved answers, with no model call: Thales passes, and BAE is `needs_review` (it also
+    showed the agency's total across all suppliers). Serco failed: the reply was "Prose answer
+    with UI." with no Visual or SQL.
+- **Scenario review (refuter FAIL on the (a) scenarios; fixes applied 2026-11-04, then signed off
+  by the user):**
+  - the (a) questions said neither that the Control applies nor which measure, so the unfiltered
+    reading was defensible. They now end "in this view" and name contract value. They still don't
+    name the method, which the model has to read from the Board's state;
+  - "paid them" became "awarded them … contract value". Supplier side values are award values,
+    not payments;
+  - two alternates identical to their references were removed;
+  - (c) scores the pair's lifetime value, as a total or by financial year. The by-year alternate
+    was added after the probe. Other shapes, such as a split by method, fail;
+  - not done: a prompt rule that a question on a Board honours its Controls. The prompt says
+    nothing about it, so the (a) scenarios measure whether a model infers it from the Board pair.
+    The same prompt goes to both models.
+
 ## Test command
 
 ```bash
