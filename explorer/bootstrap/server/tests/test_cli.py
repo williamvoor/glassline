@@ -274,3 +274,52 @@ def test_bad_boards_file(capsys, tmp_path):
                      encoding="utf-8")
     code, _, err = _run(capsys, "export", "--draft", str(draft), "--boards", str(bad), "--name", "x", "--target", "toml")
     assert code == 2 and "not a version 1 boards file" in err
+
+
+# M1 (2026-11-05): a Settings draft ran in `serve` and nothing reached the log, so its cost was
+# unknown. `serve` had no logging set up, and Python's fallback handler drops INFO.
+def test_serve_logs_model_calls_at_info(capsys):
+    import logging
+
+    handlers_before = list(logging.getLogger("explorer_bootstrap").handlers)
+    try:
+        cli._serve_logging()
+        logging.getLogger("explorer_bootstrap.draft").info("model call: cost_usd=%.4f", 0.1234)
+        logging.getLogger("litellm").info("library chatter")
+        err = capsys.readouterr().err
+        assert "INFO explorer_bootstrap.draft: model call: cost_usd=0.1234" in err
+        assert "library chatter" not in err
+    finally:
+        logging.getLogger("explorer_bootstrap").handlers = handlers_before
+        logging.getLogger("explorer_bootstrap").setLevel(logging.NOTSET)
+
+
+def test_serve_sets_up_its_logging_once(monkeypatch, tmp_path, capsys):
+    # The helper alone isn't enough: `serve` must call it (refuter, 2026-11-05).
+    import logging
+
+    import uvicorn
+
+    import explorer_bootstrap.server as server_mod
+
+    class FakeServer:
+        def __init__(self, config):
+            pass
+
+        async def serve(self):
+            return None
+
+    monkeypatch.setattr(uvicorn, "Server", FakeServer)
+    monkeypatch.setattr(uvicorn, "Config", lambda *a, **k: None)
+    monkeypatch.setattr(server_mod, "build_app", lambda *a, **k: None)
+    monkeypatch.setenv("EXPLORER_DATA_DIR", str(tmp_path / "data"))
+    logger = logging.getLogger("explorer_bootstrap")
+    handlers_before = list(logger.handlers)
+    try:
+        assert main(["serve"]) == 0
+        assert main(["serve"]) == 0
+        added = [h for h in logger.handlers if h not in handlers_before]
+        assert len(added) == 1 and logger.level == logging.INFO
+    finally:
+        logger.handlers = handlers_before
+        logger.setLevel(logging.NOTSET)

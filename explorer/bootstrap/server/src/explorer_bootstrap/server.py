@@ -529,9 +529,7 @@ def build_app(
         return JSONResponse({"run_id": run.id})
 
     async def current_boards(_request: Request) -> JSONResponse:
-        if state.boards is None:
-            return _err("no Boards yet", 404)
-        return JSONResponse(state.boards)
+        return JSONResponse(state.boards)  # null before any Boards: an answer, not an error
 
     async def validate_boards(request: Request) -> JSONResponse:
         if state.running:

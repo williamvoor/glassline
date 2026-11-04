@@ -437,7 +437,9 @@ async def _boards(client):
 async def test_boards_flow_over_http(ro_pool, tmp_path):
     app, root = _app(ro_pool, tmp_path, _model_then_boards(good_set()))
     async with _client(app) as client:
-        assert (await client.get("/api/boards")).status_code == 404
+        # No Boards yet is an answer, not an error: a 404 showed in the browser console (M1, 2026-11-05).
+        r = await client.get("/api/boards")
+        assert (r.status_code, r.json()) == (200, None)
         assert (await client.post("/api/boards/draft", json={})).status_code == 404  # no draft yet
         done, _ = await _drafted(client)
         draft = done["draft"]
@@ -521,7 +523,7 @@ async def test_a_new_draft_clears_the_boards(ro_pool, tmp_path):
         assert (await client.get("/api/boards")).status_code == 200
         run_id = (await client.post("/api/draft", json={})).json()["run_id"]
         await _wait(client, run_id)
-        assert (await client.get("/api/boards")).status_code == 404
+        assert (await client.get("/api/boards")).json() is None
 
 
 # S13

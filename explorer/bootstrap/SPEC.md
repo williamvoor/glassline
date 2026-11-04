@@ -670,7 +670,7 @@ It's built in two parts:
 | `POST /api/boards/estimate` `{model, effort}` | the Boards prompt's estimate, as `/api/estimate` gives for the draft; 404 without a draft |
 | `POST /api/boards/draft` `{model, effort}` | starts the Boards loop → `{run_id}`; 404 without a draft; 400 when the draft's files have errors (`reasons`); 409 while any run is going |
 | `GET /api/draft/{id}/events` | as before. When a Boards run is done, it gives `boards` (the state above) instead of `draft` |
-| `GET /api/boards` | the Boards state, or 404 |
+| `GET /api/boards` | the Boards state, or `null` before any Boards (200: no Boards yet is not an error) |
 | `POST /api/boards/validate` `{boards: [{name, toml, why}]}` | stores the edits, re-checks and re-previews, and returns the state; 404 without Boards; 400 for a malformed body |
 
 - `POST /api/export` re-checks the stored Boards against the current files before exporting, so an

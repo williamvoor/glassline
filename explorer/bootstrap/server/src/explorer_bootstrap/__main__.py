@@ -378,6 +378,20 @@ async def _export(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     return EXIT_OK
 
 
+def _serve_logging() -> None:
+    """Our INFO lines (model calls with their cost, exports, deletes) on stderr, in the agent's format.
+    Only `serve`: the CLI commands print their own per-call lines. Libraries keep Python's default."""
+    logger = logging.getLogger("explorer_bootstrap")
+    logger.setLevel(logging.INFO)
+    if any(getattr(h, "_serve_log", False) for h in logger.handlers):
+        return  # once per process
+    handler = logging.StreamHandler()
+    handler._serve_log = True  # type: ignore[attr-defined]
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
 async def _serve(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     import uvicorn
 
@@ -385,6 +399,7 @@ async def _serve(args: argparse.Namespace, env: Mapping[str, str]) -> int:
 
     if args.timeout_ms <= 0 or not 0 < args.port < 65536:
         raise _Fatal("--timeout-ms and --port must be positive (port below 65536)")
+    _serve_logging()
     try:
         load_draft_settings(env)  # fail now on a bad BOOTSTRAP_* setting, not on the first draft
     except SettingsError as e:
