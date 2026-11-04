@@ -1,15 +1,17 @@
-"""Write a reviewed draft to a new dataset directory (SPEC.md phase 2b, "Export").
+"""Write a reviewed draft to a dataset directory (SPEC.md phase 2b, "Export").
 
 Never commits, never runs DDL: `comments.sql` is for the person to apply.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
 import shutil
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -81,16 +83,36 @@ def render_comments_sql(draft: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path) -> Path:
-    """Write root/name atomically (temp sibling, then rename). Raises ExportError with every reason."""
+@dataclass(frozen=True)
+class ExportResult:
+    dest: Path
+    overwrote: list[str] = field(default_factory=list)  # file names replaced in an existing directory
+    backup: Path | None = None  # where the replaced files were kept, if any
+
+
+def _utc_stamp() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
+
+
+def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *, force: bool = False) -> ExportResult:
+    """Write the draft's files to root/name: dataset.toml, notes.md, glossary.md and the
+    accepted comments (comments.toml or comments.sql).
+
+    A new directory is written atomically (temp sibling, then rename). With force=True an
+    existing directory is kept and only those files are replaced, anything else in it
+    (scenarios, examples, a previous comments file for the other target) left alone; files
+    it replaces are kept in a dot-prefixed sibling backup the dataset picker ignores.
+    Raises ExportError with every reason."""
     reasons = []
     if not NAME.fullmatch(name or ""):
         reasons.append("name must be lowercase letters, digits and underscores, starting with a letter")
     if target not in TARGETS:
         reasons.append("target must be toml or sql")
     dest = root / name if name else root
-    if name and dest.exists():
+    if name and dest.exists() and not force:
         reasons.append(f"{dest} already exists")
+    if name and dest.exists() and force and not dest.is_dir():
+        reasons.append(f"{dest} is not a directory")
     if not root.is_dir():
         reasons.append(f"{root} is not a directory")
     validation = validate_files(draft)
@@ -103,20 +125,40 @@ def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path) ->
     dataset_toml = files["dataset_toml"].rstrip("\n") + "\n"
     if target == "toml":
         dataset_toml += '\n[comments]\noverlay = "comments.toml"\n'
-    tmp = Path(tempfile.mkdtemp(prefix=f".{name}-", dir=root))
+    new_texts = {
+        file_name: dataset_toml if key == "dataset_toml" else files[key]
+        for key, file_name in FILE_NAMES.items()
+    }
+    new_texts["comments.toml" if target == "toml" else "comments.sql"] = (
+        render_comments_toml(draft) if target == "toml" else render_comments_sql(draft)
+    )
+    if not (name and dest.exists()):
+        tmp = Path(tempfile.mkdtemp(prefix=f".{name}-", dir=root))
+        try:
+            for file_name, text in new_texts.items():
+                (tmp / file_name).write_text(text, encoding="utf-8")
+            umask = os.umask(0)
+            os.umask(umask)
+            tmp.chmod(0o777 & ~umask)  # mkdtemp makes it 0700; give it the usual directory mode
+            tmp.rename(dest)
+        except BaseException:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        return ExportResult(dest)
+    overwrote = sorted(f for f in new_texts if (dest / f).exists())
+    backup: Path | None = None
+    if overwrote:
+        backup = root / f".{name}.bak-{_utc_stamp()}"
+        backup.mkdir(mode=0o777)
+        for f in overwrote:
+            shutil.copy2(dest / f, backup / f)
     try:
-        for key, file_name in FILE_NAMES.items():
-            text = dataset_toml if key == "dataset_toml" else files[key]
-            (tmp / file_name).write_text(text, encoding="utf-8")
-        if target == "toml":
-            (tmp / "comments.toml").write_text(render_comments_toml(draft), encoding="utf-8")
-        else:
-            (tmp / "comments.sql").write_text(render_comments_sql(draft), encoding="utf-8")
-        umask = os.umask(0)
-        os.umask(umask)
-        tmp.chmod(0o777 & ~umask)  # mkdtemp makes it 0700; give it the usual directory mode
-        tmp.rename(dest)
+        for file_name, text in new_texts.items():
+            tmp_file = dest / f".{file_name}.new"
+            tmp_file.write_text(text, encoding="utf-8")
+            os.replace(tmp_file, dest / file_name)  # atomic per file: readers never see half a file
     except BaseException:
-        shutil.rmtree(tmp, ignore_errors=True)
+        for leftover in dest.glob(".*.new"):
+            leftover.unlink(missing_ok=True)
         raise
-    return dest
+    return ExportResult(dest, overwrote, backup)

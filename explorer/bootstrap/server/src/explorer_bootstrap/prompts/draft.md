@@ -26,6 +26,7 @@ most common values and min/max. Use it first. Run SQL only to learn what the rep
    allowed_schemas = ["<schema>", ...]   # only schemas from the report
    glossary = "glossary.md"
    notes = "notes.md"
+   examples = ["<starter question>", ...]   # 3 questions (see 5 below)
 
    [currency]
    code = "<ISO 4217 code of the money columns, e.g. AUD>"
@@ -41,6 +42,10 @@ most common values and min/max. Use it first. Run SQL only to learn what the rep
    (`column` = "" for the table itself). One or two sentences: what it holds, its unit or format,
    what NULL means if that matters, and the key it joins on. You may also propose a better
    comment for something that already has one; it's shown to the person as a proposed rewrite.
+5. Three starter `examples` in `dataset.toml`: plain-English questions a newcomer would ask,
+   each answerable from this database, each exercising something different (another table,
+   year or aggregate). They are shown as buttons before the first question and never go
+   into the prompt, so keep them short and jargon-free.
 
 ## Claims
 

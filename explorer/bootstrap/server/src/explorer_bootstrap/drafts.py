@@ -140,6 +140,8 @@ def validate_files(draft: dict[str, Any]) -> dict[str, Any]:
         return {"errors": [*errors, f"dataset.toml is not valid TOML: {e}"], "context_chars": None}
     if "comments" in data:
         errors.append("dataset.toml must not have a [comments] table (export adds it)")
+    if not isinstance(data.get("examples"), list) or not data["examples"]:
+        errors.append("dataset.toml must propose starter examples (examples = [...])")
     for key, name in (("notes", "notes.md"), ("glossary", "glossary.md")):
         if data.get(key) != name:
             errors.append(f'dataset.toml: {key} must be "{name}"')

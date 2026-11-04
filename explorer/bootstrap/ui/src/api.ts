@@ -1,4 +1,4 @@
-import type { Claim, Connection, Draft, DraftComment, Estimate, EventsReply, Files, Report, Validation } from './types.js';
+import type { Claim, Connection, Draft, DraftComment, Estimate, EventsReply, Files, Report, SchemaDump, Validation } from './types.js';
 
 /** An API error: `message` for one problem, `reasons` when the server lists several. */
 export class ApiError extends Error {
@@ -35,8 +35,18 @@ export class Api {
   connection() {
     return this.call<Connection>('/api/connection');
   }
-  report(schemas: string[]) {
-    return this.call<Report>('/api/report', { schemas });
+  datasets() {
+    return this.call<{ datasets: string[] }>('/api/datasets');
+  }
+  models() {
+    return this.call<{ models: string[]; default: string }>('/api/models');
+  }
+  schema(schemas?: string[]) {
+    const q = schemas && schemas.length > 0 ? `?schemas=${schemas.map(encodeURIComponent).join(',')}` : '';
+    return this.call<SchemaDump>(`/api/schema${q}`);
+  }
+  report(sel: { schemas: string[] } | { dataset: string }) {
+    return this.call<Report>('/api/report', sel);
   }
   estimate(model: string, effort: string) {
     return this.call<Estimate>('/api/estimate', { model, effort });
@@ -56,7 +66,7 @@ export class Api {
   validate(files: Files, comments: DraftComment[]) {
     return this.call<Validation>('/api/validate', { files, comments });
   }
-  export(body: { name: string; target: 'toml' | 'sql'; files: Files; comments: DraftComment[]; dismissed: number[] }) {
-    return this.call<{ path: string }>('/api/export', body);
+  export(body: { name: string; target: 'toml' | 'sql'; files: Files; comments: DraftComment[]; dismissed: number[]; force: boolean }) {
+    return this.call<{ path: string; overwrote: string[]; backup: string | null }>('/api/export', body);
   }
 }

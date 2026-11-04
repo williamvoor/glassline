@@ -56,7 +56,7 @@ cd ../ui && npm ci && npm run build && cd ../server
 uv run python -m explorer_bootstrap serve      # http://127.0.0.1:8765/
 ```
 
-Connect (pick schemas) → Report (coverage, statistics, a rough cost ceiling, "Draft with …" and
+Connect (pick a server-side dataset, or schemas) → Report (coverage, statistics, a rough cost ceiling, "Draft with …" and
 its progress) → Review (edit the files and comments, re-run or dismiss claims, export). The
 server binds 127.0.0.1 only, keeps one draft in memory (a restart loses it; the CLI's
 `draft.json` is the durable route), and refuses requests with another `Host` or a non-JSON POST,
@@ -82,7 +82,9 @@ uv run python -m explorer_bootstrap export --draft draft.json --name vicprop --t
 - **Claims:** every factual statement in the draft comes with SQL and an expectation. A claim is
   `verified`, `failed`, `error` or `needs_review`. Export refuses while a claim is `failed`,
   `error` or unchecked and not dismissed, while the files don't validate, or if the directory
-  exists.
+  exists. `--force` exports into the existing directory anyway: only the draft's files
+  (`dataset.toml`, `notes.md`, `glossary.md`, plus the comments file) are replaced, anything
+  else there is left alone, and replaced files are kept in a dot-prefixed sibling backup.
 - **Comment target:** `--target toml` writes `comments.toml` and points `dataset.toml` at it
   (use it when the login can't add comments). `--target sql` writes `comments.sql`: apply it as
   the objects' owner (`psql -f comments.sql`), then start the explorer. The tool never runs it.

@@ -68,10 +68,12 @@ def _parser() -> argparse.ArgumentParser:
     v.add_argument("--draft", type=Path, required=True)
     v.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
 
-    e = sub.add_parser("export", help="write a reviewed draft to a new dataset directory")
+    e = sub.add_parser("export", help="write a reviewed draft to a dataset directory")
     e.add_argument("--draft", type=Path, required=True)
-    e.add_argument("--name", required=True, help="the new dataset directory's name")
+    e.add_argument("--name", required=True, help="the dataset directory's name")
     e.add_argument("--target", required=True, choices=("toml", "sql"), help="comments.toml (overlay) or comments.sql")
+    e.add_argument("--force", action="store_true",
+                   help="replace the draft's files in an existing directory (others left alone; replaced files kept in a backup)")
     e.add_argument("--root", type=Path, default=DATASETS_ROOT, help="parent directory (default explorer/datasets)")
 
     s = sub.add_parser("serve", help="run the local UI and its API on 127.0.0.1")
@@ -266,11 +268,15 @@ async def _verify(args: argparse.Namespace, env: Mapping[str, str]) -> int:
 def _export(args: argparse.Namespace) -> int:
     draft = _load(args.draft)
     try:
-        dest = export_dataset(draft, args.name, args.target, args.root)
+        result = export_dataset(draft, args.name, args.target, args.root, force=args.force)
     except ExportError as e:
         sys.stdout.write("Export refused:\n" + "".join(f"  {r}\n" for r in e.reasons))
         return EXIT_CHECK_FAILED
-    sys.stdout.write(f"Exported to {dest}\n")
+    sys.stdout.write(f"Exported to {result.dest}\n")
+    if result.overwrote:
+        sys.stdout.write(f"Replaced: {', '.join(result.overwrote)}\n")
+    if result.backup is not None:
+        sys.stdout.write(f"Previous files kept in {result.backup}\n")
     if args.target == "sql":
         sys.stdout.write("Apply comments.sql as the objects' owner, then start the explorer with this dataset.\n")
     return EXIT_OK

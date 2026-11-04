@@ -49,8 +49,11 @@ export class BsReview extends LitElement {
   @state() tab: keyof Files = 'dataset_toml';
   @state() name = '';
   @state() target: 'toml' | 'sql' = 'toml';
+  @state() force = false;
   @state() reasons: string[] = [];
   @state() exported = '';
+  @state() overwrote: string[] = [];
+  @state() backup: string | null = null;
   @state() busy = false;
   @state() error = '';
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -95,12 +98,16 @@ export class BsReview extends LitElement {
   private editFile(key: keyof Files, value: string) {
     this.files = { ...this.files, [key]: value };
     this.exported = '';
+    this.overwrote = [];
+    this.backup = null;
     this.scheduleValidate();
   }
 
   private editComment(i: number, patch: Partial<DraftComment>) {
     this.comments = this.comments.map((c, j) => (j === i ? { ...c, ...patch } : c));
     this.exported = '';
+    this.overwrote = [];
+    this.backup = null;
     this.scheduleValidate();
   }
 
@@ -145,8 +152,11 @@ export class BsReview extends LitElement {
     this.error = '';
     try {
       const dismissed = this.claims.flatMap((c, i) => (c.dismissed ? [i] : []));
-      const r = await this.api.export({ name: this.name.trim(), target: this.target, files: this.files, comments: this.comments, dismissed });
+      const r = await this.api.export({ name: this.name.trim(), target: this.target, files: this.files,
+        comments: this.comments, dismissed, force: this.force });
       this.exported = r.path;
+      this.overwrote = r.overwrote;
+      this.backup = r.backup;
     } catch (e) {
       if (e instanceof ApiError && e.reasons.length) this.reasons = e.reasons;
       else this.error = (e as Error).message;
@@ -222,13 +232,16 @@ export class BsReview extends LitElement {
           <label><input type="radio" name="target" value="sql" .checked=${this.target === 'sql'} @change=${() => (this.target = 'sql')} />
             comments.sql (apply as the owner)</label>
         </fieldset>
+        <label><input type="checkbox" class="force" .checked=${this.force}
+          @change=${(e: Event) => (this.force = (e.target as HTMLInputElement).checked)} />
+          Overwrite the draft's files if the directory exists (replaced files are backed up)</label>
         <button class="primary export" ?disabled=${this.busy || blockers.length > 0} @click=${() => void this.exportNow()}>Export</button>
         <button class="rerun-report" @click=${() => void this.leaveForReport()}>Re-run report</button>
       </div>
       ${blockers.length ? html`<ul class="blockers">${blockers.map((b) => html`<li>${b}</li>`)}</ul>` : ''}
       ${this.reasons.length ? html`<div class="refused" role="alert"><p>Export refused:</p><ul>${this.reasons.map((r) => html`<li>${r}</li>`)}</ul></div>` : ''}
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : ''}
-      ${this.exported ? html`<p class="ok exported">Exported to <code>${this.exported}</code>.</p>` : ''}
+      ${this.exported ? html`<p class="ok exported">Exported to <code>${this.exported}</code>${this.overwrote.length ? html`, replacing ${this.overwrote.join(', ')}` : ''}${this.backup ? html` (previous files kept in <code>${this.backup}</code>)` : ''}.</p>` : ''}
     </section>`;
   }
 }

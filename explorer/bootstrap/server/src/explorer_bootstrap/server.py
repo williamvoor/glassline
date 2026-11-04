@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -22,7 +23,8 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from explorer_agent.config import SCHEMA_NAME
+from explorer_agent.config import SCHEMA_NAME, ConfigError, Dataset, load_dataset
+from explorer_agent.schema import SchemaCatalog
 from explorer_agent.sql import SqlRunner
 
 from explorer_bootstrap.claims import verify_claims
@@ -31,7 +33,7 @@ from explorer_bootstrap.draft_schema import claim_problems
 from explorer_bootstrap.drafts import FILE_NAMES, new_draft, validate_files
 from explorer_bootstrap.export import ExportError, export_dataset
 from explorer_bootstrap.report import OverlayDriftError, build_report
-from explorer_bootstrap.settings import SettingsError, load_draft_settings
+from explorer_bootstrap.settings import ALLOWED_MODELS, SettingsError, load_draft_settings
 from explorer_bootstrap.stats import visible_schemas
 
 log = logging.getLogger(__name__)
@@ -81,6 +83,39 @@ class _Guard:
 
 def _err(message: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
+
+
+# A dataset name crosses the wire; the directory never does. Plain names only: no
+# separators, no "..", so resolution cannot escape the server's datasets directory.
+_DATASET_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+
+
+class DatasetError(ValueError):
+    """A bad dataset name (400) or one the server cannot load."""
+
+
+def list_datasets(datasets_root: Path) -> list[str]:
+    """Dataset names the server can report on: subdirectories holding a dataset.toml."""
+    try:
+        entries = sorted(p.name for p in datasets_root.iterdir() if (p / "dataset.toml").is_file())
+    except OSError:
+        return []
+    return [n for n in entries if _DATASET_NAME.fullmatch(n)]
+
+
+def load_server_dataset(datasets_root: Path, name: object) -> Dataset:
+    """Resolve a dataset name against the server's own datasets directory.
+
+    The web UI has no filesystem access, so callers name a dataset; the directory
+    stays on the server. Raises DatasetError with a message safe for the client."""
+    if not isinstance(name, str) or not _DATASET_NAME.fullmatch(name):
+        raise DatasetError("dataset must be a plain dataset name")
+    if not (datasets_root / name).is_dir():
+        raise DatasetError(f"unknown dataset: {name}")
+    try:
+        return load_dataset(datasets_root / name)
+    except ConfigError as e:
+        raise DatasetError(str(e)) from None
 
 
 def _db_message(e: psycopg.Error) -> str:
@@ -137,17 +172,72 @@ def build_app(
             return _err(_db_message(e), 500)
         return JSONResponse({**database, "schemas": schemas})
 
+    async def list_dataset_names(_request: Request) -> JSONResponse:
+        return JSONResponse({"datasets": list_datasets(datasets_root)})
+
+    async def list_models(_request: Request) -> JSONResponse:
+        """Models the server allows for drafting: the allowlist and the configured default.
+
+        The UI builds its model picker from this instead of hardcoding the list."""
+        default = env.get("BOOTSTRAP_MODEL", "").strip() or ALLOWED_MODELS[0]
+        if default not in ALLOWED_MODELS:
+            default = ALLOWED_MODELS[0]
+        return JSONResponse({"models": list(ALLOWED_MODELS), "default": default})
+
+    async def dump_schema(request: Request) -> JSONResponse:
+        """The readable catalog (schemas, tables, columns, comments) without statistics.
+
+        For looking at, and downloading, the database shape before running a report.
+        `?schemas=a,b` narrows it; without it, every schema the login can use."""
+        raw = request.query_params.get("schemas", "")
+        if raw.strip():
+            schemas = [s.strip() for s in raw.split(",") if s.strip()]
+            if not schemas or any(not SCHEMA_NAME.fullmatch(s) for s in schemas):
+                return _err("schemas must be a comma-separated list of schema names")
+        else:
+            try:
+                schemas = [s["name"] for s in await visible_schemas(pool)]
+            except psycopg.Error as e:
+                return _err(_db_message(e), 500)
+        try:
+            objects = await SchemaCatalog(pool, schemas).objects()
+        except psycopg.Error as e:
+            return _err(_db_message(e), 500)
+        by_schema: dict[str, list[dict[str, Any]]] = {s: [] for s in sorted(set(schemas))}
+        for o in objects:
+            by_schema[o.schema].append({
+                "schema": o.schema, "name": o.name, "kind": o.kind, "comment": o.comment,
+                "columns": [
+                    {"name": c.name, "type": c.type, "nullable": c.nullable, "comment": c.comment}
+                    for c in o.columns
+                ],
+            })
+        return JSONResponse({"schemas": [{"name": s, "tables": by_schema[s]} for s in sorted(by_schema)]})
+
     async def report(request: Request) -> JSONResponse:
         if state.run is not None and not state.run.done:
             return _err("a draft is running; wait for it to finish", 409)
         body = await _body(request)
-        schemas = body.get("schemas") if body else None
-        if not isinstance(schemas, list) or not schemas or not all(
-            isinstance(s, str) and SCHEMA_NAME.fullmatch(s) for s in schemas
-        ):
-            return _err("schemas must be a non-empty list of schema names")
+        params = body if body else {}
+        has_schemas, has_dataset = "schemas" in params, "dataset" in params
+        if has_schemas == has_dataset:
+            return _err("give exactly one of schemas or dataset")
+        dataset = None
+        if has_dataset:
+            try:
+                dataset = load_server_dataset(datasets_root, params["dataset"])
+            except DatasetError as e:
+                return _err(str(e), 404 if str(e).startswith("unknown dataset") else 400)
+            schemas: list[str] = list(dataset.allowed_schemas)
+        else:
+            schemas = params["schemas"]
+            if not isinstance(schemas, list) or not schemas or not all(
+                isinstance(s, str) and SCHEMA_NAME.fullmatch(s) for s in schemas
+            ):
+                return _err("schemas must be a non-empty list of schema names")
         try:
-            built = await build_report(pool, schemas, database=database, timeout_ms=timeout_ms)
+            built = await build_report(pool, schemas, database=database, dataset=dataset,
+                                       timeout_ms=timeout_ms)
         except OverlayDriftError as e:
             return _err(str(e))
         except psycopg.Error as e:
@@ -276,22 +366,34 @@ def build_app(
             return _err("dismissed must be a list of claim indexes")
         for i, claim in enumerate(state.draft["claims"]):
             claim["dismissed"] = i in dismissed
+        force = body.get("force", False)
+        if not isinstance(force, bool):
+            return _err("force must be a boolean")
         try:
-            dest = export_dataset(state.draft, str(body.get("name") or ""), str(body.get("target") or ""),
-                                  datasets_root)
+            result = export_dataset(state.draft, str(body.get("name") or ""), str(body.get("target") or ""),
+                                    datasets_root, force=force)
         except ExportError as e:
             return JSONResponse({"reasons": e.reasons}, status_code=422)
         try:
-            shown = dest.resolve().relative_to(repo_root.resolve()).as_posix()
+            shown = result.dest.resolve().relative_to(repo_root.resolve()).as_posix()
         except ValueError:
-            shown = dest.name
-        return JSONResponse({"path": shown})
+            shown = result.dest.name
+        out: dict[str, Any] = {"path": shown, "overwrote": result.overwrote, "backup": None}
+        if result.backup is not None:
+            try:
+                out["backup"] = result.backup.resolve().relative_to(repo_root.resolve()).as_posix()
+            except ValueError:
+                out["backup"] = result.backup.name
+        return JSONResponse(out)
 
     async def no_ui(_request: Request) -> PlainTextResponse:
         return PlainTextResponse("The UI isn't built: run `npm ci && npm run build` in explorer/bootstrap/ui.\n")
 
     routes = [
         Route("/api/connection", connection),
+        Route("/api/datasets", list_dataset_names),
+        Route("/api/models", list_models),
+        Route("/api/schema", dump_schema),
         Route("/api/report", report, methods=["POST"]),
         Route("/api/estimate", estimate, methods=["POST"]),
         Route("/api/draft", start_draft, methods=["POST"]),

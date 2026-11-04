@@ -28,12 +28,21 @@ export class BsReport extends LitElement {
   @property({ attribute: false }) estimate: Estimate | null = null;
   @property({ attribute: false }) events: DraftEvent[] = [];
   @property({ type: Boolean }) running = false;
+  /** Models the server allows, and which one to start on: both arrive before first render. */
+  @property({ type: Array }) models: string[] = [...MODELS];
+  @property() defaultModel: string = MODELS[0];
   @state() onlyMissing = false;
   @state() model: string = MODELS[0];
   @state() effort = 'low';
 
   protected override createRenderRoot() {
     return this;
+  }
+
+  protected override willUpdate() {
+    if (!this.models.includes(this.model)) {
+      this.model = this.models.includes(this.defaultModel) ? this.defaultModel : (this.models[0] ?? MODELS[0]);
+    }
   }
 
   override firstUpdated() {
@@ -117,7 +126,7 @@ export class BsReport extends LitElement {
         <div class="row">
           <label>Model
             <select class="model" @change=${(e: Event) => { this.model = (e.target as HTMLSelectElement).value; this.fire('estimate'); }}>
-              ${MODELS.map((m) => html`<option .value=${m} ?selected=${m === this.model}>${m}</option>`)}
+              ${this.models.map((m) => html`<option .value=${m} ?selected=${m === this.model}>${m}</option>`)}
             </select>
           </label>
           <label>Effort

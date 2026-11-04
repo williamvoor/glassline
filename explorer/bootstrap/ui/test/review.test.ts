@@ -156,6 +156,22 @@ describe('bs-review (U2)', () => {
     expect(el.querySelector('.refused')!.textContent).toContain('already exists');
   });
 
+  it('sends force when the overwrite box is ticked, and shows what was replaced', async () => {
+    const { el, calls } = setup([claim('verified')], {
+      'POST /api/export': () => [200, { path: 'datasets/demo', overwrote: ['dataset.toml'], backup: '.demo.bak-1' }],
+    });
+    await settle(el);
+    (el.querySelector('input.force') as HTMLInputElement).click();
+    await settle(el);
+    exportButton(el).click();
+    await settle(el);
+    expect(calls.find((c) => c.path === 'POST /api/export')!.body.force).toBe(true);
+    const done = el.querySelector('.exported')!.textContent!;
+    expect(done).toContain('datasets/demo');
+    expect(done).toContain('dataset.toml');
+    expect(done).toContain('.demo.bak-1');
+  });
+
   it('tabs switch the file being edited', async () => {
     const { el } = setup([claim('verified')]);
     await settle(el);

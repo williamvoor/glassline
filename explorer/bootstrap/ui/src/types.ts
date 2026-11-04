@@ -6,6 +6,25 @@ export interface Connection {
   schemas: { name: string; objects: number }[];
 }
 
+export interface SchemaColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  comment: string | null;
+}
+
+export interface SchemaTable {
+  schema: string;
+  name: string;
+  kind: string;
+  comment: string | null;
+  columns: SchemaColumn[];
+}
+
+export interface SchemaDump {
+  schemas: { name: string; tables: SchemaTable[] }[];
+}
+
 export interface ColumnReport {
   name: string;
   type: string;
@@ -111,5 +130,6 @@ export interface EventsReply {
   validation?: Validation;
 }
 
+/** Fallback model list until the server's arrives; the server (/api/models) is the source of truth. */
 export const MODELS = ['meta/muse-wonder-1.0', 'meta/muse-spark-1.3'] as const;
 export const EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;

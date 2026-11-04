@@ -276,7 +276,8 @@ claims:   [{text: str, file: enum(dataset.toml, notes.md, glossary.md, comments)
 Depth 5, no `oneOf`, no recursion. `validate_draft_args` checks the shape, plus: every comment
 names an object (and column) in the report; no duplicate (object, column); comments are
 non-blank; tolerances ≥ 0; `set` values are unique; `dataset_toml` has no `[comments]` table
-(export adds it). Problems are short strings naming the field path.
+(export adds it) and proposes starter `examples` (the prompt asks for three; the model is told
+again in the tool loop when it forgets). Problems are short strings naming the field path.
 
 A comment for something that has a comment in the report is a **rewrite**; anything else is
 **new**. The draft records `kind` (`new`/`rewrite`) and `accepted` (new: true, rewrite: false), so
@@ -315,13 +316,20 @@ applied** (report objects → `TableInfo`, accepted comments → `CommentOverlay
 `render_schema_section`, `dataset_context`). Also an error: `allowed_schemas` not a subset of the
 report's schemas; `[comments]` present; an accepted comment (possibly edited by hand) that
 names no reported object or column, repeats one, or is blank; `notes` or `glossary` not exactly `"notes.md"` /
-`"glossary.md"` (the names export writes).
+`"glossary.md"` (the names export writes); no starter `examples` (the person adds them in the
+`dataset.toml` tab before exporting).
 
-### Export (`export_dataset(draft, name, target, root)`)
+### Export (`export_dataset(draft, name, target, root, *, force=False)`)
 
 - Refuses (an `ExportError` listing every reason) when: `name` doesn't match `[a-z][a-z0-9_]*`;
-  `root/name` exists; `validate_files` has errors; `export_blockers` isn't empty; `target` isn't
-  `toml` or `sql`.
+  `root/name` exists (without `force`) or is a file (with it); `validate_files` has errors;
+  `export_blockers` isn't empty; `target` isn't `toml` or `sql`.
+- With `force`, an existing directory is kept and only the draft's four files (`dataset.toml`,
+  `notes.md`, `glossary.md`, plus `comments.toml` or `comments.sql`) are replaced, atomically
+  per file; anything else there (scenarios, a previous comments file for the other target)
+  is left alone. Replaced files are copied to a dot-prefixed sibling backup
+  (`.<name>.bak-<UTC timestamp>`, which the dataset picker ignores); the result reports
+  what was replaced and where the backup is.
 - Writes `dataset.toml` (with `notes = "notes.md"`, `glossary = "glossary.md"` as drafted),
   `notes.md`, `glossary.md`, and the accepted comments:
   - `toml`: `comments.toml` in the overlay format (entries sorted by object, columns in report
@@ -357,7 +365,8 @@ error. Messages never show the DSN or keys.
 | D3 | Invalid `submit_draft` → tool error with the problems, then a valid one succeeds; no tool calls → nudge; cap → `DraftError`; model exception → `DraftError` without secrets | `test_draft.py::test_invalid_then_valid`, `::test_nudge`, `::test_cap`, `::test_model_error` |
 | D4 | Prompt byte-identical for the same report; no per-run values | `test_draft.py::test_prompt_is_stable` |
 | D5 | Usage and cost totals from stub usage; prices match LiteLLM's map | `test_draft.py::test_usage_and_cost`, `::test_prices_match_litellm` |
-| D6 | `validate_draft_args`: each rule above | `test_drafts.py::test_validate_draft_args` (parametrised) |
+| D6 | `validate_draft_args`: each rule above, including starter `examples` in `dataset.toml` | `test_drafts.py::test_validate_draft_args` (parametrised) |
+| D8 | The draft proposes three starter `examples`: the prompt asks for them in the `dataset.toml` shape; missing examples are a `validate_files` error (export blocked until the person adds them); export carries them into the dataset | `test_drafts.py::test_validate_files_requires_starter_examples`, `test_export.py::test_export_carries_examples` |
 | D7 | rewrite vs new, `accepted` defaults | `test_drafts.py::test_comment_kinds` |
 | C1 | Claim states per the table, incl. NaN/NULL scalar, bool, truncated set, failing SQL in a `none` claim, and a failing claim not stopping the rest | `test_claims.py` (db, parametrised) |
 | C2 | Blockers: failed/error block unless dismissed; needs_review doesn't | `test_claims.py::test_export_blockers` |
@@ -366,6 +375,7 @@ error. Messages never show the DSN or keys.
 | E2 | The same draft exports to both targets with the same comments: `comments.toml` loads as an overlay, `comments.sql` applied as the owner gives the same comments in the database | `test_export.py::test_both_targets_same_comments` (db) |
 | E3 | The overlay export works through the read-only role: the explorer starts with `DATASET_DIR=<export>` (subprocess, as `test_main` does) | `test_export.py::test_explorer_starts_with_overlay_export` (db) |
 | E4 | Quoting: quotes, backslashes, newlines, DEL, non-BMP characters and odd identifiers round-trip through `comments.sql` (applied in the database) and `comments.toml` (`load_overlay`) | `test_export.py::test_sql_and_toml_quoting`, `::test_overlay_file_loads_with_tricky_text` (db) |
+| E5 | `export --force` into an existing directory replaces only the draft's files (others untouched), keeps replaced files in a dot-prefixed sibling backup the picker ignores, and still refuses a file; without `force` the existing directory still refuses; the API reports `overwrote` and `backup` | `test_export.py::test_export_force_replaces_only_the_drafts_files`, `::test_export_force_into_an_empty_dir_keeps_no_backup`, `::test_export_force_still_refuses_a_file`, `test_server.py::test_export_force` (db) |
 | L1 | CLI `draft` with a stub model writes a strict, secret-free `draft.json`; `verify` and `export` exit codes | `test_cli.py::test_draft_verify_export` (db; the stub is injected through a module-level `COMPLETION` hook, never the network) |
 | L2 | Model allowlist and settings parsing | `test_cli.py::test_model_allowlist`, `test_draft.py::test_settings` |
 
@@ -437,14 +447,17 @@ no CORS). In development the Vite dev server proxies `/api` to it.
 | Route | Does |
 |---|---|
 | `GET /api/connection` | `{host, database, schemas: [{name, objects}]}`: schemas the login can use, with readable object counts. Never the user or password |
-| `POST /api/report` `{schemas}` | the report JSON (same as the CLI's), stored |
+| `GET /api/models` | `{models: [...], default}`: the model allowlist and the configured default, for the UI's draft picker. The server never offers a model outside `ALLOWED_MODELS` |
+| `GET /api/schema[?schemas=a,b]` | the readable catalog the login can see — schemas, tables, columns, types, comments, no statistics — for browsing and downloading before a report. Without `schemas`, every usable schema; invalid names → 400 |
+| `GET /api/datasets` | `{datasets: [name]}`: dataset names on the server (subdirectories of its datasets directory holding a `dataset.toml`), so a client with no filesystem access can pick one |
+| `POST /api/report` `{schemas}` \| `{dataset}` | the report JSON (same as the CLI's), stored. Exactly one of the two: `schemas` is a non-empty list of schema names; `dataset` is a plain name resolved against the server's own datasets directory (same overlay and exact context as the CLI's `--dataset-dir`). Unknown name → 404; anything else malformed → 400 |
 | `POST /api/estimate` `{model}` | pre-run estimate for the stored report: `{model, prompt_chars, input_tokens_est, first_call_usd, run_ceiling_usd, max_calls}` |
 | `POST /api/draft` `{model, effort}` | starts a run on the stored report → `{run_id}`; 409 if one runs; 400 without a report or with a model outside the allowlist |
 | `GET /api/draft/{id}/events?after=N` | `{events: [...], done, draft?, error?}`: events after index N (the on_event dicts); when done, the verified draft and its validation, or the error |
 | `GET /api/draft` | the current draft and its validation, or 404 |
 | `POST /api/claims/verify` `{claims: [{text, file, sql, expect, dismissed}]}` | replaces the draft's claims, reruns all, stores and returns them |
 | `POST /api/validate` `{files, comments}` | stores the edits; returns `{errors, context_chars}` |
-| `POST /api/export` `{name, target, files, comments, dismissed: [index]}` | stores the edits and dismissals, exports with the **stored** claim results → `{path}` (relative to the repo) or 422 `{reasons}` |
+| `POST /api/export` `{name, target, files, comments, dismissed: [index], force?}` | stores the edits and dismissals, exports with the **stored** claim results → `{path, overwrote: [...], backup}` (paths relative to the repo) or 422 `{reasons}`; `force: true` replaces the draft's files in an existing directory (backup kept) instead of refusing |
 
   Claim results only ever come from the server's own runs: a client can't send a state.
 - **Estimate:** `input_tokens_est = ceil(len(system prompt + user message) / 3)` (deliberately
@@ -460,12 +473,16 @@ no CORS). In development the Vite dev server proxies `/api` to it.
 `<bootstrap-app>` holds the state and shows a step bar (Connect · Report · Review, current one
 marked) and one screen element at a time.
 
-1. **`<bs-connect>`**: database host and name; a checkbox per schema (with object count); "Run
-   report" (disabled until one is ticked).
+1. **`<bs-connect>`**: database host and name; when the server holds datasets, a choice of an
+existing dataset (a plain name; the directory stays server-side) or hand-picked schemas, else
+a checkbox per schema (with object count); "Run report" (disabled until a dataset or at least
+one schema is chosen).
+
+`<bs-connect>` also offers a "Test connection" button (re-checks and shows host, database, visible schemas and round-trip time, or the error) and a "Show schema" toggle rendering the readable catalog from `GET /api/schema` with a "Download schema (JSON)" button.
 2. **`<bs-report>`**: summary bar (objects, columns, % with comments, context chars vs 20,000);
    a filter "Only missing comments"; per object a `<table>`: name, kind, coverage badge
    ("n/m commented"), row estimate; rows per column: name, type, nullable, null fraction,
-   distinct estimate, top values, comment or a "no comment" marker. Model picker (Wonder, Spark),
+   distinct estimate, top values, comment or a "no comment" marker. Model picker (the server's `/api/models` list, starting on its default; the client hardcodes nothing),
    effort picker, the estimate, and "Draft with <model>". While drafting: a progress list (each
    `run_sql` purpose, each call's tokens and cost) and running totals; polled every 500 ms.
 3. **`<bs-review>`**: a tab per file (`dataset.toml`, `notes.md`, `glossary.md`) with a
@@ -474,7 +491,8 @@ marked) and one screen element at a time.
    file, SQL (editable), expectation (editable JSON), state badge, message, actual result,
    "Re-run" (sends all claims) and "Dismiss"/"Undismiss". Validation (errors, context size) is
    refreshed 400 ms after the last edit. Name field, target radio (overlay `comments.toml` /
-   `comments.sql`; default from the report's `can_comment`: true → sql), "Export" disabled
+   `comments.sql`; default from the report's `can_comment`: true → sql), an "Overwrite the draft's
+   files if the directory exists" checkbox (replaced files are backed up), "Export" disabled
    while validation has errors, a failed/error claim isn't dismissed, a claim was edited but
    not re-run, or the name is empty; the server's refusal reasons are shown. "Re-run report"
    goes back to the Report screen with a fresh report (the draft is kept).
@@ -498,7 +516,10 @@ visible `:focus-visible` outline. Real `<table>` markup with `<th scope>`.
 | U1 | Report: summary numbers; "only missing" filter hides fully commented objects and commented columns; "no comment" marker; real `<table>`/`<th>` | `ui/test/report.test.ts` |
 | U2 | Review: export disabled by validation errors, by an undismissed failed/error claim, by an edited-not-rerun claim (the server can't see edits that weren't re-run, so this is the UI's rule), by an empty name; enabled otherwise; refusal reasons shown; a validation reply older than the latest is ignored | `ui/test/review.test.ts` |
 | U3 | Claims panel: each state's badge; dismiss toggles; re-run posts all claims and shows new states | `ui/test/claims.test.ts` |
-| U4 | App: step bar marks the current step; connect → report → review with a stubbed `fetch`; review → "Re-run report" (pending edits saved first) → "Back to the draft" shows the server's stored draft | `ui/test/app.test.ts` |
+| U4 | App: step bar marks the current step; connect → report → review with a stubbed `fetch`; review → "Re-run report" (pending edits saved first) → "Back to the draft" shows the server's stored draft; dataset mode posts `{dataset}` and schemas mode posts `{schemas}` | `ui/test/app.test.ts` |
+| S10 | `/api/report` takes exactly one of `schemas` or `dataset`: a known name reports with the overlay and a `full` context; unknown → 404; traversal, empty and non-string names, both keys and neither → 400; `/api/datasets` lists only directories holding a `dataset.toml` | `test_server.py::test_report_by_dataset_name`, `::test_report_by_dataset_name_applies_the_overlay`, `::test_report_dataset_selection_errors` (db) |
+| S11 | `GET /api/schema` dumps schemas, tables, columns, types and comments without statistics (`?schemas=` narrows it; bad names → 400); `GET /api/models` returns the allowlist and the configured default | `test_server.py::test_schema_dump`, `::test_models` (db) |
+| U6 | Connect: "Test connection" re-checks and shows the result; "Show schema" renders the dumped catalog with a download button; the draft model picker offers the server's list starting on its default | `ui/test/app.test.ts` (three new cases) |
 | U5 | `npm run build` passes (type check + bundle) | build |
 
 ### Decisions
@@ -518,8 +539,10 @@ visible `:focus-visible` outline. Real `<table>` markup with `<th scope>`.
 - A request body that isn't a JSON object is a 400 everywhere; it never starts a paid run.
 - Unexpected errors: the client gets `unexpected <Class>`; the log gets the class only (the
   server swallows Starlette's re-raise so uvicorn doesn't print the message).
-- The report screen offers schemas only (no `--dataset-dir`); redrafting an existing Dataset is
-  out of scope (phase 2b Decisions).
+- The report screen offers schemas or a server-side dataset name (the client never sees a path);
+  redrafting an existing Dataset is still out of scope — reporting on one is for checking coverage
+  (e.g. after applying `comments.sql`), and a kept draft stays validated against the report it was
+  drafted from. The CLI keeps `--dataset-dir` for local use.
 
 ### Test command
 

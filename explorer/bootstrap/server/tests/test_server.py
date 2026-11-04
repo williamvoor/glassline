@@ -288,3 +288,126 @@ async def test_unexpected_error_logs_only_the_class(ro_pool, tmp_path, caplog, m
     assert r.status_code == 500 and r.json() == {"error": "unexpected RuntimeError"}
     logged = "\n".join(f"{rec.getMessage()} {rec.exc_text or ''}" for rec in caplog.records)
     assert "RuntimeError" in logged and "secret-ish" not in logged and "pw@" not in logged
+
+
+def _write_dataset(root, name="demo", schemas=("bs",), overlay=None):
+    d = root / name
+    d.mkdir(parents=True, exist_ok=True)
+    overlay_toml = ""
+    if overlay is not None:
+        (d / "comments.toml").write_text(overlay, encoding="utf-8")
+        overlay_toml = '\n[comments]\noverlay = "comments.toml"\n'
+    (d / "dataset.toml").write_text(
+        "name = \"demo\"\ndescription = \"d\"\n"
+        f"allowed_schemas = [{', '.join(repr(s) for s in schemas)}]\n"
+        'glossary = "glossary.md"\nnotes = "notes.md"\n'
+        '[currency]\ncode = "AUD"\nsymbol = "$"\n' + overlay_toml,
+        encoding="utf-8",
+    )
+    (d / "notes.md").write_text("notes\n", encoding="utf-8")
+    (d / "glossary.md").write_text("glossary\n", encoding="utf-8")
+    return d
+
+
+# S10: the report resolves a dataset name against the server's own datasets directory,
+# so a web client with no filesystem access gets the same overlay and context as --dataset-dir.
+async def test_report_by_dataset_name(ro_pool, tmp_path):
+    app, root = _app(ro_pool, tmp_path, _model())
+    _write_dataset(root)
+    (root / "stray").mkdir()  # no dataset.toml: not a dataset
+    backup = root / ".demo.bak-20261104T000000"
+    backup.mkdir()  # force backups are dot-prefixed: the picker ignores them
+    (backup / "dataset.toml").write_text('name = "demo"\n', encoding="utf-8")
+    async with _client(app) as client:
+        assert (await client.get("/api/datasets")).json() == {"datasets": ["demo"]}
+        r = await client.post("/api/report", json={"dataset": "demo"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["schemas"] == ["bs"]
+        assert body["summary"]["context_scope"] == "full"
+        assert body["summary"]["context_chars"] > 0
+
+
+async def test_report_by_dataset_name_applies_the_overlay(ro_pool, tmp_path):
+    app, root = _app(ro_pool, tmp_path, _model())
+    _write_dataset(root, overlay='["bs.mixed"]\ncomment = "Overlaid table."\n')
+    async with _client(app) as client:
+        r = await client.post("/api/report", json={"dataset": "demo"})
+        assert r.status_code == 200, r.text
+        mixed = next(o for o in r.json()["objects"] if o["name"] == "mixed")
+        assert mixed["comment"] == "Overlaid table."
+        assert mixed["comment_source"] == "overlay"
+        assert mixed["database_comment"] == "A table with some comments."
+
+
+async def test_report_dataset_selection_errors(ro_pool, tmp_path):
+    app, root = _app(ro_pool, tmp_path, _model())
+    _write_dataset(root)
+    async with _client(app) as client:
+        assert (await client.post("/api/report", json={"dataset": "missing"})).status_code == 404
+        for bad in ["..", "a/b", "", "a b", 42, None]:
+            r = await client.post("/api/report", json={"dataset": bad})
+            assert r.status_code == 400, bad
+        r = await client.post("/api/report", json={"schemas": ["bs"], "dataset": "demo"})
+        assert r.status_code == 400
+        assert (await client.post("/api/report", json={})).status_code == 400
+        # the schema path still works unchanged
+        assert (await client.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
+
+
+# S11: the web app reads the schema and the model list from the server, never the filesystem.
+async def test_schema_dump(ro_pool, tmp_path):
+    app, _ = _app(ro_pool, tmp_path, _model())
+    async with _client(app) as client:
+        r = await client.get("/api/schema")
+        assert r.status_code == 200, r.text
+        by_name = {s["name"]: s["tables"] for s in r.json()["schemas"]}
+        assert "bs" in by_name  # plus whatever else the login can see (e.g. austender's mart)
+        mixed = next(t for t in by_name["bs"] if t["name"] == "mixed")
+        assert mixed["kind"] == "table"
+        assert mixed["comment"] == "A table with some comments."
+        cols = {c["name"]: c for c in mixed["columns"]}
+        assert cols["amount"]["type"] == "numeric(10,2)" and cols["amount"]["comment"] == "Amount in dollars."
+        assert cols["name"]["comment"] is None  # uncommented columns dump as null
+        r = await client.get("/api/schema", params={"schemas": "bs"})
+        assert r.status_code == 200 and len(r.json()["schemas"]) == 1
+        assert (await client.get("/api/schema", params={"schemas": "nosuch"})).json() == {
+            "schemas": [{"name": "nosuch", "tables": []}]
+        }
+        assert (await client.get("/api/schema", params={"schemas": "Bad-Name"})).status_code == 400
+
+
+async def test_models(ro_pool, tmp_path):
+    app, _ = _app(ro_pool, tmp_path, _model())
+    async with _client(app) as client:
+        assert (await client.get("/api/models")).json() == {
+            "models": ["meta/muse-wonder-1.0", "meta/muse-spark-1.3"],
+            "default": "meta/muse-wonder-1.0",
+        }
+    spark_app, _ = _app(ro_pool, tmp_path, _model(), env={"BOOTSTRAP_MODEL": "meta/muse-spark-1.3"})
+    async with _client(spark_app) as client:
+        assert (await client.get("/api/models")).json()["default"] == "meta/muse-spark-1.3"
+
+
+# S12: export --force writes the draft's files into an existing directory (backup kept),
+# and still refuses without it.
+async def test_export_force(ro_pool, tmp_path):
+    app, root = _app(ro_pool, tmp_path, _model())
+    async with _client(app) as client:
+        done, _ = await _drafted(client)
+        edits = {"files": done["draft"]["files"], "comments": done["draft"]["comments"]}
+        existing = root / "demo"
+        existing.mkdir()
+        (existing / "dataset.toml").write_text("old toml\n", encoding="utf-8")
+        (existing / "scenarios.toml").write_text("keep me\n", encoding="utf-8")
+        refused = await client.post("/api/export", json={**edits, "name": "demo", "target": "toml", "dismissed": []})
+        assert refused.status_code == 422 and any("already exists" in r for r in refused.json()["reasons"])
+        bad = await client.post("/api/export", json={**edits, "name": "demo", "target": "toml", "dismissed": [], "force": "yes"})
+        assert bad.status_code == 400
+        r = await client.post("/api/export", json={**edits, "name": "demo", "target": "toml", "dismissed": [], "force": True})
+        assert r.status_code == 200, r.json()
+        body = r.json()
+        assert body["overwrote"] == ["dataset.toml"]
+        assert body["backup"] is not None and body["path"] == "datasets/demo"
+        assert (existing / "dataset.toml").read_text(encoding="utf-8") != "old toml\n"
+        assert (existing / "scenarios.toml").read_text(encoding="utf-8") == "keep me\n"

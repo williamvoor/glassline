@@ -58,6 +58,9 @@ def _mut(fn):
         (lambda a: a["claims"][0]["expect"].update(kind=["scalar"]), "claims[0].expect must be scalar"),
         (lambda a: a["claims"][0].update(expect={"kind": {"x": 1}}), "claims[0].expect must be scalar"),
         (lambda a: a["claims"][0].update(file=["notes.md"]), "claims[0].file must be one of"),
+        (lambda a: a["files"].update(dataset_toml=a["files"]["dataset_toml"].replace(
+            'examples = ["How many rows does bs.mixed have?", "What grades appear in bs.mixed?"]\n', '')),
+         "must propose starter examples"),
     ],
 )
 async def test_validate_draft_args(bs_report, change, problem):
@@ -89,7 +92,7 @@ async def test_validate_files(bs_report, ro_pool, tmp_path):
     v = validate_files(d)
     assert v["errors"] == []
     # The same figure the explorer would compute over the exported overlay dataset.
-    out = export_dataset(d, "bs_export", "toml", tmp_path)
+    out = export_dataset(d, "bs_export", "toml", tmp_path).dest
     ds = load_dataset(out)
     objects = await SchemaCatalog(ro_pool, ds.allowed_schemas, ds.comment_overlay).objects()
     assert overlay_problems(objects, ds.comment_overlay) == []
@@ -147,3 +150,13 @@ async def test_validate_files_errors(bs_report, toml, error):
     assert v["context_chars"] is None
     assert any(error in e for e in v["errors"]), v["errors"]
     assert not any("bootstrap-validate" in e or "/tmp" in e or "/var/" in e for e in v["errors"])
+
+
+async def test_validate_files_requires_starter_examples(bs_report):
+    d = _draft(bs_report)
+    assert validate_files(d)["errors"] == []
+    d["files"]["dataset_toml"] = d["files"]["dataset_toml"].replace(
+        'examples = ["How many rows does bs.mixed have?", "What grades appear in bs.mixed?"]\n', "")
+    v = validate_files(d)
+    assert v["context_chars"] is None
+    assert any("starter examples" in e for e in v["errors"]), v["errors"]

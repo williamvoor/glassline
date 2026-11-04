@@ -98,6 +98,16 @@ def _has_comments_table(toml_text: str) -> bool:
         return False  # validate_files reports invalid TOML
 
 
+def _has_examples(toml_text: str) -> bool | None:
+    """Whether the drafted dataset.toml proposes starter examples: True, False, or None
+    when the TOML doesn't parse (validate_files reports invalid TOML)."""
+    try:
+        examples = tomllib.loads(toml_text).get("examples", [])
+    except tomllib.TOMLDecodeError:
+        return None
+    return isinstance(examples, list) and len(examples) > 0
+
+
 def validate_draft_args(args: Any, report: dict[str, Any]) -> list[str]:
     """Problems with the model's submit_draft arguments, each naming the field path. Empty = valid."""
     problems: list[str] = []
@@ -119,6 +129,8 @@ def validate_draft_args(args: Any, report: dict[str, Any]) -> list[str]:
                 bad(f"files.{key} must be a non-blank string")
         if _nonblank(files.get("dataset_toml")) and _has_comments_table(files["dataset_toml"]):
             bad("files.dataset_toml must not have a [comments] table (export adds it)")
+        if _nonblank(files.get("dataset_toml")) and _has_examples(files["dataset_toml"]) is False:
+            bad("files.dataset_toml must propose starter examples (examples = [...])")
 
     index = report_index(report)
     comments = args.get("comments")

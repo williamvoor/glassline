@@ -71,7 +71,7 @@ async def test_export_refusals(bs_report, tmp_path):
     d = _draft(bs_report)
     d["claims"][0]["result"]["state"] = "error"
     d["claims"][0]["dismissed"] = True
-    assert export_dataset(d, "ok", "sql", tmp_path).is_dir()  # a dismissed claim no longer blocks
+    assert export_dataset(d, "ok", "sql", tmp_path).dest.is_dir()  # a dismissed claim no longer blocks
 
 
 def test_export_is_world_readable_and_cleans_up(bs_report_sync, tmp_path, monkeypatch):
@@ -79,7 +79,7 @@ def test_export_is_world_readable_and_cleans_up(bs_report_sync, tmp_path, monkey
 
     from explorer_bootstrap import export as export_mod
 
-    out = export_dataset(_draft(bs_report_sync), "ok", "toml", tmp_path)
+    out = export_dataset(_draft(bs_report_sync), "ok", "toml", tmp_path).dest
     assert stat.S_IMODE(out.stat().st_mode) & 0o055 == 0o055  # group/other can read and enter
 
     def boom(_draft):
@@ -94,8 +94,8 @@ def test_export_is_world_readable_and_cleans_up(bs_report_sync, tmp_path, monkey
 # E2
 async def test_both_targets_same_comments(bs_report, ro_pool, pg, tmp_path):
     d = _draft(bs_report)
-    by_toml = export_dataset(d, "as_toml", "toml", tmp_path)
-    by_sql = export_dataset(d, "as_sql", "sql", tmp_path)
+    by_toml = export_dataset(d, "as_toml", "toml", tmp_path).dest
+    by_sql = export_dataset(d, "as_sql", "sql", tmp_path).dest
     assert sorted(p.name for p in by_toml.iterdir()) == ["comments.toml", "dataset.toml", "glossary.md", "notes.md"]
     assert sorted(p.name for p in by_sql.iterdir()) == ["comments.sql", "dataset.toml", "glossary.md", "notes.md"]
     ds = load_dataset(by_toml)
@@ -116,7 +116,7 @@ async def test_both_targets_same_comments(bs_report, ro_pool, pg, tmp_path):
 
 # E3
 def test_explorer_starts_with_overlay_export(bs_report_sync, pg, tmp_path):
-    out = export_dataset(_draft(bs_report_sync), "bs_overlay", "toml", tmp_path)
+    out = export_dataset(_draft(bs_report_sync), "bs_overlay", "toml", tmp_path).dest
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -175,3 +175,43 @@ def test_overlay_file_loads_with_tricky_text(tmp_path):
     path.write_text(render_comments_toml(draft), encoding="utf-8")
     assert load_overlay(path, ("bs",)).entries["bs.t"].columns["c"] == TRICKY
     assert "COMMENT ON COLUMN" in render_comments_sql(draft)
+
+
+# E4: force replaces only the draft's files in an existing directory, keeping a backup.
+def test_export_force_replaces_only_the_drafts_files(bs_report_sync, tmp_path):
+    dest = tmp_path / "lived"
+    dest.mkdir()
+    (dest / "dataset.toml").write_text("old toml\n", encoding="utf-8")
+    (dest / "scenarios.toml").write_text("keep me\n", encoding="utf-8")
+    result = export_dataset(_draft(bs_report_sync), "lived", "toml", tmp_path, force=True)
+    assert result.dest == dest
+    assert result.overwrote == ["dataset.toml"]
+    assert (dest / "dataset.toml").read_text(encoding="utf-8") != "old toml\n"
+    assert (dest / "scenarios.toml").read_text(encoding="utf-8") == "keep me\n"  # untouched
+    assert sorted(p.name for p in dest.iterdir()) == [
+        "comments.toml", "dataset.toml", "glossary.md", "notes.md", "scenarios.toml"]
+    assert result.backup is not None and result.backup.parent == tmp_path
+    assert (result.backup / "dataset.toml").read_text(encoding="utf-8") == "old toml\n"
+    assert result.backup.name.startswith(".lived.bak-")  # dot-prefixed: the dataset picker ignores it
+
+
+def test_export_force_into_an_empty_dir_keeps_no_backup(bs_report_sync, tmp_path):
+    (tmp_path / "empty").mkdir()
+    result = export_dataset(_draft(bs_report_sync), "empty", "sql", tmp_path, force=True)
+    assert result.overwrote == [] and result.backup is None
+    assert (tmp_path / "empty" / "comments.sql").is_file()
+
+
+def test_export_force_still_refuses_a_file(bs_report_sync, tmp_path):
+    (tmp_path / "afile").write_text("x", encoding="utf-8")
+    with pytest.raises(ExportError, match="is not a directory"):
+        export_dataset(_draft(bs_report_sync), "afile", "toml", tmp_path, force=True)
+
+
+# E6: drafted examples land in the exported dataset and load.
+def test_export_carries_examples(bs_report_sync, tmp_path):
+    out = export_dataset(_draft(bs_report_sync), "bs_examples", "toml", tmp_path).dest
+    assert load_dataset(out).examples == (
+        "How many rows does bs.mixed have?",
+        "What grades appear in bs.mixed?",
+    )

@@ -149,7 +149,9 @@ def write_overlay_dataset(root: Path, overlay: str = BS_OVERLAY) -> Path:
 # mixed.created, fresh, fresh.x, slow.n; mixed.amount gets a proposed rewrite.
 BS_DATASET_TOML = (
     'name = "bs"\ndescription = "Bootstrap fixture."\nallowed_schemas = ["bs"]\n'
-    'glossary = "glossary.md"\nnotes = "notes.md"\n\n[currency]\ncode = "AUD"\nsymbol = "$"\n'
+    'glossary = "glossary.md"\nnotes = "notes.md"\n'
+    'examples = ["How many rows does bs.mixed have?", "What grades appear in bs.mixed?"]\n'
+    '\n[currency]\ncode = "AUD"\nsymbol = "$"\n'
 )
 
 
