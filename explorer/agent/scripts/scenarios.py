@@ -2,10 +2,12 @@
 
     uv run python scripts/scenarios.py run [--file F] [--ids a,b] [--runs 1] [--level minimal] [--include-unreviewed]
     uv run python scripts/scenarios.py report RUNS.jsonl
+    uv run python scripts/scenarios.py boards [--runs 5] [--out DIR]
 
 `run` checks every reference query, starts the real agent, asks each scenario's turns in one
 Conversation, reruns the SQL shown on the last Turn's Surface read-only, and scores it against the
-reference values. It calls the real model, so it is not a test. Nothing here names a dataset: the
+reference values. It calls the real model, so it is not a test. `boards` times the Dataset's Boards
+against the speed targets, with no model call. Nothing here names a dataset: the
 scenarios come from the dataset's `scenarios.toml`.
 """
 
@@ -671,6 +673,285 @@ def report(records: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# --- Board scenarios (SPEC amendment 2026-11-04, SC1) -----------------------------------------------
+
+WARMUP_TIMEOUT_S = 60.0  # the Explorer's warm-up render, after the agent is up
+POLL_S = 0.1
+PREFETCH_QUIET_S = 1.0  # no new `board query:` line for this long: the prefetch has settled
+PREFETCH_MAX_S = 10.0
+BOARD_LOG_SETTLE_S = 0.2  # after a reply, for its log lines
+MAX_OPTIONS_TRIED = 3
+EXPLORER = "explorer"
+
+_WARMED = re.compile(r"board warm-up: board=explorer ms=(\d+)")
+_WARM_FAILED = "board warm-up failed: board=explorer"
+_BOARD_QUERY = re.compile(r"board query: board=(\S+) ")
+
+# §18 speed targets (median, seconds): measure -> target
+BOARD_TARGETS = {
+    "Explorer warm": 0.5,
+    "Explorer cold": 1.5,  # any Board, cold; Entity Boards' cold time is "not prefetched"
+    "Control change, not cached": 1.0,
+    "Control change, cached": 1.0,
+    "Entity Board, prefetched": 0.3,
+    "Entity Board, not prefetched": 1.5,
+}
+
+
+def _log_size(path: Path) -> int:
+    return path.stat().st_size if path.exists() else 0
+
+
+def _board_queries(text: str, board: str | None) -> int:
+    """`board query:` lines for `board`; for an unknown Board, every one not of the Explorer."""
+    names = _BOARD_QUERY.findall(text)
+    return sum(1 for n in names if n == board) if board else sum(1 for n in names if n != EXPLORER)
+
+
+async def wait_for_warmup(log_path: Path, start: int) -> int | None:
+    """The warm-up's ms from the log written since `start`, or None on failure or timeout."""
+    deadline = asyncio.get_running_loop().time() + WARMUP_TIMEOUT_S
+    while True:
+        text = ec.read_slice(log_path, start, _log_size(log_path))
+        if m := _WARMED.search(text):
+            return int(m.group(1))
+        if _WARM_FAILED in text or asyncio.get_running_loop().time() >= deadline:
+            return None
+        await asyncio.sleep(POLL_S)
+
+
+async def settle_prefetch(log_path: Path) -> None:
+    """Waits until no new `board query:` line has been logged for PREFETCH_QUIET_S (at most
+    PREFETCH_MAX_S): about as long as a person takes to look before clicking."""
+    loop = asyncio.get_running_loop()
+    start = _log_size(log_path)
+    deadline = loop.time() + PREFETCH_MAX_S
+    seen, quiet_since = -1, loop.time()
+    while loop.time() < deadline:
+        n = len(_BOARD_QUERY.findall(ec.read_slice(log_path, start, _log_size(log_path))))
+        if n != seen:
+            seen, quiet_since = n, loop.time()
+        elif loop.time() - quiet_since >= PREFETCH_QUIET_S:
+            return
+        await asyncio.sleep(POLL_S)
+
+
+def wire_value(kind: str, model_value: Any) -> Any:
+    """A Control's value in the `controls` action's form, from its `/controls` data model value."""
+    if kind == "choice":
+        picked = [v for v in model_value or [] if v != "all"]
+        return int(picked[0]) if picked else None
+    if kind == "multi":
+        return [int(v) for v in model_value or []]
+    if kind == "date":
+        return model_value or None
+    return model_value  # toggle (bool), number (int)
+
+
+def read_open(reply: dict[str, Any]) -> dict[str, Any]:
+    """What the harness needs from the Explorer's `open_board` reply."""
+    meta = reply.get("metadata") or {}
+    a2ui = (reply.get("surface") or {}).get("a2ui") or []
+    components = [c for m in a2ui for c in (m.get("updateComponents") or {}).get("components", [])]
+    by_id = {c.get("id"): c for c in components}
+    model = next((m["updateDataModel"].get("value") or {} for m in a2ui
+                  if (m.get("updateDataModel") or {}).get("path") == "/controls"), {})
+    controls = list((meta.get("explorerBoard") or {}).get("controls") or [])
+    options = {}
+    for c in controls:
+        if c.get("kind") == "choice":
+            opts = (by_id.get(f"board_control_{c['name']}") or {}).get("options") or []
+            options[c["name"]] = [int(o["value"]) for o in opts if o.get("value") != "all"]
+    visuals = []
+    for comp in components:
+        action = comp.get("action")
+        if isinstance(action, dict) and action.get("boards"):
+            visuals.append({"id": comp["id"], "source": action.get("source"), "boards": list(action["boards"])})
+    return {
+        "context_id": reply.get("context_id"),
+        "surface_id": (meta.get("explorerLevel") or {}).get("surfaceId", ""),
+        "board": (meta.get("explorerBoard") or {}).get("id", ""),
+        "controls": controls,
+        "options": options,
+        "values": {c["name"]: wire_value(c.get("kind", ""), model.get(c["name"])) for c in controls},
+        "visuals": visuals,
+    }
+
+
+async def open_explorer(client: httpx.AsyncClient) -> dict[str, Any]:
+    """`open_board` in a new Conversation, as the client sends it on load (no `contextId`)."""
+    body = ec.action_body("open_board", "", "", {"board": EXPLORER}, "")
+    del body["params"]["message"]["contextId"]
+    result = await ec._exchange(client, body)
+    if result["failure"] == "none" and result["metadata"].get(ec.ACTION_FAILED_KEY):
+        result["failure"] = "action_failed"
+    return result
+
+
+def board_titles(dataset: str, boards: dict[str, Any]) -> dict[str, str]:
+    """Each Board's title -> its file name. Refuses a Dataset with no Explorer Board."""
+    if EXPLORER not in boards:
+        raise SystemExit(f"{dataset} has no Explorer Board (datasets/{dataset}/boards/explorer.toml)")
+    return {b.title: b.name for b in boards.values()}
+
+
+def board_name(title: str, titles: dict[str, str]) -> str | None:
+    """The opened Board's file name, from its tab title ("<Board title> · <row label>")."""
+    return titles.get(title.split(" · ")[0])
+
+
+async def entity_clicks(client: httpx.AsyncClient, opened: dict[str, Any], titles: dict[str, str],
+                        log_path: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for v in opened["visuals"]:
+        rows = v["boards"]
+        for which, row in (("first", rows[0]), ("last", rows[-1]))[: 1 if len(set(rows)) == 1 else 2]:
+            # a person looks before clicking; also keeps the last click's follow-on prefetch out
+            # of this click's evidence window
+            await settle_prefetch(log_path)
+            before = _log_size(log_path)
+            r = await ec.act(client, "drill", opened["surface_id"], v["id"], {"source": v["source"], "row": row},
+                             opened["context_id"])
+            await asyncio.sleep(BOARD_LOG_SETTLE_S)
+            name = board_name(((r.get("metadata") or {}).get("explorerTab") or {}).get("title", ""), titles)
+            ran = _board_queries(ec.read_slice(log_path, before, _log_size(log_path)), name)
+            out.append({"visual": v["id"], "click": which, "row": row, "board": name, "wall_s": r["wall_s"],
+                        "failure": r["failure"], "queries_run": ran,
+                        # a rejected action runs nothing, which isn't evidence of a prefetch
+                        "prefetched": ran == 0 if r["failure"] == "none" else None})
+    return out
+
+
+async def control_changes(client: httpx.AsyncClient, opened: dict[str, Any], log_path: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    values = dict(opened["values"])
+    seq = 0
+    for c in opened["controls"]:
+        name, kind = c["name"], c.get("kind", "")
+        if kind != "choice":
+            out.append({"control": name, "skipped": kind})
+            continue
+        start = values[name]
+        tried = [i for i in opened["options"].get(name, []) if i != start][:MAX_OPTIONS_TRIED]
+        for value in [*tried, start] if tried else []:
+            seq += 1
+            values[name] = value
+            before = _log_size(log_path)
+            r = await ec.act(client, "controls", opened["surface_id"], "board_controls",
+                             {"board": opened["board"], "seq": seq, "values": dict(values)}, opened["context_id"])
+            await asyncio.sleep(BOARD_LOG_SETTLE_S)
+            ran = _board_queries(ec.read_slice(log_path, before, _log_size(log_path)), EXPLORER)
+            out.append({"control": name, "value": value, "seq": seq, "wall_s": r["wall_s"], "failure": r["failure"],
+                        "superseded": bool((r.get("metadata") or {}).get("explorerSuperseded")),
+                        "queries_run": ran, "cached": ran == 0 if r["failure"] == "none" else None})
+    return out
+
+
+async def board_run(run_no: int, titles: dict[str, str], log_path: Path) -> dict[str, Any]:
+    """One run: a fresh agent, the warm-up, the Explorer, Entity Board clicks, Control changes."""
+    record: dict[str, Any] = {"run": run_no, "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                              "warmup_failed": False, "explorer_cold_ms": None, "explorer_open": None,
+                              "clicks": [], "changes": []}
+    start = _log_size(log_path)
+    agent = ec.Agent("minimal", log_path)  # no model is called; the level is irrelevant
+    try:
+        await agent.start()
+        cold = await wait_for_warmup(log_path, start)
+        if cold is None:
+            record["warmup_failed"] = True
+            return record
+        record["explorer_cold_ms"] = cold
+        timeout = httpx.Timeout(connect=10, read=ec.READ_TIMEOUT_S, write=30, pool=10)
+        async with httpx.AsyncClient(base_url=agent.url, timeout=timeout) as client:
+            r = await open_explorer(client)
+            record["explorer_open"] = {"wall_s": r["wall_s"], "failure": r["failure"]}
+            if r["failure"] != "none":
+                return record
+            opened = read_open(r)
+            record["clicks"] = await entity_clicks(client, opened, titles, log_path)
+            record["changes"] = await control_changes(client, opened, log_path)
+    finally:
+        agent.stop()
+    return record
+
+
+async def run_boards(titles: dict[str, str], runs: int, out_dir: Path) -> Path:
+    """`runs` runs, each with a fresh agent (an empty Board cache). `titles` maps each Board's
+    title to its file name."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    jsonl = out_dir / f"boards-{stamp}.jsonl"
+    log_path = out_dir / f"boards-agent-{stamp}.log"
+    report_path = out_dir / f"boards-report-{stamp}.md"
+    written = [jsonl, log_path]
+    try:
+        for n in range(1, runs + 1):
+            record = await board_run(n, titles, log_path)
+            with jsonl.open("a") as f:
+                f.write(json.dumps(record, default=str) + "\n")
+            open_s = (record["explorer_open"] or {}).get("wall_s")
+            print(f"run {n}: cold {record['explorer_cold_ms']} ms, open {open_s} s, "
+                  f"{len(record['clicks'])} clicks, {len(record['changes'])} changes"
+                  + (" (warm-up failed)" if record["warmup_failed"] else ""), flush=True)
+    finally:
+        try:
+            if jsonl.exists():
+                report_path.write_text(boards_report(read_records(jsonl)), encoding="utf-8")
+                written.append(report_path)
+        finally:  # scan every file written, even when the report or a run failed
+            hits = ec.secret_hits([p for p in written if p.exists()], ec.secret_values(dict(os.environ), ec.ENV_FILE))
+            if hits:
+                raise SystemExit("secret found in: " + ", ".join(str(p) for p in hits) + " (do not commit these files)")
+    print(f"wrote {jsonl}")
+    return jsonl
+
+
+def board_samples(records: list[dict[str, Any]]) -> dict[str, tuple[list[float], int]]:
+    """Per measure: the seconds of the actions that succeeded, and the count that failed."""
+    out: dict[str, tuple[list[float], int]] = {m: ([], 0) for m in BOARD_TARGETS}
+
+    def add(measure: str, item: dict[str, Any]) -> None:
+        times, failed = out[measure]
+        if item.get("failure") == "none":
+            times.append(item["wall_s"])
+        else:
+            out[measure] = (times, failed + 1)
+
+    for r in records:
+        if r.get("explorer_cold_ms") is not None:
+            out["Explorer cold"][0].append(r["explorer_cold_ms"] / 1000)
+        if r.get("explorer_open"):
+            add("Explorer warm", r["explorer_open"])
+        for c in r.get("clicks") or []:
+            add("Entity Board, prefetched" if c.get("prefetched") else "Entity Board, not prefetched", c)
+        for ch in r.get("changes") or []:
+            if "skipped" not in ch:
+                add("Control change, cached" if ch.get("cached") else "Control change, not cached", ch)
+    return out
+
+
+def boards_report(records: list[dict[str, Any]]) -> str:
+    samples = board_samples(records)
+    warm_failed = sum(1 for r in records if r.get("warmup_failed"))
+    skipped = sorted({f"{ch['control']} ({ch['skipped']})" for r in records for ch in r.get("changes") or []
+                      if "skipped" in ch})
+    lines = [
+        "# Board scenarios", "",
+        f"- Runs: {len(records)}, each with a fresh agent; warm-up failed in {warm_failed}",
+        f"- Controls not changed: {', '.join(skipped) or '—'}", "",
+        "| Measure | n | Median | p90 | Target | Failed | Verdict |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for measure, target in BOARD_TARGETS.items():
+        times, failed = samples[measure]
+        median = statistics.median(times) if times else None
+        verdict = "—" if median is None else ("ok" if median < target else "miss")
+        lines.append(f"| {measure} | {len(times)} | {_fmt(median, ' s', 2)} | "
+                     f"{_fmt(_pct(times, 0.9) if times else None, ' s', 2)} | < {target} s | {failed} | {verdict} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 # --- entry point -----------------------------------------------------------------------------------
 
 
@@ -693,6 +974,20 @@ async def _main_run(args: argparse.Namespace) -> None:
         await pool.close()
 
 
+async def _main_boards(args: argparse.Namespace) -> None:
+    load_dotenv(ec.ENV_FILE, override=False)
+    settings = load_settings(os.environ, EXPLORER_ROOT)
+    titles = board_titles(settings.dataset.name, settings.dataset.boards)
+    await run_boards(titles, args.runs, args.out or DEFAULT_OUT_ROOT / settings.dataset.name)
+
+
+def _positive(text: str) -> int:
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return n
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -703,12 +998,17 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--level", default="minimal")
     r.add_argument("--include-unreviewed", action="store_true")
     r.add_argument("--out", type=Path)
+    b = sub.add_parser("boards", help="time the Dataset's Boards against the speed targets (no model)")
+    b.add_argument("--runs", type=_positive, default=5)
+    b.add_argument("--out", type=Path)
     p = sub.add_parser("report", help="rewrite the report from a runs file")
     p.add_argument("runs", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.cmd == "run":
             asyncio.run(_main_run(args))
+        elif args.cmd == "boards":
+            asyncio.run(_main_boards(args))
         else:
             out = report_path_for(args.runs)
             out.write_text(report(read_records(args.runs)), encoding="utf-8")

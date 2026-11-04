@@ -567,6 +567,10 @@ It's built in two parts:
 - **Part B** (after the live run): Board scenarios in `agent/scripts/scenarios.py` (SC1), and the
   manual run that drafts austender's Boards and measures B-M (BM). Part B needs real Boards to
   time, and the live run needs the user's OK first.
+- **Part B is built** (2026-11-04). SC1 is specified in `specs/scenarios/SPEC.md` (the Board
+  scenarios amendment). austender's Boards reached `datasets/austender/boards/` through a scratch
+  export (ADR 0036). Both halves of B-M are recorded in `explorer/SPEC.md` §18: the speed half
+  and, measured by hand on 2026-11-04, the typed-question half.
 
 ### Files
 

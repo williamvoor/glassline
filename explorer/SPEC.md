@@ -2537,6 +2537,61 @@ Every finding was taken unless noted:
 - Option and range queries take no placeholders, the key included, so the option cache stays
   keyed by Board alone.
 
+### B-M, speed (slice 4 Part B, 2026-11-04)
+
+austender's Boards were drafted by the bootstrap (Wonder, $0.17 for the draft and $0.20 for the
+Boards), reviewed, and moved into `datasets/austender/boards/` (ADR 0036): an Explorer with a
+procurement-method Control, an `agency` Entity Board and a `supplier` Entity Board. They were
+measured with `scenarios.py boards --runs 5` (`specs/scenarios/SPEC.md`, the Board scenarios
+amendment), a fresh agent per run, against the real database, with no model calls. Output is in
+`docs/scenarios/austender/boards-20261104T045000Z.*`.
+
+| What | n | Median | p90 | Target (median) | Verdict |
+|---|---|---|---|---|---|
+| Explorer on load, warm cache | 5 | 0.15 s | 0.16 s | < 0.5 s | ok |
+| Explorer cold (warm-up render) | 5 | 1.02 s | 1.04 s | < 1.5 s | ok |
+| Control change, not cached | 15 | 1.10 s | 1.59 s | < 1.0 s | **miss** |
+| Control change, back to a cached value | 5 | 0.14 s | 0.14 s | < 1.0 s | ok |
+| Entity Board from a click, prefetched | 10 | 0.11 s | 0.11 s | < 0.3 s | ok |
+| Entity Board from a click, not prefetched | 10 | 0.13 s | 0.14 s | < 1.5 s | ok |
+
+- **The miss** is the Explorer's `totals` query: `COUNT(DISTINCT)` over notices, agencies and
+  suppliers on the 838k-row `mart.contract_supplier` takes 0.9–1.4 s. Every query depends on the
+  Control, so all four run on each change. The Entity Boards are fast because they read the `*_fy`
+  summary tables.
+- **Decision (the user, 2026-11-04): the miss is accepted.** The other options were a summary
+  table with `procurement_method` in `../austender/` (outside `explorer/`), and an Explorer
+  without the distinct counts. Neither was taken. A later re-draft or a database change may
+  revisit it, and `scenarios.py boards` re-measures it.
+- **B-M's second half, measured by hand (2026-11-04).** "Which agencies spent the most?" in a new
+  Conversation each time, Muse Spark, `./run.sh --real`:
+
+  | | Control at All | Control at `limited` |
+  |---|---|---|
+  | Board pair | none (Explorer at its defaults) | queued, 4 Results |
+  | Model calls | 2 (one `run_sql`) | 1 (no `run_sql`) |
+  | First call, prompt / cached tokens | 9,780 / 0 (cold cache) | 10,804 / 9,713 |
+  | Second call, prompt / cached tokens | 10,482 / 9,713 | none |
+  | Model time | 3.7 + 4.8 s | 5.2 s |
+
+  - **The Board pair adds about 1,024 prompt tokens** (10,804 − 9,780 on the first call).
+  - The answer kept the Board's state: its caption says "limited procurement method only", and
+    its numbers are the Board's (`$464.5B`, 472,103 contracts). It answered from the pinned
+    Board Results, so it saved a model call and a query.
+  - It charted the Board's 162-row `share` Result as a `BarChart` with every bar: issue 10.
+- **Part B's manual checks (2026-11-04)** passed. They led to the card-width fix (`ef7e60b`), the
+  Entity Board click choice (§20, a draft), issue 10, and the fix below.
+
+### Fix, manual check 5 (2026-11-04)
+
+- `DataTable` hides columns listed under Boards by default. A listed key column shows, but row
+  labels (and so Entity Board tab titles) leave key columns out. A key column that is the only
+  text column stays in both. Before, an answer showed `supplier_key` cells such as
+  `name:fms account reserve bank of australia`, and the tab read "Supplier · <name> · <ABN>".
+- The Clicks instructions put the Board exception first ("give its charts and tables no
+  `drill_sql`"). After the example, Spark still wrote `drill_sql` that was ignored. One live
+  rerun wrote none.
+
 ### Fix, issue 9 (2026-11-04)
 
 - `macros._fill` takes a required `markdown` flag, so each call site states where its text goes.

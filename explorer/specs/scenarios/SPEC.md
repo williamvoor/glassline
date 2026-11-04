@@ -287,6 +287,121 @@ growth; a partial latest year ("this year"); Defence's keys in FY 2014-15 (26,14
 sharper split than calendar 2014); UNSPSC segment; monthly counts in a calendar year; a truncated
 long list; an out-of-scope field (state); a follow-up that filters an earlier Result.
 
+## Amendment: Board scenarios (2026-11-04, `../../SPEC.md` §18 slice 4 Part B, SC1)
+
+Status: **approved** with Part B (the user asked for it to be built, 2026-11-04). It times the
+Boards against §18's speed targets, with no model call. The Boards are the ones in the Dataset's
+`boards/` directory (for austender, drafted by the bootstrap and reviewed: ADR 0036).
+
+### Files
+
+| File | Change |
+|---|---|
+| `agent/scripts/scenarios.py` | a `boards` subcommand, `run_boards()`, `boards_report()` and their helpers. No dataset names |
+| `agent/tests/test_scenarios.py` | the tests below, with a fake agent and fake `act`. No model, network or database |
+| `docs/scenarios/<dataset>/boards-<stamp>.jsonl`, `boards-agent-<stamp>.log`, `boards-report-<stamp>.md` | output (committed after a live run, after the secret scan) |
+
+`effort_check.py` doesn't change.
+
+### Behaviour
+
+`uv run python scripts/scenarios.py boards [--runs 5] [--out DIR]`
+
+1. Refuse to start when the Dataset has no `boards/` directory or no Explorer Board.
+2. **Each run starts a fresh agent process**, so the Board cache is empty and every run measures
+   the same cold path. Wait for the warm-up log line, `board warm-up: board=explorer ms=<n>`. Its
+   `ms` is the run's **Explorer cold** time. Give up after 60 s, or when
+   `board warm-up failed` is logged. The run is recorded as `warmup_failed` and the next run goes
+   on.
+3. **Open the Explorer:** send `open_board` with `{board: "explorer"}` in a new Conversation, then
+   time it (**Explorer warm**). Read these from the reply:
+   - the Conversation ID;
+   - the Surface ID (`explorerLevel.surfaceId`);
+   - the instance ID (`explorerBoard.id`);
+   - the Controls (`explorerBoard.controls`);
+   - each `choice` Control's options, from its `ChoicePicker` component's `options`;
+   - the current values, from the `/controls` data model;
+   - the clickable Visuals, with their `action.boards` rows, from the raw components.
+4. **Before each click, wait for the prefetch to settle:** until the agent log has had no new
+   `board query:` line for 1 s, at most 10 s. That's the time a person takes to look before
+   clicking. It also keeps one click's follow-on prefetch out of the next click's evidence (refuter
+   round 1).
+5. **Entity Board clicks:** for each Visual with `action.boards`, in the reply's component order,
+   click its first `boards` row, then its last when that is a different row. Each click is `drill` with
+   `{source, row}` on the Explorer's Surface. Record per click:
+   - wall time and failure;
+   - the opened Board's name, matched from the tab title before " · " against the Dataset's Board
+     titles;
+   - `queries_run`: the `board query: board=<that name>` lines in the agent log between the
+     request and 0.2 s after the reply;
+   - `prefetched`: true when `queries_run` is 0. It comes from that evidence, not from which row
+     was expected to be prefetched. It is null for a failed click, because a rejected action runs
+     nothing.
+6. **Control changes:** for each `choice` Control, set each option in turn (up to 3, in option
+   order), then set it back to its starting value. Each change sends `controls` with
+   `{board, seq, values}`. `values` holds every Control in wire form: a choice's index, or null
+   for "All". `seq` counts up from 1. Record per change:
+   - wall time and failure;
+   - `superseded`;
+   - `queries_run`: the `board query: board=explorer` lines in the change's log slice;
+   - `cached`: true when `queries_run` is 0, and null for a failed change.
+   
+   Controls of other kinds are recorded as `skipped: <kind>`. They aren't timed.
+7. Stop the agent. Write one JSONL record per run (`run`, `started_at`, `explorer_cold_ms`,
+   `explorer_open`, `clicks`, `changes`, `warmup_failed`), then the report. Run the secret scan on
+   every file written, as `run` does, including when a run fails part-way.
+
+**The report** (`boards_report(records)`) has one row per measure: the count, median, p90, target,
+and `ok` / `miss` against the median. The p90 is shown, not judged.
+
+| Measure | Samples | Target (median) |
+|---|---|---|
+| Explorer warm | `explorer_open` | < 0.5 s |
+| Explorer cold | `explorer_cold_ms` | < 1.5 s |
+| Control change, not cached | changes with `cached` false | < 1.0 s |
+| Control change, cached | changes with `cached` true | < 1.0 s |
+| Entity Board, prefetched | clicks with `prefetched` true | < 0.3 s |
+| Entity Board, not prefetched | clicks with `prefetched` false | < 1.5 s |
+
+A measure with no samples shows "—". Failed actions are counted per measure and left out of the
+times. A failed click counts under "not prefetched", and a failed change under "not cached".
+
+§18's "Any Board, cold" is two rows: Explorer cold, and Entity Board not prefetched. With them in
+one row, the cheap Entity Board renders hid the Explorer's cold time behind the median (refuter
+round 1). `--runs` must be at least 1.
+
+### Criteria → tests
+
+All in `agent/tests/test_scenarios.py`. No model, network or database.
+
+| # | Criterion | Test |
+|---|---|---|
+| SC1a | One fresh agent per run, each stopped; the warm-up line's ms is `explorer_cold_ms`; a warm-up failure or timeout records `warmup_failed`, and the next run still goes | `test_boards_fresh_agent_per_run_and_warmup` |
+| SC1b | `open_board` is sent with `{board: "explorer"}` and no Conversation; the Surface, instance, Controls, options, values and `boards` Visuals are read from the reply | `test_boards_open_reads_the_reply` |
+| SC1c | Clicks: the first and last `boards` row of each such Visual, as `drill` `{source, row}` on the Explorer Surface in its Conversation; the opened Board's name from the tab title; `prefetched` from the log's `board query:` lines for that Board only | `test_boards_clicks_and_prefetch_evidence` |
+| SC1d | Control changes: each option up to 3, then back to the start; full wire `values` (index or null) and `seq` 1, 2, …; `cached` from the log; a non-`choice` Control is `skipped` | `test_boards_control_changes` |
+| SC1e | The report: per measure the count, median, p90, target and ok/miss; failed actions counted and left out of the times; "—" with no samples | `test_boards_report` |
+| SC1g | Refuter round 1: a failed click or change isn't classified (null) and counts under not prefetched or not cached; the prefetch settles before each click; a failed `open_board` records only the open; `--runs 0` is refused; Explorer cold is its own measure | `test_boards_failed_actions_are_not_counted_as_prefetched_or_cached`, `test_boards_settle_before_each_click`, `test_boards_failed_open_records_only_the_open`, `test_boards_runs_must_be_positive`, `test_boards_explorer_cold_is_its_own_measure` |
+| SC1f | A Dataset with no Boards is refused before an agent starts; a secret in the output fails the run after the files are written; a failure part-way still writes the report and stops the agent | `test_boards_refused_without_boards`, `test_boards_secret_scan_and_part_way_failure` |
+| BM | Manual: `boards --runs 5` against the real database, with the medians and p90s recorded in `../../SPEC.md` (B-M) | manual |
+
+### Decisions
+
+- **A fresh process per run**, not a cache flush. The agent has no flush hook, and a fresh
+  process is what a user meets after a deploy. Startup is a few seconds per run, and no model is
+  called.
+- **The prefetch evidence comes from the log** (no `board query:` line for that Board), not from
+  which row we expected to be prefetched. The agent has no "prefetched" flag for Entity Boards, and
+  this way a prefetch that lost its race is counted honestly.
+- **Explorer cold comes from the warm-up line**, since that render runs on the server with no
+  transport. A Board's cold time in §18 is the server's render.
+- **Only `choice` Controls are changed.** austender's Boards have only `choice`, and the other
+  kinds need their own value pickers. They're recorded as skipped, so a gap shows.
+- **Not scored and not a test.** It measures speed. Correctness of Board numbers is the startup
+  check's job (B1) and the reviewer's.
+- **B-M's typed question after a Control change** (it uses the Board's state, and the Board pair
+  adds prompt tokens) calls Spark. It is done by hand in the explorer, not in this script.
+
 ## Test command
 
 ```bash

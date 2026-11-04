@@ -672,3 +672,251 @@ def test_drill_summary_counts_model_calls_and_failures():
     assert (d["clicks"], d["click_model"], d["click_failed"]) == (3, 1, 1)
     assert d["click_median"] == pytest.approx(3.1) and d["rate"] is None
     assert (d["first_median"], d["last_median"]) == (0.2, 6.0)
+
+
+# --- SC1: Board scenarios (specs/scenarios/SPEC.md amendment 2026-11-04) -----------------------
+
+LOG_TS = "2026-11-04 01:00:00,001 INFO explorer_agent.boards: "
+TITLES = {"Explorer": "explorer", "Beta": "beta", "Alpha": "alpha"}
+
+
+class FakeBoardAgent:
+    """Appends to the shared log as the real agent does; `warmups` scripts each start's warm-up."""
+    instances: list = []
+    warmups: list = []
+
+    def __init__(self, level, log_path):
+        self.log_path, self.url, self.proc, self.stopped = log_path, "http://agent.test", None, False
+        FakeBoardAgent.instances.append(self)
+
+    def log(self, line):
+        with self.log_path.open("a") as f:
+            f.write(LOG_TS + line + "\n")
+
+    async def start(self):
+        w = FakeBoardAgent.warmups.pop(0) if FakeBoardAgent.warmups else 900
+        self.log("explorer: listening")
+        if w == "failed":
+            self.log("board warm-up failed: board=explorer")
+        elif w is not None:
+            self.log(f"board warm-up: board=explorer ms={w}")
+
+    def stop(self):
+        self.stopped = True
+
+
+def open_reply(controls=({"name": "mode", "kind": "choice"},), visuals=None, model=None):
+    comps = [{"id": "board_control_mode", "component": "ChoicePicker",
+              "options": [{"label": "All", "value": "all"}, {"label": "a", "value": "0"},
+                          {"label": "b", "value": "1"}, {"label": "c", "value": "2"}, {"label": "d", "value": "3"}]}]
+    comps += visuals if visuals is not None else [
+        {"id": "top", "component": "DataGrid", "action": {"source": "v2", "rows": [0, 1, 2], "boards": [0, 1, 2]}},
+        {"id": "share", "component": "VegaChart", "action": {"source": "v1", "rows": [0, 1], "drillable": False}},
+        {"id": "tm", "component": "VegaChart", "action": {"source": "v3", "rows": [4], "boards": [4]}},
+    ]
+    a2ui = [{"updateComponents": {"surfaceId": "turn-0-1-ab", "components": comps}},
+            {"updateDataModel": {"surfaceId": "turn-0-1-ab", "path": "/controls",
+                                 "value": model if model is not None else {"mode": ["all"], "on": True}}}]
+    return {"wall_s": 0.2, "failure": "none", "prose": "", "context_id": "ctx-1",
+            "metadata": {"explorerLevel": {"surfaceId": "turn-0-1-ab"}, "explorerModel": None,
+                         "explorerBoard": {"id": "b1", "controls": list(controls)}},
+            "surface": {"a2ui": a2ui}}
+
+
+def fake_boards(monkeypatch, *, open_result=None, prefetched_rows=(0,), fail_click=None):
+    """Fakes the agent, `open_board` and `act`. Board queries are logged for clicks on rows that
+    weren't prefetched and for Control values not seen before, as the real agent's cache would."""
+    sent: dict[str, list] = {"open": [], "act": []}
+    FakeBoardAgent.instances = []
+
+    async def fake_exchange(client, body):
+        sent["open"].append(body)
+        return open_result or open_reply()
+
+    async def fake_act(client, name, surface_id, component_id, context, context_id):
+        agent = FakeBoardAgent.instances[-1]
+        sent["act"].append((name, surface_id, component_id, context, context_id))
+        if name == "drill":
+            board = "alpha" if context["source"] == "v3" else "beta"
+            agent.log("board query: board=explorer query=noise rows=1 ms=1")  # another Board's line
+            if context["row"] not in prefetched_rows:
+                agent.log(f"board query: board={board} query=totals rows=1 ms=40")
+            failed = fail_click == (context["source"], context["row"])
+            return {"wall_s": 0.9 if context["row"] not in prefetched_rows else 0.1,
+                    "failure": "action_failed" if failed else "none",
+                    "metadata": {"explorerTab": {"title": f"{board.title()} · Row {context['row']}"}}}
+        seen = agent.__dict__.setdefault("seen", {None})
+        value = context["values"]["mode"]
+        if value not in seen:
+            seen.add(value)
+            agent.log("board query: board=explorer query=totals rows=1 ms=500")
+        return {"wall_s": 0.6 if value is not None else 0.05, "failure": "none", "metadata": {}}
+
+    monkeypatch.setattr(ec, "Agent", FakeBoardAgent)
+    monkeypatch.setattr(ec, "_exchange", fake_exchange)
+    monkeypatch.setattr(ec, "act", fake_act)
+    monkeypatch.setattr(ec, "secret_values", lambda *a: ["sekrit-value"])
+    for name, value in (("WARMUP_TIMEOUT_S", 0.3), ("POLL_S", 0.01), ("PREFETCH_QUIET_S", 0.05),
+                        ("PREFETCH_MAX_S", 0.3), ("BOARD_LOG_SETTLE_S", 0)):
+        monkeypatch.setattr(sc, name, value)
+    return sent
+
+
+async def test_boards_fresh_agent_per_run_and_warmup(tmp_path, monkeypatch):
+    fake_boards(monkeypatch)
+    FakeBoardAgent.warmups = [1100, "failed", None, 950]
+    records = sc.read_records(await sc.run_boards(TITLES, 4, tmp_path))
+    assert len(FakeBoardAgent.instances) == 4 and all(a.stopped for a in FakeBoardAgent.instances)
+    assert [r["explorer_cold_ms"] for r in records] == [1100, None, None, 950]
+    assert [r["warmup_failed"] for r in records] == [False, True, True, False]
+    assert records[1]["explorer_open"] is None and records[3]["explorer_open"]["failure"] == "none"
+
+
+async def test_boards_open_reads_the_reply(tmp_path, monkeypatch):
+    sent = fake_boards(monkeypatch)
+    await sc.run_boards(TITLES, 1, tmp_path)
+    (body,) = sent["open"]
+    message = body["params"]["message"]
+    assert "contextId" not in message
+    action = message["parts"][0]["data"]["action"]
+    assert action["name"] == "open_board" and action["context"] == {"board": "explorer"}
+
+    controls = ({"name": "mode", "kind": "choice"}, {"name": "on", "kind": "toggle"})
+    opened = sc.read_open(open_reply(controls=controls))
+    assert opened["context_id"] == "ctx-1" and opened["surface_id"] == "turn-0-1-ab" and opened["board"] == "b1"
+    assert opened["options"] == {"mode": [0, 1, 2, 3]}
+    assert opened["values"] == {"mode": None, "on": True}
+    assert [(v["id"], v["source"], v["boards"]) for v in opened["visuals"]] == [("top", "v2", [0, 1, 2]), ("tm", "v3", [4])]
+    assert sc.read_open(open_reply(model={"mode": ["2"]}))["values"] == {"mode": 2}
+    assert [sc.wire_value(k, v) for k, v in (("choice", []), ("multi", ["1", "3"]), ("date", ""), ("number", 4))] \
+        == [None, [1, 3], None, 4]
+
+
+async def test_boards_clicks_and_prefetch_evidence(tmp_path, monkeypatch):
+    sent = fake_boards(monkeypatch, prefetched_rows=(0, 4))
+    (record,) = sc.read_records(await sc.run_boards(TITLES, 1, tmp_path))
+    drills = [a for a in sent["act"] if a[0] == "drill"]
+    assert [(a[2], a[3]) for a in drills] == [("top", {"source": "v2", "row": 0}), ("top", {"source": "v2", "row": 2}),
+                                              ("tm", {"source": "v3", "row": 4})]
+    assert all(a[1] == "turn-0-1-ab" and a[4] == "ctx-1" for a in drills)
+    clicks = record["clicks"]
+    assert [(c["click"], c["board"], c["queries_run"], c["prefetched"]) for c in clicks] == [
+        ("first", "beta", 0, True), ("last", "beta", 1, False), ("first", "alpha", 0, True)]
+    assert sc.board_name("Nobody · x", TITLES) is None
+
+
+async def test_boards_control_changes(tmp_path, monkeypatch):
+    controls = ({"name": "mode", "kind": "choice"}, {"name": "on", "kind": "toggle"})
+    sent = fake_boards(monkeypatch, open_result=open_reply(controls=controls, visuals=[]))
+    (record,) = sc.read_records(await sc.run_boards(TITLES, 1, tmp_path))
+    changes = [a[3] for a in sent["act"] if a[0] == "controls"]
+    assert [c["seq"] for c in changes] == [1, 2, 3, 4]
+    assert [c["values"] for c in changes] == [{"mode": 0, "on": True}, {"mode": 1, "on": True},
+                                             {"mode": 2, "on": True}, {"mode": None, "on": True}]
+    assert all(c["board"] == "b1" for c in changes)
+    assert all(a[1:3] == ("turn-0-1-ab", "board_controls") for a in sent["act"] if a[0] == "controls")
+    timed = [ch for ch in record["changes"] if "skipped" not in ch]
+    assert [(ch["value"], ch["cached"]) for ch in timed] == [(0, False), (1, False), (2, False), (None, True)]
+    assert {"control": "on", "skipped": "toggle"} in record["changes"]
+
+    # a Control that starts at an option skips it, then returns to it
+    fake_boards(monkeypatch, open_result=open_reply(visuals=[], model={"mode": ["1"]}))
+    opened = sc.read_open(open_reply(visuals=[], model={"mode": ["1"]}))
+    FakeBoardAgent.instances = [FakeBoardAgent("minimal", tmp_path / "x.log")]
+    (tmp_path / "x.log").write_text("")
+    out = await sc.control_changes(None, opened, tmp_path / "x.log")
+    assert [ch["value"] for ch in out] == [0, 2, 3, 1]
+
+
+def test_boards_report():
+    records = [
+        {"run": 1, "warmup_failed": False, "explorer_cold_ms": 1200, "explorer_open": {"wall_s": 0.2, "failure": "none"},
+         "clicks": [{"wall_s": 0.1, "failure": "none", "prefetched": True},
+                    {"wall_s": 0.9, "failure": "none", "prefetched": False},
+                    {"wall_s": 5.0, "failure": "action_failed", "prefetched": False}],
+         "changes": [{"control": "m", "wall_s": 1.4, "failure": "none", "cached": False},
+                     {"control": "m", "wall_s": 0.05, "failure": "none", "cached": True},
+                     {"control": "on", "skipped": "toggle"}]},
+        {"run": 2, "warmup_failed": True, "explorer_cold_ms": None, "explorer_open": None, "clicks": [], "changes": []},
+    ]
+    samples = sc.board_samples(records)
+    assert samples["Explorer cold"] == ([1.2], 0)
+    assert samples["Entity Board, not prefetched"] == ([0.9], 1)
+    text = sc.boards_report(records)
+    assert "warm-up failed in 1" in text and "on (toggle)" in text
+    assert "| Explorer warm | 1 | 0.20 s | 0.20 s | < 0.5 s | 0 | ok |" in text
+    assert "| Control change, not cached | 1 | 1.40 s | 1.40 s | < 1.0 s | 0 | miss |" in text
+    assert "| Entity Board, not prefetched | 1 | 0.90 s | 0.90 s | < 1.5 s | 1 | ok |" in text
+    assert "| Explorer cold | 1 | 1.20 s |" in text
+    assert "| Entity Board, prefetched | 1 | 0.10 s |" in text
+    assert "| Explorer warm | 0 | — | — | < 0.5 s | 0 | — |" in sc.boards_report([records[1]])
+
+
+def test_boards_refused_without_boards():
+    with pytest.raises(SystemExit, match="no Explorer Board"):
+        sc.board_titles("d", {})
+    with pytest.raises(SystemExit, match="no Explorer Board"):
+        sc.board_titles("d", {"beta": object()})
+
+
+async def test_boards_secret_scan_and_part_way_failure(tmp_path, monkeypatch):
+    fake_boards(monkeypatch)
+    FakeBoardAgent.warmups = ["sekrit-value-in-log"]  # lands in the agent log: no ms, so a timeout
+    with pytest.raises(SystemExit, match="secret found"):
+        await sc.run_boards(TITLES, 1, tmp_path / "a")
+    assert list((tmp_path / "a").glob("boards-report-*.md"))  # written, then scanned
+
+    fake_boards(monkeypatch)
+    real_act = ec.act
+
+    async def boom_on_second_run(*a):
+        if len(FakeBoardAgent.instances) == 2:
+            raise RuntimeError("boom")
+        return await real_act(*a)
+    monkeypatch.setattr(ec, "act", boom_on_second_run)
+    with pytest.raises(RuntimeError, match="boom"):
+        await sc.run_boards(TITLES, 3, tmp_path / "b")
+    (report_file,) = (tmp_path / "b").glob("boards-report-*.md")
+    assert "Runs: 1," in report_file.read_text()  # the finished run is still reported
+    assert all(a.stopped for a in FakeBoardAgent.instances)
+
+
+async def test_boards_failed_actions_are_not_counted_as_prefetched_or_cached(tmp_path, monkeypatch):
+    fake_boards(monkeypatch, prefetched_rows=(0, 4), fail_click=("v3", 4))
+    (record,) = sc.read_records(await sc.run_boards(TITLES, 1, tmp_path))
+    failed = next(c for c in record["clicks"] if c["failure"] != "none")
+    assert failed["prefetched"] is None
+    samples = sc.board_samples([record])
+    assert samples["Entity Board, prefetched"][1] == 0 and samples["Entity Board, not prefetched"][1] == 1
+    assert sc.board_samples([{"changes": [{"control": "m", "wall_s": 3, "failure": "action_failed", "cached": None}]}]
+                            )["Control change, not cached"] == ([], 1)
+
+
+async def test_boards_settle_before_each_click(tmp_path, monkeypatch):
+    fake_boards(monkeypatch)
+    settles = []
+
+    async def counting_settle(log_path):
+        settles.append(1)
+    monkeypatch.setattr(sc, "settle_prefetch", counting_settle)
+    (record,) = sc.read_records(await sc.run_boards(TITLES, 1, tmp_path))
+    assert len(settles) == len(record["clicks"]) == 3
+
+
+async def test_boards_failed_open_records_only_the_open(tmp_path, monkeypatch):
+    sent = fake_boards(monkeypatch, open_result={**open_reply(), "failure": "action_failed"})
+    (record,) = sc.read_records(await sc.run_boards(TITLES, 1, tmp_path))
+    assert record["explorer_open"]["failure"] == "action_failed"
+    assert record["clicks"] == [] and record["changes"] == [] and sent["act"] == []
+    assert "| Explorer warm | 0 | — | — | < 0.5 s | 1 | — |" in sc.boards_report([record])
+
+
+def test_boards_runs_must_be_positive():
+    with pytest.raises(SystemExit):
+        sc.main(["boards", "--runs", "0"])
+
+
+def test_boards_explorer_cold_is_its_own_measure():
+    rec = {"explorer_cold_ms": 1200, "clicks": [{"wall_s": 0.1, "failure": "none", "prefetched": False}]}
+    samples = sc.board_samples([rec])
+    assert samples["Explorer cold"] == ([1.2], 0) and samples["Entity Board, not prefetched"] == ([0.1], 0)
