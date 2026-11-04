@@ -1,8 +1,9 @@
 # Board drafting in the bootstrap tool (SPEC §18 slice 4)
 
-Status: **draft, awaiting review** (2026-11-04). Nothing here is built. When it's approved, it
-becomes phase 3 of `bootstrap/SPEC.md`. It's written here because another session had
-uncommitted edits in `bootstrap/*` on 2026-11-04. Where this file is silent, `explorer/SPEC.md`
+Status: **superseded** (2026-11-04). Approved and moved to `bootstrap/SPEC.md` phase 3, which is
+the source of truth. This file is kept as the reviewed draft, and its two open questions were
+answered there (the model picks the entities; 3 Entity Boards). It was written here because another
+session had uncommitted edits in `bootstrap/*` on 2026-11-04. Where this file is silent, `explorer/SPEC.md`
 §18 and `bootstrap/SPEC.md` (phases 1–2c, plus that session's S10, S11, U6, D8 and E5) apply.
 
 Decision: ADR 0032 (proposed). Board drafting is a second Wonder loop with its own tool, run

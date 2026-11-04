@@ -1,4 +1,4 @@
-"""CLI: `python -m explorer_bootstrap {report,draft,verify,export} ...` (SPEC.md)."""
+"""CLI: `python -m explorer_bootstrap {report,draft,verify,boards,export,serve} ...` (SPEC.md)."""
 
 from __future__ import annotations
 
@@ -19,9 +19,10 @@ from psycopg_pool import PoolTimeout
 from explorer_agent.config import SCHEMA_NAME, ConfigError, load_dataset
 from explorer_agent.sql import SqlRunner
 
+from explorer_bootstrap.boards import BOARDS_VERSION, board_files_problems, boards_runner, boards_state, check_boards, run_boards
 from explorer_bootstrap.claims import export_blockers, verify_claims
 from explorer_bootstrap.draft import Completion, DraftError, run_draft
-from explorer_bootstrap.drafts import DraftFileError, draft_json, load_draft, new_draft, validate_files
+from explorer_bootstrap.drafts import DraftFileError, draft_dataset, draft_json, load_draft, new_draft, validate_files
 from explorer_bootstrap.export import ExportError, export_dataset
 from explorer_bootstrap.report import OverlayDriftError, build_report, render_text
 from explorer_bootstrap.settings import SettingsError, load_draft_settings
@@ -68,8 +69,17 @@ def _parser() -> argparse.ArgumentParser:
     v.add_argument("--draft", type=Path, required=True)
     v.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
 
+    b = sub.add_parser("boards", help="draft, check and preview Boards for a draft (phase 3)")
+    b.add_argument("--draft", type=Path, required=True)
+    b.add_argument("--out", type=Path, required=True, help="where to write boards.json")
+    b.add_argument("--model", help="meta/muse-wonder-1.0 (default) or meta/muse-spark-1.3")
+    b.add_argument("--effort", help="reasoning effort (default low)")
+    b.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
+
     e = sub.add_parser("export", help="write a reviewed draft to a dataset directory")
     e.add_argument("--draft", type=Path, required=True)
+    e.add_argument("--boards", type=Path, help="boards.json from `boards`: re-checked, then written to boards/")
+    e.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per Board check query (default 5000)")
     e.add_argument("--name", required=True, help="the dataset directory's name")
     e.add_argument("--target", required=True, choices=("toml", "sql"), help="comments.toml (overlay) or comments.sql")
     e.add_argument("--force", action="store_true",
@@ -201,6 +211,8 @@ def _print_event(event: dict) -> None:
                          f"{u['completion_tokens']} completion, ${u['cost_usd']:.4f}\n")
     elif event["type"] == "invalid_draft":
         sys.stdout.write(f"  draft rejected ({len(event['problems'])} problems); the model is fixing it\n")
+    elif event["type"] == "invalid_boards":
+        sys.stdout.write(f"  Boards rejected ({len(event['problems'])} problems); the model is fixing them\n")
     sys.stdout.flush()
 
 
@@ -265,10 +277,94 @@ async def _verify(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     return EXIT_OK
 
 
-def _export(args: argparse.Namespace) -> int:
+def _load_boards(path: Path) -> list[dict]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as e:
+        raise _Fatal(f"cannot read {path}: {e.strerror}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise _Fatal(f"{path} is not valid JSON: {e}") from None
+    if not isinstance(data, dict) or data.get("boards_version") != BOARDS_VERSION:
+        raise _Fatal(f"{path} is not a version {BOARDS_VERSION} boards file")
+    problems = board_files_problems(data.get("boards"))
+    if problems:
+        raise _Fatal(f"{path}: {'; '.join(problems)}")
+    return data["boards"]
+
+
+def _print_preview(state: dict) -> None:
+    for name, b in state["preview"].items():
+        if "skipped" in b:
+            sys.stdout.write(f"  {name}: {b['skipped']}\n")
+            continue
+        if "error" in b:
+            sys.stdout.write(f"  {name}: {b['error']}\n")
+            continue
+        verdicts = ", ".join(f"{v['id']} {v['verdict']}" for v in b["visuals"])
+        key = f" (key from {b['key']['source']})" if b["key"] else ""
+        sys.stdout.write(f"  {name}{key}: {b['seconds']:.2f} s cold, {b['verdict']} (target < {b['target_s']} s); {verdicts}\n")
+        for q, r in b["queries"].items():
+            line = r["error"] if "error" in r else f"{r['rows']} rows{' (truncated)' if r['truncated'] else ''}"
+            sys.stdout.write(f"    {q}: {line}, {r['ms']} ms\n")
+
+
+async def _boards(args: argparse.Namespace, env: Mapping[str, str]) -> int:
+    if args.timeout_ms <= 0:
+        raise _Fatal("--timeout-ms must be positive")
+    try:
+        settings = load_draft_settings(env, model=args.model, effort=args.effort)
+    except SettingsError as e:
+        raise _Fatal(str(e)) from None
     draft = _load(args.draft)
     try:
-        result = export_dataset(draft, args.name, args.target, args.root, force=args.force)
+        dataset = draft_dataset(draft)
+    except DraftFileError as e:
+        raise _Fatal(f"the draft's files don't validate: {e}") from None
+    pool, _ = await _open(env, args.timeout_ms)
+    try:
+        runner = boards_runner(pool, dataset, args.timeout_ms, settings.sql_row_cap)
+        sys.stdout.write(f"Drafting Boards with {settings.model} (effort {settings.effort})\n")
+        try:
+            result = await run_boards(draft, runner, settings, completion=COMPLETION, on_event=_print_event)
+        except DraftError as e:
+            raise _Fatal(str(e)) from None
+        state = await boards_state(result.files, result.check, dataset, runner, draft["report"], settings, result.usage)
+    finally:
+        await pool.close()
+    _write(args.out, json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n")
+    sys.stdout.write("\nPreview (one cold render each):\n")
+    _print_preview(state)
+    t = result.usage["totals"]
+    sys.stdout.write(f"\nUsage: {t['calls']} calls, {t['prompt_tokens']} prompt ({t['cached_tokens']} cached), "
+                     f"{t['completion_tokens']} completion tokens, ${t['cost_usd']:.4f}\n")
+    sys.stdout.write(f"Boards written to {args.out}\n")
+    return EXIT_OK
+
+
+async def _export(args: argparse.Namespace, env: Mapping[str, str]) -> int:
+    draft = _load(args.draft)
+    boards, board_problems = None, []
+    if args.boards is not None:
+        if args.timeout_ms <= 0:
+            raise _Fatal("--timeout-ms must be positive")
+        boards = _load_boards(args.boards)
+        try:
+            settings = load_draft_settings(env)
+            dataset = draft_dataset(draft)
+        except SettingsError as e:
+            raise _Fatal(str(e)) from None
+        except DraftFileError:
+            dataset = None  # export_dataset refuses with the files' own errors
+        if dataset is not None:
+            pool, _ = await _open(env, args.timeout_ms)
+            try:
+                runner = boards_runner(pool, dataset, args.timeout_ms, settings.sql_row_cap)
+                board_problems = (await check_boards(boards, dataset, runner, settings.max_entity_boards)).flat()
+            finally:
+                await pool.close()
+    try:
+        result = export_dataset(draft, args.name, args.target, args.root, force=args.force,
+                                boards=boards, board_problems=board_problems)
     except ExportError as e:
         sys.stdout.write("Export refused:\n" + "".join(f"  {r}\n" for r in e.reasons))
         return EXIT_CHECK_FAILED
@@ -316,9 +412,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     env_file = Path(os.environ.get("BOOTSTRAP_ENV_FILE") or ENV_FILE)
     load_dotenv(env_file, override=False)
     try:
-        if args.command == "export":
-            return _export(args)
-        command = {"report": _report, "draft": _draft, "verify": _verify, "serve": _serve}[args.command]
+        command = {"report": _report, "draft": _draft, "verify": _verify, "boards": _boards, "export": _export,
+                   "serve": _serve}[args.command]
         return asyncio.run(command(args, os.environ))
     except _Fatal as e:
         sys.stderr.write(f"error: {e}\n")

@@ -1456,7 +1456,7 @@ Built in order, tests first, each a commit of its own:
 | 1b | Tabs and the investigation log in the client, replacing the Breadcrumb | none |
 | 2 | Controls: re-query in place; Control state to the model | none |
 | 3 | Entity Boards opened by a row click; `Timeline` | none |
-| 4 | The bootstrap tool drafts and previews Boards from the templates in `bootstrap/templates/`, for any database (a phase 3 in `bootstrap/SPEC.md`; drafted in `specs/board-drafting/SPEC.md`, awaiting review, ADR 0032 proposed). This is where austender gets its first Boards | Wonder, offline |
+| 4 | The bootstrap tool drafts and previews Boards from the templates in `bootstrap/templates/`, for any database (a phase 3 in `bootstrap/SPEC.md`; specified in `bootstrap/SPEC.md` phase 3, approved 2026-11-04, ADR 0032). This is where austender gets its first Boards | Wonder, offline |
 | 5 | Runtime fill-in (an Ask that has Wonder draft an entity Board); the A/B run for the answer model | Wonder (ADR 0030 accepted 2026-11-04); built after slice 4 |
 
 Slices 4 and 5 get their own detailed amendments. This section fixes their shape only.

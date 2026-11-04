@@ -12,7 +12,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from explorer_agent.config import CommentOverlay, ConfigError, OverlayEntry, load_dataset
+from explorer_agent.config import CommentOverlay, ConfigError, Dataset, OverlayEntry, load_dataset
 from explorer_agent.prompt import dataset_context
 from explorer_agent.schema import ColumnInfo, TableInfo, apply_overlay, render_schema_section
 
@@ -161,7 +161,24 @@ def validate_files(draft: dict[str, Any]) -> dict[str, Any]:
             dataset = None
     if errors or dataset is None:
         return {"errors": errors, "context_chars": None}
+    return {"errors": [], "context_chars": len(dataset_context(dataset, schema_section(draft, dataset)))}
+
+
+def schema_section(draft: dict[str, Any], dataset: Dataset) -> str:
+    """The Dataset context's schema section: the reported allowed objects with accepted comments."""
     allowed = set(dataset.allowed_schemas)
     tables = [t for t in report_tables(draft["report"]) if t.schema in allowed]
-    section = render_schema_section(apply_overlay(tables, accepted_overlay(draft)))
-    return {"errors": [], "context_chars": len(dataset_context(dataset, section))}
+    return render_schema_section(apply_overlay(tables, accepted_overlay(draft)))
+
+
+def draft_dataset(draft: dict[str, Any]) -> Dataset:
+    """The Dataset the drafted files describe (phase 3: Boards are drafted and checked against it).
+    Raises DraftFileError with the validation errors when the files don't validate."""
+    errors = validate_files(draft)["errors"]
+    if errors:
+        raise DraftFileError("; ".join(errors))
+    with tempfile.TemporaryDirectory(prefix="bootstrap-dataset-") as tmp:
+        d = Path(tmp)
+        for key, name in FILE_NAMES.items():
+            (d / name).write_text(draft["files"][key], encoding="utf-8")
+        return load_dataset(d)

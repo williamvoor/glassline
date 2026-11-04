@@ -1,6 +1,6 @@
 # Dataset bootstrap: spec
 
-Status: phase 1, 2a, 2b and 2c **approved** (2026-11-02). Still open from the brief: the live
+Status: phase 1, 2a, 2b and 2c **approved** (2026-11-02); phase 3 (Boards) **approved** (2026-11-04). Still open from the brief: the live
 run against `vicprop/`. Related ADRs: 0019 (Comment overlay), 0020 (Muse
 Wonder only here), 0010 (tests build their database with the austender package). Terms follow
 `CONTEXT.md` (Dataset, Data dictionary, Comment overlay, Allowed schema, Dataset context).
@@ -547,6 +547,235 @@ visible `:focus-visible` outline. Real `<table>` markup with `<th scope>`.
 ### Test command
 
 ```bash
+cd explorer/bootstrap/server && uv run pytest     # Docker; no network, no model
+cd explorer/bootstrap/ui && npm test && npm run build
+```
+
+## Phase 3: Boards (explorer SPEC §18 slice 4)
+
+Status: **approved** (2026-11-04). The user answered the draft's two open questions and asked for
+it to be built. It was drafted as `explorer/specs/board-drafting/SPEC.md`, which now points here.
+Decision: ADR 0032 (a second Wonder loop, with TOML checked by the agent's own code). Where this
+phase is silent, explorer `SPEC.md` §18 and phases 1–2c apply.
+
+ADR 0028 says Boards are written with the Dataset, drafted here and reviewed by a person. Slices
+1a–3 built the runtime. This phase makes the bootstrap draft, check and preview
+`datasets/<name>/boards/*.toml` for any database.
+
+It's built in two parts:
+- **Part A** (this build): templates, the loop, checks, preview, server, UI, export and CLI.
+- **Part B** (after the live run): Board scenarios in `agent/scripts/scenarios.py` (SC1), and the
+  manual run that drafts austender's Boards and measures B-M (BM). Part B needs real Boards to
+  time, and the live run needs the user's OK first.
+
+### Files
+
+| File | Change |
+|---|---|
+| `templates/explorer.toml` | an optional `[[controls]]` slot block, commented out |
+| `templates/entity.toml` (new) | the Entity Board template |
+| `templates/controls.md` (new) | guidance for the model, not a file the agent loads: which Control kinds suit which columns, the typed-NULL "All" idiom, and that option queries take no placeholders |
+| `server/src/explorer_bootstrap/draft.py` | the loop body moves into `tool_loop()`, shared by both loops. `run_draft` behaves as before |
+| `server/src/explorer_bootstrap/boards.py` (new) | prompt, `submit_boards` schema and validation, `run_boards`, `check_boards`, `preview_boards`, `estimate_boards` |
+| `server/src/explorer_bootstrap/prompts/boards.md` (new) | generic instructions for the Boards loop |
+| `server/src/explorer_bootstrap/drafts.py` | `draft_dataset(draft)`: the drafted Dataset and its schema section, shared by `validate_files` and Boards |
+| `server/src/explorer_bootstrap/settings.py`, `explorer/.env.example` | `BOOTSTRAP_MAX_ENTITY_BOARDS`, `BOOTSTRAP_BOARD_PREVIEW_ROWS` |
+| `server/src/explorer_bootstrap/server.py` | the Boards endpoints, and Boards in state |
+| `server/src/explorer_bootstrap/export.py` | `boards/` written, and replaced whole under `force` |
+| `server/src/explorer_bootstrap/__main__.py` | `boards` subcommand; `export --boards` |
+| `ui/src/boards.ts` (new), `app.ts`, `api.ts`, `types.ts`, `review.ts` | the Boards step, and Board problems as an export blocker |
+| `agent/src/explorer_agent/boards.py` | `check_board_set()` (the set rules, out of `load_boards`), `BOARD_FILE_RULES`, and an optional `on_query` hook on `BoardRenderer` |
+
+### Templates
+
+- **`explorer.toml`** keeps its shape. It gains a commented `[[controls]]` block (a `choice` with
+  `type`, `options_sql`, `all_label` and `default` slots) and a comment saying that every Control
+  must be used as `:<name>` by a query.
+- **`entity.toml`**: `title`, `question`, `scope`, `key`, `key_type` and `key_columns` slots, all
+  before `[[queries]]`. The `scope` slot says the Board isn't limited to the clicked answer's
+  filters. Its layout has 2–3 Metrics on a totals query, a `Timeline` or `LineChart` trend, and a
+  top-N `DataTable`. Every query is filtered by `:<key>`.
+- No SQL and no dataset words in the `.toml` templates. `controls.md` is guidance, so it shows
+  generic SQL idioms (the typed-NULL "All" filter) but names no dataset (amended after refuter
+  round 1).
+
+### The Boards loop (`run_boards(draft, runner, settings, *, completion, on_event)`)
+
+- **Needs** a draft whose files validate (`validate_files` with no errors). The Dataset is read
+  from the drafted files (`draft_dataset`), not from disk.
+- **Same loop as the draft** (`tool_loop`): LiteLLM `acompletion`, `BOOTSTRAP_MODEL`,
+  `reasoning_effort`, `max_tokens`, `num_retries: 0`, the nudge, the iteration cap
+  (`DraftError`), usage and cost per call, and `on_event` events. The tools are `run_sql` (on the
+  Dataset's `allowed_schemas`) and `submit_boards`. `prompt_cache_key` is
+  `bootstrap-boards-<dataset name>`.
+- **The system prompt**, in this order, is byte-identical for the same draft:
+  1. the A2UI Express rules and inference catalog, from the agent's `UiPipeline` format, so the
+     Macro signatures are the agent's own;
+  2. `prompts/boards.md`;
+  3. `BOARD_FILE_RULES`;
+  4. the three templates, each under its file name;
+  5. the drafted Dataset context (`dataset_context`, with the accepted comments applied);
+  6. the setting `BOOTSTRAP_MAX_ENTITY_BOARDS`, as "Draft at most N Entity Boards".
+- **The model picks the entities** (the user, 2026-11-04): key-like columns, meaning identifier
+  columns that appear in several tables or views. Each Board carries a one-line `why` for the
+  reviewer.
+- **`submit_boards`** (ADR 0023: no `oneOf`, `additionalProperties: false`, every key required):
+  `{boards: [{name, toml, why}]}`. `name` is the file stem and `toml` is the whole file.
+- **Checks on submit** (`check_boards(files, dataset, runner, max_entity_boards)`) go through the agent's code, so a
+  Board that passes here passes the agent's startup check:
+  - each name matches `[a-z_][a-z0-9_]*` and appears once;
+  - `parse_board(toml, Path("boards/<name>.toml"), dataset.allowed_schemas)`. The guard keeps
+    every query inside the allowed schemas;
+  - `check_board_set`: `explorer` is present, it has no key, `key_columns` don't overlap, and
+    there are at most `BOOTSTRAP_MAX_ENTITY_BOARDS` Entity Boards;
+  - `check_board` on each parsed Board, through a `UiPipeline` built from the drafted Dataset
+    (currency, allowed schemas) and the submitted set's `entity_columns` and key types.
+  - The result is a problem list per Board (the agent stops at a Board's first problem, so that
+    is one per Board), plus set problems. Any problem goes back as the tool error and the loop
+    continues. A clean submit ends the loop.
+
+### Preview (`preview_boards(check, dataset, runner, report, preview_rows)`, no model)
+
+- One cold render per accepted Board: `BoardRenderer.outcomes(fresh=True)` at its default
+  Controls, then `build_board`. It uses the agent's defaults (`BOARD_QUERY_CONCURRENCY` 2,
+  `BOARD_ROW_CAP` 500, the server's SQL timeout).
+- **An Entity Board's sample key** comes from the first reported table or view (in report order,
+  within the allowed schemas) that has a column named in its `key_columns`:
+  `SELECT "<col>" FROM "<schema>"."<table>" WHERE "<col>" IS NOT NULL LIMIT 1`. If no reported
+  object has such a column, the preview says "no sample key" and skips the render. That isn't a
+  problem: key columns can be aliases.
+- **It reports:**
+  - per query: rows, truncated, ms (through the new `on_query` hook), and the first
+    `BOOTSTRAP_BOARD_PREVIEW_ROWS` rows as text;
+  - per Visual (a Macro call in the layout, by its layout ID): the Macro, its query, and `drawn`,
+    `no_rows` (the panel holds the "No rows" text) or `failed` (a failed query's Card, or "couldn't
+    be drawn");
+  - the total seconds, against `BOARD_COLD_TARGET_S` (1.5), as `ok` or `slow`.
+- The preview informs the reviewer but never blocks export: a "No rows" panel can be right. It
+  shows no A2UI. The reviewer opens the exported Dataset with `./run.sh --real` before committing.
+
+### Server
+
+- **State:** `boards` beside `draft`: `{boards: [{name, toml, why}], problems: {name: [..]},
+  set_problems: [..], preview, usage}`. It's lost on restart, as the draft is. A new dataset draft
+  clears it. One run at a time across both loops (the shared `state.run`).
+
+| Route | Does |
+|---|---|
+| `POST /api/boards/estimate` `{model, effort}` | the Boards prompt's estimate, as `/api/estimate` gives for the draft; 404 without a draft |
+| `POST /api/boards/draft` `{model, effort}` | starts the Boards loop → `{run_id}`; 404 without a draft; 400 when the draft's files have errors (`reasons`); 409 while any run is going |
+| `GET /api/draft/{id}/events` | as before. When a Boards run is done, it gives `boards` (the state above) instead of `draft` |
+| `GET /api/boards` | the Boards state, or 404 |
+| `POST /api/boards/validate` `{boards: [{name, toml, why}]}` | stores the edits, re-checks and re-previews, and returns the state; 404 without Boards; 400 for a malformed body |
+
+- `POST /api/export` re-checks the stored Boards against the current files before exporting, so an
+  edit to `allowed_schemas` can't slip a stale Board through.
+
+### Export
+
+- `export_dataset(..., boards=None)` takes the Boards as `[{name, toml}]` together with their
+  problems. It refuses (with the reasons) when any Board or the set has problems.
+- A new directory gets `boards/<name>.toml` beside the other files, inside the same temporary
+  sibling directory, so a failure leaves nothing.
+- **With `force` and an existing directory:** an existing `boards/` is replaced whole (temp
+  sibling, then rename), and the old one is copied to the backup as `boards/`. A Board left out of
+  the new set must not linger. Without Boards in the draft, an existing `boards/` is left alone.
+- The exported directory loads with the agent's `load_dataset`, Boards included.
+
+### CLI
+
+```
+uv run python -m explorer_bootstrap boards --draft draft.json --out boards.json [--model M] [--effort E]
+uv run python -m explorer_bootstrap export --draft draft.json --name N --target toml|sql [--boards boards.json] [--force]
+```
+
+- `boards` runs the loop, checks, previews, writes `boards.json` (`{boards_version: 1, boards,
+  problems, set_problems, preview, usage}`), and prints the preview. Its exit codes are those of
+  `draft`. The stub model comes through `COMPLETION`.
+- `export --boards` re-checks `boards.json` against the draft's files and writes the Boards.
+
+### UI
+
+- A **Boards** step after Review: Connect · Report · Review · Boards. Review gets a "Boards"
+  button.
+- The Boards step has:
+  - the estimate (at the model and effort picked on the Report screen), then "Draft Boards";
+  - while drafting, the same progress list as the draft;
+  - one tab per Board, each with a monospace `<textarea>`, its `why` line, its problems, and the
+    preview: per query a `<table>` of the first rows with rows and ms, per Visual its verdict,
+    and the cold time against 1.5 s;
+  - set problems above the tabs;
+  - re-validation 400 ms after the last edit, where a reply older than the latest is ignored;
+  - "Back to Review".
+- **Export** stays on Review. Its blockers gain "a Board has problems" when the server holds
+  Boards.
+
+### Settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BOOTSTRAP_MAX_ENTITY_BOARDS` | `3` | Entity Boards per draft (the user, 2026-11-04) |
+| `BOOTSTRAP_BOARD_PREVIEW_ROWS` | `5` | Rows per query shown in the preview |
+
+### Criteria → tests
+
+`(db)` needs Docker. Part B's rows are listed but not built in Part A.
+
+| # | Criterion | Test |
+|---|---|---|
+| T1 | Each template is valid TOML with its top-level keys before `[[queries]]`, holds no SQL and no dataset words, and loads and passes `check_board` once its slots are filled. That covers `entity.toml`, and `explorer.toml` with its `[[controls]]` block uncommented | `agent/tests/test_boards.py` (B22 extended) |
+| T2 | `check_board_set`: no `explorer`, a keyed `explorer` and overlapping `key_columns` each raise naming the file; `load_boards` still raises the same messages | `agent/tests/test_boards.py` |
+| T3 | `BOARD_FILE_RULES` names every key in `KEYS`, every Control kind and `MAX_BOARD_QUERIES`; `on_query` gets each query's name, ms and outcome | `agent/tests/test_boards.py` |
+| D9 | The Boards prompt holds the six parts in order; it's byte-identical for the same draft and different for a different max; the rules text is `BOARD_FILE_RULES` itself; `run_draft`'s tests D1–D5 still pass on `tool_loop` | `server/tests/test_boards_draft.py`, `test_draft.py` |
+| D10 | `submit_boards` follows ADR 0023's schema rules. A Board that fails the name rule, `parse_board`, the set rules, `check_board` or the schema guard comes back as a tool error naming the Board (and key), and the loop continues. A clean submit ends it; the cap is a `DraftError` | `test_boards_draft.py` (stub model, db) |
+| D11 | One Entity Board more than `BOOTSTRAP_MAX_ENTITY_BOARDS` is a tool error | `test_boards_draft.py` (db) |
+| D12 | Preview: per-query rows, ms and first rows as text; per-Visual drawn / no_rows / failed; the cold verdict; an Entity Board previewed with a sample key from the report; "no sample key" when none fits | `test_boards_draft.py` (db) |
+| E6 | Export writes `boards/*.toml` that `load_dataset` loads; it refuses with Board problems; under `force` it replaces `boards/` whole and backs the old one up; without Boards it leaves an existing `boards/` alone | `test_export.py` (db) |
+| S12 | Boards endpoints: 404 without a draft, 400 when the draft's files have errors, 409 while either loop runs; the events give `boards` when done; validate stores and re-checks edited text; export re-checks and refuses on problems; a new draft clears Boards | `test_server.py` (stub model, db) |
+| S13 | `/api/boards/estimate` gives the Boards prompt's estimate, larger than the draft's for the same report | `test_server.py` (db) |
+| U7 | The Boards step: estimate then draft with progress; a tab per Board with problems and preview; re-validation after edits ignores stale replies; Review's Export is disabled while a Board has problems | `ui/test/boards.test.ts`, `ui/test/review.test.ts` |
+| L5 | `boards` CLI writes `boards.json` with a stub model; `export --boards` writes them | `test_cli.py` (db) |
+| SC1 | Part B. Board scenarios run with no model and record open, Control change and Entity Board times against §18's targets | `agent/tests/test_scenarios.py` |
+| BM | Part B, manual. austender's Boards drafted (one live run, with the user's OK), reviewed and exported. B-M measured, with median and p90 per target, and recorded in `explorer/SPEC.md` | manual |
+
+### Decisions
+
+- **A second loop, after the dataset draft** (ADR 0032). Phase 2b's "one loop, no step per
+  file" holds for the dataset files.
+- **TOML text in the tool call, checked by the agent's own code.** One source of truth for the
+  Board rules, and no second schema.
+- **The model picks the entities, and the default is 3** (the user, 2026-11-04). No stats query,
+  no confirm step.
+- **One tool loop** (`tool_loop`), now used twice. The submit check is the only part that
+  differs, and the Boards check is async because it needs the database.
+- **The Boards prompt carries the agent's Express rules and catalog.** A layout is Express, and
+  the Macro signatures must be the agent's own, not a copy.
+- **Events reuse `/api/draft/{id}/events`.** One run slot, one poller.
+- **The estimate gets its own route** (`/api/boards/estimate`), as the draft's has.
+- **The preview never blocks.** Only the checks block export.
+- **Export re-checks** the Boards against the files as they are at export time.
+- **Replace `boards/` whole under `force`**, so a Board left out of the new set doesn't linger.
+  Without Boards in the draft, `boards/` isn't touched.
+- **Accepted Boards** means the Boards the server holds, with no problems. There's no separate
+  accept toggle. To export without Boards, export before drafting them.
+- **The set rules move** out of `load_boards` into `check_board_set`, so the bootstrap checks a
+  set it holds in memory. The messages don't change.
+- **Per-query ms** comes from an optional `on_query` hook on `BoardRenderer`, rather than a
+  wrapped runner that would have to recognise the wrapped SQL.
+- **A re-draft replaces the Boards whole**, hand edits included, on the server and on screen.
+  The button says "Draft the Boards again" (refuter round 1).
+- **Validates are serialised** on the server, in arrival order, with the export's re-check
+  under the same lock, so an older edit can't overwrite a newer one (refuter round 1).
+- **The Boards step's model and effort** are those of the last draft run in this UI session, or
+  the server's default model at `low` when there was none (for example after "Back to the draft").
+- **Export never trusts a Board name**: one that isn't a Board file name is refused there too.
+- **Out:** rendering A2UI in the bootstrap UI; editing Boards in a structured form; runtime
+  drafting (slice 5, ADR 0030); drafting Boards for a Dataset already on disk.
+
+### Test command
+
+```bash
+cd explorer/agent && uv run pytest
 cd explorer/bootstrap/server && uv run pytest     # Docker; no network, no model
 cd explorer/bootstrap/ui && npm test && npm run build
 ```

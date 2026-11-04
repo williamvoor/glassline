@@ -68,6 +68,45 @@ CONTROLS_NOTE = "First {n} options shown"
 DEFAULTS_TEXT = "Controls reset"
 BOARD_COLD_TARGET_S = 1.5  # SPEC §18 speed targets: any Board, cold
 
+# The Board file rules as the bootstrap's Boards prompt gives them (bootstrap SPEC phase 3). They
+# sit beside the checks that enforce them; a test checks that they name every key and Control kind.
+BOARD_FILE_RULES = f"""\
+A Board is one TOML file, `boards/<name>.toml`, where `<name>` is lower case letters, digits and _.
+`explorer` is the Explorer Board: it is required, and it has no key.
+
+Top-level keys come before the first `[[controls]]` or `[[queries]]` table (TOML puts a key written
+after a table inside that table):
+- `title`: plain text with no numbers.
+- `question`: optional, one plain-text line under the heading.
+- `scope`: optional, one line saying what the Board covers. An Entity Board says it isn't limited
+  to the clicked answer's filters.
+- `key`, `key_type`, `key_columns`: Entity Boards only, all three together. `key` is the placeholder
+  name the clicked row's value binds to, `key_type` its SQL type (`text`, `int`, `float`, `date` or
+  `bool`; `int` binds as bigint), and `key_columns` the Result column names whose rows open the
+  Board. No key column may open two Boards, and `key` must not equal a Control name.
+- `layout`: Express statements without <a2ui>, defining `root`. Macro calls name a query where an
+  answer names a Result ID, and `{{query[0].column}}` placeholders read a query's rows. Layout names
+  must not start with `board_`, contain `__`, or equal a query name. No `FollowUp`.
+
+`[[controls]]` (optional, in display order): `name`, `kind` and `label`, then by kind:
+- `choice`: `type`, `options_sql`, optional `all_label` ("All"), `default` (an option value, or "all").
+- `multi`: `type`, `options_sql`, `default` (a list of values, or []).
+- `toggle`: `default` (true or false).
+- `number`: `default`, and `min` and `max` or `range_sql` (integers only).
+- `date`: `default`, and `min`/`max` or `range_sql`; `optional = true` lets it be cleared.
+An option query returns `value` and `label` columns and takes no placeholders; a range query returns
+`min` and `max`. Every Control must be used as `:<name>` by a query or a `drill_sql`, and its name
+must not equal an output column of any of the Board's queries.
+
+`[[queries]]`: at most {MAX_BOARD_QUERIES}, each with `name` (`[a-z_][a-z0-9_]*`, unique, not like a
+Result ID `r<digits>`) and `sql`: one read-only SELECT or WITH over the allowed schemas, with
+`:name` placeholders naming a Control or the key. A nullable Control (a `choice` with `all_label`,
+a `multi`, an optional `date`) binds NULL for "All", so write `(:name IS NULL OR column = :name)`.
+
+The agent checks every Board at startup: each query runs as LIMIT 0 at the Controls' defaults and
+again with the nullable Controls NULL, and each Macro's column arguments must name output columns
+of the right kind (numeric for values, date for a Timeline's start and end)."""
+
 # Statement names in the Express layout (`name = ...` at the start of a line).
 _STATEMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=", re.MULTILINE)
 
@@ -157,7 +196,16 @@ def load_boards(dataset_dir: Path, allowed_schemas: tuple[str, ...]) -> dict[str
     if not any(p.stem == EXPLORER for p in paths):
         raise BoardError(f"{directory}: {EXPLORER}.toml is required once a Dataset has a {BOARDS_DIR}/ directory")
     boards = {p.stem: load_board(p, allowed_schemas) for p in paths}
-    explorer = boards[EXPLORER]
+    check_board_set(boards)
+    return boards
+
+
+def check_board_set(boards: Mapping[str, Board]) -> None:
+    """The rules over a Dataset's Boards together: an Explorer, without a key, and no key column
+    opening two Boards. The bootstrap checks a set it holds in memory with this. Raises BoardError."""
+    explorer = boards.get(EXPLORER)
+    if explorer is None:
+        raise BoardError(f"{BOARDS_DIR}/: {EXPLORER}.toml is required once a Dataset has a {BOARDS_DIR}/ directory")
     if explorer.key:
         raise BoardError(f"{explorer.path}: {EXPLORER}.toml can't have a key: the Explorer opens without a row")
     opens: dict[str, Board] = {}
@@ -167,7 +215,6 @@ def load_boards(dataset_dir: Path, allowed_schemas: tuple[str, ...]) -> dict[str
             if other is not None:
                 raise BoardError(f"{board.path}: key_columns: {column} also opens {other.path}")
             opens[column] = board
-    return boards
 
 
 def entity_columns(boards: Mapping[str, Board]) -> dict[str, str]:
@@ -980,8 +1027,10 @@ class BoardRenderer:
     """Runs Board queries under an agent-wide semaphore, with the cache and single-flight."""
 
     def __init__(self, boards: Mapping[str, Board], runner: Any, *, concurrency: int, row_cap: int,
-                 ttl_s: float, max_cache: int, clock: Callable[[], float] = time.monotonic, max_options: int = 100):
+                 ttl_s: float, max_cache: int, clock: Callable[[], float] = time.monotonic, max_options: int = 100,
+                 on_query: Callable[[str, str, int, Outcome], None] | None = None):
         self.boards = dict(boards)
+        self._on_query = on_query  # (board, query name, ms, outcome) after each run: the bootstrap's preview
         self._runner = runner
         self._semaphore = BoardSemaphore(concurrency)
         self._row_cap = row_cap
@@ -1111,13 +1160,18 @@ class BoardRenderer:
         # Logs name the Board and query only, never Control values (SPEC §18).
         if isinstance(outcome, SqlFail):
             log.warning("board query failed: board=%s query=%s sqlstate=%s ms=%d", board.name, name, outcome.sqlstate, ms)
+            if self._on_query is not None:
+                self._on_query(board.name, name, ms, outcome)
             return outcome
         truncated = outcome.truncated or len(outcome.rows) > self._row_cap
         log.info("board query: board=%s query=%s rows=%d ms=%d", board.name, name, min(len(outcome.rows), self._row_cap), ms)
-        return StoredResult(
+        result = StoredResult(
             id="", sql=shown, purpose=f"{board.title} · {name}", columns=outcome.columns,
             column_types=outcome.column_types, rows=outcome.rows[: self._row_cap], truncated=truncated,
         )
+        if self._on_query is not None:
+            self._on_query(board.name, name, ms, result)
+        return result
 
     async def warm(self) -> None:
         """Renders the Explorer at its defaults, then again each time its entry would expire."""

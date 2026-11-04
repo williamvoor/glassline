@@ -119,7 +119,8 @@ export interface Validation {
 export type DraftEvent =
   | { type: 'sql'; purpose: string; sql: string }
   | { type: 'call'; usage: { prompt_tokens: number; cached_tokens: number; completion_tokens: number; cost_usd: number } }
-  | { type: 'invalid_draft'; problems: string[] };
+  | { type: 'invalid_draft'; problems: string[] }
+  | { type: 'invalid_boards'; problems: string[] };
 
 export interface EventsReply {
   events: DraftEvent[];
@@ -128,6 +129,51 @@ export interface EventsReply {
   error?: string;
   draft?: Draft;
   validation?: Validation;
+  boards?: BoardsState;
+}
+
+/** Phase 3: one drafted Board file. */
+export interface BoardFile {
+  name: string;
+  toml: string;
+  why: string;
+}
+
+export type QueryPreview =
+  | { ms: number; rows: number; truncated: boolean; columns: string[]; first_rows: string[][] }
+  | { ms: number; error: string };
+
+export interface VisualVerdict {
+  id: string;
+  macro: string;
+  query: string;
+  verdict: 'drawn' | 'no_rows' | 'failed';
+}
+
+/** One cold render of a Board (no model). `skipped` or `error` replace the timings. */
+export interface BoardPreview {
+  target_s: number;
+  key: { value: string; source: string } | null;
+  skipped?: string;
+  error?: string;
+  queries?: Record<string, QueryPreview>;
+  visuals?: VisualVerdict[];
+  seconds?: number;
+  verdict?: 'ok' | 'slow';
+}
+
+export interface BoardsState {
+  boards: BoardFile[];
+  problems: Record<string, string[]>;
+  set_problems: string[];
+  preview: Record<string, BoardPreview>;
+  usage: Draft['usage'] | null;
+}
+
+/** Every problem that blocks export, set problems first. */
+export function boardProblems(state: BoardsState | null): string[] {
+  if (!state) return [];
+  return [...state.set_problems, ...Object.values(state.problems).flat()];
 }
 
 /** Fallback model list until the server's arrives; the server (/api/models) is the source of truth. */

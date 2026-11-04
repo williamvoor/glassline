@@ -1,4 +1,4 @@
-import type { Claim, Connection, Draft, DraftComment, Estimate, EventsReply, Files, Report, SchemaDump, Validation } from './types.js';
+import type { BoardFile, BoardsState, Claim, Connection, Draft, DraftComment, Estimate, EventsReply, Files, Report, SchemaDump, Validation } from './types.js';
 
 /** An API error: `message` for one problem, `reasons` when the server lists several. */
 export class ApiError extends Error {
@@ -68,5 +68,17 @@ export class Api {
   }
   export(body: { name: string; target: 'toml' | 'sql'; files: Files; comments: DraftComment[]; dismissed: number[]; force: boolean }) {
     return this.call<{ path: string; overwrote: string[]; backup: string | null }>('/api/export', body);
+  }
+  boardsEstimate(model: string, effort: string) {
+    return this.call<Estimate>('/api/boards/estimate', { model, effort });
+  }
+  startBoards(model: string, effort: string) {
+    return this.call<{ run_id: string }>('/api/boards/draft', { model, effort });
+  }
+  currentBoards() {
+    return this.call<BoardsState>('/api/boards');
+  }
+  validateBoards(boards: BoardFile[]) {
+    return this.call<BoardsState>('/api/boards/validate', { boards });
   }
 }

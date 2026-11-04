@@ -692,3 +692,156 @@ def test_boards_need_the_express_format(tmp_path):
     assert load_settings(env, tmp_path).dataset.boards
     with pytest.raises(ConfigError, match="FORMAT must be express"):
         load_settings({**env, "FORMAT": "direct_json"}, tmp_path)
+
+
+# --- bootstrap phase 3: the set rules in memory (T2), the rules text and on_query (T3) ----------
+
+from explorer_agent.boards import (  # noqa: E402
+    BOARD_FILE_RULES,
+    CONTROL_KEYS,
+    KEYS,
+    check_board_set,
+    parse_board,
+)
+
+KEYED = GOOD.replace('title = "Explorer"', 'title = "Buyer"\nkey = "b"\nkey_type = "text"\nkey_columns = ["buyer"]').replace(
+    "GROUP BY buyer;", "WHERE buyer = :b GROUP BY buyer;")
+
+
+def _parsed(name: str, text: str):
+    return parse_board(text, Path(f"boards/{name}.toml"), ALLOWED)
+
+
+def test_check_board_set_accepts_an_explorer_and_entity_boards():
+    check_board_set({EXPLORER: _parsed(EXPLORER, GOOD), "buyer": _parsed("buyer", KEYED)})
+
+
+@pytest.mark.parametrize(
+    ("boards", "message"),
+    [
+        (lambda: {"buyer": _parsed("buyer", KEYED)}, "boards/: explorer.toml is required"),
+        (lambda: {EXPLORER: _parsed(EXPLORER, KEYED)}, "boards/explorer.toml: explorer.toml can't have a key"),
+        (lambda: {EXPLORER: _parsed(EXPLORER, GOOD), "buyer": _parsed("buyer", KEYED), "agency": _parsed("agency", KEYED)},
+         "key_columns: buyer also opens"),
+    ],
+)
+def test_check_board_set_names_the_file(boards, message):
+    with pytest.raises(BoardError, match=message):
+        check_board_set(boards())
+
+
+def test_load_boards_still_uses_the_set_rules(tmp_path):
+    write(tmp_path, KEYED)
+    with pytest.raises(BoardError, match=r"explorer.toml: explorer.toml can't have a key"):
+        load_boards(tmp_path, ALLOWED)
+
+
+def test_board_file_rules_name_every_key_and_control_kind():
+    for key in KEYS:
+        assert f"`{key}`" in BOARD_FILE_RULES or f"`[[{key}]]`" in BOARD_FILE_RULES, key
+    for kind in CONTROL_KEYS:
+        assert f"`{kind}`" in BOARD_FILE_RULES, kind
+    assert str(MAX_BOARD_QUERIES) in BOARD_FILE_RULES
+    assert BOARD_FILE_RULES == BOARD_FILE_RULES.strip()
+
+
+async def test_on_query_reports_each_query_with_its_ms_and_outcome():
+    seen = []
+    runner = BoardRunner()
+    runner.fail = {"by_buyer"}
+    r = renderer(runner, on_query=lambda *a: seen.append(a))
+    await r.outcomes(STUB_BOARD)
+    names = {s[1]: s for s in seen}
+    assert set(names) == {q.name for q in STUB_BOARD.queries}
+    assert all(s[0] == EXPLORER and isinstance(s[2], int) and s[2] >= 0 for s in seen)
+    assert isinstance(names["by_buyer"][3], SqlFail)
+
+
+# --- T1: every template, filled, loads and passes the startup check --------------------------------
+
+TEMPLATES = TEMPLATE.parent
+_SQL_WORD = re.compile(r"(?i)\b(select|from|where|group by)\b|\b[a-z_]+\.[a-z_]+\b")
+
+
+class BoundCheckRunner(CheckRunner):
+    async def run_bound(self, sql, params, *, timeout_ms=None):
+        return await self.run(sql)
+
+
+def _no_sql_or_names(text: str) -> None:
+    body = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    hits = [line for line in body if _SQL_WORD.search(line.replace("boards/", ""))]
+    assert hits == [], hits
+
+
+def _fill(text: str, fill: dict[str, str], sql: dict[str, str]) -> str:
+    for slot, value in fill.items():
+        text = text.replace(slot, value)
+    for name, q in sql.items():
+        text = re.sub(rf'(name = "{name}"\nsql = )"[^"]*"', lambda m, q=q: m.group(1) + '"' + q + '"', text)
+    unfilled = [line for line in text.splitlines() if "<" in line and not line.lstrip().startswith("#")]
+    assert unfilled == [], unfilled
+    return text
+
+
+async def test_the_explorer_template_with_its_controls_block_loads_once_filled(tmp_path, pipeline):
+    text = (TEMPLATES / "explorer.toml").read_text(encoding="utf-8")
+    assert "# [[controls]]" in text
+    text = re.sub(r"(?m)^# (\[\[controls]]|(?:name|kind|label|type|options_sql|all_label|default) = .*)$", r"\1", text)
+    assert set(tomllib.loads(text.replace("<", "x").replace(">", "x"))) == {"title", "question", "scope", "layout", "controls", "queries"}
+    text = re.sub(r'(?m)^(question|scope) = ".*"$', r'\1 = "x"', text)
+    text = text.replace('"<value and label columns, one row per option; no placeholders>"',
+                        '"SELECT DISTINCT buyer AS value, buyer AS label FROM fixture.contracts"')
+    text = _fill(text, {
+        "<control_name>": "pick", "<label>": "Buyer",
+        "<totals_query>": "totals", "<share_query>": "by_buyer", "<trend_query>": "by_year", "<top_query>": "top_rows",
+        "<category column>": "buyer", "<value column>": "value", "<period column>": "year", "<format>": "int",
+        "<columns>": "buyer,value", "<column:format pairs>": "value:int", "<title>": "T",
+        "<2 to 4 Metric calls on the totals query>": 'Metric("totals", "value", "Total")',
+    }, {
+        "totals": "SELECT sum(value) AS value FROM fixture.contracts WHERE (:pick IS NULL OR buyer = :pick)",
+        "by_buyer": "SELECT buyer, sum(value) AS value FROM fixture.contracts GROUP BY buyer",
+        "by_year": "SELECT year, sum(value) AS value FROM fixture.contracts GROUP BY year",
+        "top_rows": "SELECT buyer, value FROM fixture.contracts LIMIT 10",
+    })
+    board = load_board(write(tmp_path, text), ALLOWED)
+    assert [c.name for c in board.controls] == ["pick"]
+    runner = BoundCheckRunner({"AS label": (["value", "label"], ["text", "text"]),
+                               "GROUP BY buyer": (["buyer", "value"], ["text", "numeric"]),
+                               "GROUP BY year": (["year", "value"], ["text", "numeric"]),
+                               "LIMIT 10": (["buyer", "value"], ["text", "numeric"]),
+                               "buyer = $1": (["value"], ["numeric"])})
+    await check_board(board, runner, pipeline)
+
+
+@pytest.mark.parametrize("trend", ["timeline", "line"])
+async def test_the_entity_template_is_dataset_agnostic_and_loads_once_filled(tmp_path, trend):
+    text = (TEMPLATES / "entity.toml").read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    assert set(data) == {"title", "question", "scope", "key", "key_type", "key_columns", "layout", "queries"}
+    assert [set(q) for q in data["queries"]] == [{"name", "sql"}] * 3
+    assert all(q["sql"].startswith("<") for q in data["queries"])
+    for name in ("entity.toml", "explorer.toml"):  # controls.md is guidance and shows SQL idioms (spec, phase 3)
+        _no_sql_or_names((TEMPLATES / name).read_text(encoding="utf-8"))
+    call = ('Timeline("by_period", "T", "buyer", "start_date", "end_date")' if trend == "timeline"
+            else 'LineChart("by_period", "year", "value", "T", format="int")')
+    text = re.sub(r'(?m)^(title|question|scope) = ".*"$', r'\1 = "Buyer"', text)
+    text = _fill(text, {
+        '"<key_name>"': '"b"', '"<text, int, float, date or bool>"': '"text"',
+        '["<result column names that hold this key>"]': '["buyer"]',
+        "<totals_query>": "totals", "<trend_query>": "by_period", "<top_query>": "top_rows",
+        "<2 to 3 Metric calls on the totals query>": 'Metric("totals", "value", "Total")',
+        "<a Timeline or LineChart call on the trend query>": call,
+        "<value column>": "value", "<columns>": "supplier,value", "<column:format pairs>": "value:int", "<title>": "T",
+    }, {
+        "totals": "SELECT sum(value) AS value FROM fixture.contracts WHERE buyer = :b",
+        "by_period": "SELECT buyer, start_date, end_date, year, value FROM fixture.contracts WHERE buyer = :b ORDER BY 2",
+        "top_rows": "SELECT supplier, value FROM fixture.contracts WHERE buyer = :b ORDER BY value DESC LIMIT 10",
+    })
+    board = load_board(write(tmp_path, text, name="buyer"), ALLOWED)
+    assert (board.key, board.key_type, board.key_columns) == ("b", "text", ("buyer",))
+    runner = BoundCheckRunner({"ORDER BY 2": (["buyer", "start_date", "end_date", "year", "value"],
+                                              ["text", "date", "date", "text", "numeric"]),
+                               "LIMIT 10": (["supplier", "value"], ["text", "numeric"]),
+                               "buyer = $1": (["value"], ["numeric"])})
+    await check_board(board, runner, UiPipeline(allowed_schemas=ALLOWED))

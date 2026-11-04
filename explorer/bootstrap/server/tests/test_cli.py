@@ -219,3 +219,58 @@ def test_bad_draft_file(capsys, tmp_path):
     bad.write_text("{}", encoding="utf-8")
     code, _, err = _run(capsys, "export", "--draft", str(bad), "--name", "x", "--target", "toml")
     assert code == 2 and "not a version 1 draft" in err
+
+
+# Phase 3: L5
+@pytest.mark.db
+def test_boards_then_export_with_boards(pg, monkeypatch, capsys, tmp_path):
+    from explorer_agent.config import load_dataset
+    from explorer_agent.testing.stub_model import ScriptedCompletion, tool_calls
+
+    from conftest import valid_args
+    from test_boards_draft import EXPLORER, GRADE, good_set
+
+    monkeypatch.setenv("BOOTSTRAP_DATABASE_URL", pg.ro_dsn)
+    draft_file, boards_file = tmp_path / "draft.json", tmp_path / "boards.json"
+    broken = [{**good_set()[0], "toml": EXPLORER.replace('"grade,amount"', '"grade,amont"')}, good_set()[1]]
+    model = ScriptedCompletion([
+        tool_calls(("submit_draft", valid_args())),
+        tool_calls(("submit_boards", {"boards": broken})),
+        tool_calls(("submit_boards", {"boards": good_set()})),
+    ])
+    monkeypatch.setattr(cli, "COMPLETION", model)
+    code, _, err = _run(capsys, "draft", "--schemas", "bs", "--out", str(draft_file))
+    assert code == 0, err
+    code, out, err = _run(capsys, "boards", "--draft", str(draft_file), "--out", str(boards_file))
+    assert code == 0, err
+    assert "Boards rejected (1 problems)" in out and "grade (key from bs.mixed.grade)" in out
+    assert "by_grade: 7 rows" in out and "Boards written to" in out
+    text = boards_file.read_text(encoding="utf-8")
+    data = json.loads(text)
+    assert data["boards_version"] == 1 and [b["name"] for b in data["boards"]] == ["explorer", "grade"]
+    assert data["problems"] == {"explorer": [], "grade": []} and data["usage"]["totals"]["calls"] == 2
+    for secret in (RO_PASSWORD, "explorer_ro"):
+        assert secret not in text and secret not in out
+
+    root = tmp_path / "datasets"
+    root.mkdir()
+    stale = {**data, "boards": [data["boards"][0], {**data["boards"][1], "toml": GRADE.replace("bs.mixed", "bs.nope")}]}
+    stale_file = tmp_path / "stale.json"
+    stale_file.write_text(json.dumps(stale), encoding="utf-8")
+    code, out, _ = _run(capsys, "export", "--draft", str(draft_file), "--boards", str(stale_file), "--name", "bs",
+                        "--target", "toml", "--root", str(root))
+    assert code == 1 and "boards/grade.toml" in out and not (root / "bs").exists()
+    code, out, err = _run(capsys, "export", "--draft", str(draft_file), "--boards", str(boards_file), "--name", "bs",
+                          "--target", "toml", "--root", str(root))
+    assert code == 0, err
+    assert sorted(load_dataset(root / "bs").boards) == ["explorer", "grade"]
+
+
+def test_bad_boards_file(capsys, tmp_path):
+    bad = tmp_path / "b.json"
+    bad.write_text('{"boards_version": 2}', encoding="utf-8")
+    draft = tmp_path / "d.json"
+    draft.write_text(json.dumps({"draft_version": 1, "report": {}, "files": {}, "comments": [], "claims": []}),
+                     encoding="utf-8")
+    code, _, err = _run(capsys, "export", "--draft", str(draft), "--boards", str(bad), "--name", "x", "--target", "toml")
+    assert code == 2 and "not a version 1 boards file" in err

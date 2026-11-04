@@ -208,10 +208,61 @@ def test_export_force_still_refuses_a_file(bs_report_sync, tmp_path):
         export_dataset(_draft(bs_report_sync), "afile", "toml", tmp_path, force=True)
 
 
-# E6: drafted examples land in the exported dataset and load.
+# D8: drafted examples land in the exported dataset and load.
 def test_export_carries_examples(bs_report_sync, tmp_path):
     out = export_dataset(_draft(bs_report_sync), "bs_examples", "toml", tmp_path).dest
     assert load_dataset(out).examples == (
         "How many rows does bs.mixed have?",
         "What grades appear in bs.mixed?",
     )
+
+
+# E6 (phase 3): Boards are written to boards/, refused with problems, and replaced whole under force.
+from test_boards_draft import EXPLORER as EXPLORER_BOARD, GRADE as GRADE_BOARD  # noqa: E402
+
+BOARDS = [{"name": "explorer", "toml": EXPLORER_BOARD}, {"name": "grade", "toml": GRADE_BOARD}]
+
+
+def test_export_writes_boards_that_the_agent_loads(bs_report_sync, tmp_path):
+    out = export_dataset(_draft(bs_report_sync), "with_boards", "toml", tmp_path, boards=BOARDS).dest
+    assert sorted(p.name for p in (out / "boards").iterdir()) == ["explorer.toml", "grade.toml"]
+    assert (out / "boards" / "grade.toml").read_text(encoding="utf-8") == GRADE_BOARD
+    dataset = load_dataset(out)
+    assert sorted(dataset.boards) == ["explorer", "grade"] and dataset.boards["grade"].key == "g"
+
+
+def test_export_refuses_boards_with_problems(bs_report_sync, tmp_path):
+    with pytest.raises(ExportError) as e:
+        export_dataset(_draft(bs_report_sync), "bad_boards", "toml", tmp_path, boards=BOARDS,
+                       board_problems=["boards/grade.toml: layout: nope"])
+    assert e.value.reasons == ["boards/grade.toml: layout: nope"]
+    assert not (tmp_path / "bad_boards").exists()
+
+
+def test_export_force_replaces_boards_whole_and_backs_them_up(bs_report_sync, tmp_path):
+    dest = tmp_path / "lived"
+    (dest / "boards").mkdir(parents=True)
+    (dest / "boards" / "explorer.toml").write_text("old explorer\n", encoding="utf-8")
+    (dest / "boards" / "stale.toml").write_text("left out of the new set\n", encoding="utf-8")
+    result = export_dataset(_draft(bs_report_sync), "lived", "toml", tmp_path, force=True, boards=BOARDS[:1])
+    assert sorted(p.name for p in (dest / "boards").iterdir()) == ["explorer.toml"]
+    assert "boards/" in result.overwrote
+    assert result.backup is not None
+    assert sorted(p.name for p in (result.backup / "boards").iterdir()) == ["explorer.toml", "stale.toml"]
+    assert (result.backup / "boards" / "explorer.toml").read_text(encoding="utf-8") == "old explorer\n"
+    assert not [p for p in dest.iterdir() if p.name.startswith(".")]  # no temp leftovers
+
+
+def test_export_without_boards_leaves_an_existing_boards_dir_alone(bs_report_sync, tmp_path):
+    dest = tmp_path / "lived"
+    (dest / "boards").mkdir(parents=True)
+    (dest / "boards" / "explorer.toml").write_text("theirs\n", encoding="utf-8")
+    result = export_dataset(_draft(bs_report_sync), "lived", "toml", tmp_path, force=True)
+    assert (dest / "boards" / "explorer.toml").read_text(encoding="utf-8") == "theirs\n"
+    assert "boards/" not in result.overwrote
+
+
+def test_export_refuses_a_board_name_that_would_leave_boards_dir(bs_report_sync, tmp_path):
+    with pytest.raises(ExportError, match="is not a Board file name"):
+        export_dataset(_draft(bs_report_sync), "escape", "toml", tmp_path, boards=[{"name": "../x", "toml": "t"}])
+    assert not (tmp_path / "escape").exists() and not (tmp_path / "x.toml").exists()

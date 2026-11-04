@@ -6,6 +6,7 @@ It wraps the phase 2b functions. Claim results only ever come from the server's 
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import re
 import uuid
@@ -27,10 +28,18 @@ from explorer_agent.config import SCHEMA_NAME, ConfigError, Dataset, load_datase
 from explorer_agent.schema import SchemaCatalog
 from explorer_agent.sql import SqlRunner
 
+from explorer_bootstrap.boards import (
+    board_files_problems,
+    boards_runner,
+    boards_state,
+    check_boards,
+    estimate_boards,
+    run_boards,
+)
 from explorer_bootstrap.claims import verify_claims
 from explorer_bootstrap.draft import Completion, DraftError, estimate_cost, run_draft
 from explorer_bootstrap.draft_schema import claim_problems
-from explorer_bootstrap.drafts import FILE_NAMES, new_draft, validate_files
+from explorer_bootstrap.drafts import FILE_NAMES, DraftFileError, draft_dataset, new_draft, validate_files
 from explorer_bootstrap.export import ExportError, export_dataset
 from explorer_bootstrap.report import OverlayDriftError, build_report
 from explorer_bootstrap.settings import ALLOWED_MODELS, SettingsError, load_draft_settings
@@ -46,6 +55,7 @@ class _Run:
     done: bool = False
     error: str | None = None
     task: asyncio.Task | None = None
+    kind: str = "draft"  # or "boards" (phase 3): one run at a time across both loops
 
 
 @dataclass
@@ -53,6 +63,11 @@ class _State:
     report: dict[str, Any] | None = None
     draft: dict[str, Any] | None = None
     run: _Run | None = None
+    boards: dict[str, Any] | None = None  # phase 3: the Boards state; a new draft clears it
+
+    @property
+    def running(self) -> bool:
+        return self.run is not None and not self.run.done
 
 
 class _Guard:
@@ -161,6 +176,9 @@ def build_app(
     completion: Completion | None = None,
 ) -> ASGIApp:
     state = _State()
+    # Phase 3: a validate stores its text, then checks and previews it; overlapping ones (the UI's
+    # debounce can fire again during a preview) must not finish out of order, nor race an export.
+    boards_lock = asyncio.Lock()
 
     def with_validation(draft: dict[str, Any]) -> dict[str, Any]:
         return {"draft": draft, "validation": validate_files(draft)}
@@ -215,7 +233,7 @@ def build_app(
         return JSONResponse({"schemas": [{"name": s, "tables": by_schema[s]} for s in sorted(by_schema)]})
 
     async def report(request: Request) -> JSONResponse:
-        if state.run is not None and not state.run.done:
+        if state.running:
             return _err("a draft is running; wait for it to finish", 409)
         body = await _body(request)
         params = body if body else {}
@@ -267,7 +285,7 @@ def build_app(
         return JSONResponse(estimate_cost(state.report, settings))
 
     async def start_draft(request: Request) -> JSONResponse:
-        if state.run is not None and not state.run.done:
+        if state.running:
             return _err("a draft is already running", 409)
         if state.report is None:
             return _err("run the report first")
@@ -286,6 +304,7 @@ def build_app(
                 draft = new_draft(report_now, args, model=settings.model, effort=settings.effort, usage=usage)
                 draft["claims"] = await verify_claims(runner, draft["claims"])
                 state.draft = draft
+                state.boards = None  # Boards are drafted from the draft's files
             except DraftError as e:
                 run.error = str(e)
             except Exception as e:  # never leak a traceback (or a query) to the page
@@ -310,6 +329,8 @@ def build_app(
         if run.done:
             if run.error:
                 out["error"] = run.error
+            elif run.kind == "boards":
+                out["boards"] = state.boards
             elif state.draft is not None:
                 out.update(with_validation(state.draft))
         return JSONResponse(out)
@@ -369,9 +390,21 @@ def build_app(
         force = body.get("force", False)
         if not isinstance(force, bool):
             return _err("force must be a boolean")
+        boards, board_problems = None, []
+        if state.boards is not None:
+            async with boards_lock:
+                try:
+                    await recheck_boards()
+                except DraftFileError:
+                    pass  # export_dataset refuses with the files' own errors
+                except SettingsError as e:
+                    return _err(str(e))
+                boards = [{"name": b["name"], "toml": b["toml"]} for b in state.boards["boards"]]
+                board_problems = [*state.boards["set_problems"],
+                                  *(p for ps in state.boards["problems"].values() for p in ps)]
         try:
             result = export_dataset(state.draft, str(body.get("name") or ""), str(body.get("target") or ""),
-                                    datasets_root, force=force)
+                                    datasets_root, force=force, boards=boards, board_problems=board_problems)
         except ExportError as e:
             return JSONResponse({"reasons": e.reasons}, status_code=422)
         try:
@@ -385,6 +418,96 @@ def build_app(
             except ValueError:
                 out["backup"] = result.backup.name
         return JSONResponse(out)
+
+    # --- phase 3: Boards ---------------------------------------------------------------------
+
+    async def recheck_boards(*, preview: bool = False) -> None:
+        """The stored Boards checked (and previewed) against the draft's files as they are now.
+        Raises DraftFileError when the files don't validate."""
+        assert state.draft is not None and state.boards is not None
+        settings = load_draft_settings(env)
+        dataset = draft_dataset(state.draft)
+        runner = boards_runner(pool, dataset, timeout_ms, settings.sql_row_cap)
+        files = state.boards["boards"]
+        check = await check_boards(files, dataset, runner, settings.max_entity_boards)
+        if preview:
+            state.boards = await boards_state(files, check, dataset, runner, state.draft["report"], settings,
+                                              state.boards.get("usage"))
+        else:
+            state.boards.update(check.to_dict())
+
+    async def boards_estimate(request: Request) -> JSONResponse:
+        if state.draft is None:
+            return _err("no draft yet", 404)
+        try:
+            settings = await settings_for(request)
+            return JSONResponse(estimate_boards(state.draft, settings))
+        except SettingsError as e:
+            return _err(str(e))
+        except DraftFileError as e:
+            return JSONResponse({"reasons": str(e).split("; ")}, status_code=400)
+
+    async def start_boards(request: Request) -> JSONResponse:
+        if state.running:
+            return _err("a draft is already running", 409)
+        if state.draft is None:
+            return _err("no draft yet", 404)
+        try:
+            settings = await settings_for(request)
+            dataset = draft_dataset(state.draft)
+        except SettingsError as e:
+            return _err(str(e))
+        except DraftFileError as e:
+            return JSONResponse({"reasons": str(e).split("; ")}, status_code=400)
+        if state.running:  # checked again: another start may have taken the slot during the await
+            return _err("a draft is already running", 409)
+        run = _Run(id=uuid.uuid4().hex[:12], kind="boards")
+        draft_now = copy.deepcopy(state.draft)  # review edits during the run don't change its input
+
+        async def go() -> None:
+            try:
+                runner = boards_runner(pool, dataset, timeout_ms, settings.sql_row_cap)
+                result = await run_boards(draft_now, runner, settings, completion=completion,
+                                          on_event=run.events.append)
+                state.boards = await boards_state(result.files, result.check, dataset, runner,
+                                                  draft_now["report"], settings, result.usage)
+            except (DraftError, DraftFileError) as e:
+                run.error = str(e)
+            except Exception as e:  # never leak a traceback (or a query) to the page
+                log.warning("boards run failed: %s", type(e).__name__)
+                run.error = f"the Boards draft failed unexpectedly ({type(e).__name__})"
+            finally:
+                run.done = True
+
+        state.run = run
+        run.task = asyncio.create_task(go())
+        return JSONResponse({"run_id": run.id})
+
+    async def current_boards(_request: Request) -> JSONResponse:
+        if state.boards is None:
+            return _err("no Boards yet", 404)
+        return JSONResponse(state.boards)
+
+    async def validate_boards(request: Request) -> JSONResponse:
+        if state.running:
+            return _err("a draft is running; wait for it to finish", 409)
+        if state.draft is None or state.boards is None:
+            return _err("no Boards yet", 404)
+        boards = ((await _body(request)) or {}).get("boards")
+        problems = board_files_problems(boards)
+        if problems:
+            return JSONResponse({"reasons": problems}, status_code=400)
+        async with boards_lock:  # in arrival order: the newest edit is the one stored
+            if state.boards is None:
+                return _err("no Boards yet", 404)
+            state.boards["boards"] = [{"name": b["name"], "toml": b["toml"], "why": b["why"].strip()} for b in boards]
+            try:
+                await recheck_boards(preview=True)
+            except DraftFileError as e:
+                return JSONResponse({"reasons": str(e).split("; ")}, status_code=400)
+            except SettingsError as e:
+                return _err(str(e))
+            return JSONResponse(state.boards)
 
     async def no_ui(_request: Request) -> PlainTextResponse:
         return PlainTextResponse("The UI isn't built: run `npm ci && npm run build` in explorer/bootstrap/ui.\n")
@@ -402,6 +525,10 @@ def build_app(
         Route("/api/claims/verify", verify, methods=["POST"]),
         Route("/api/validate", validate, methods=["POST"]),
         Route("/api/export", export, methods=["POST"]),
+        Route("/api/boards/estimate", boards_estimate, methods=["POST"]),
+        Route("/api/boards/draft", start_boards, methods=["POST"]),
+        Route("/api/boards", current_boards, methods=["GET"]),
+        Route("/api/boards/validate", validate_boards, methods=["POST"]),
     ]
     if ui_dir is not None and (ui_dir / "index.html").is_file():
         routes.append(Mount("/", StaticFiles(directory=ui_dir, html=True)))

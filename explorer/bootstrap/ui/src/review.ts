@@ -17,6 +17,8 @@ export function exportBlockers(opts: {
   claims: Claim[];
   edited: Set<number>;
   name: string;
+  /** Phase 3: the server's Board problems (export writes the Boards it holds). */
+  boardProblems?: string[];
 }): string[] {
   const out: string[] = [];
   if (!opts.name.trim()) out.push('Give the dataset a name.');
@@ -29,6 +31,7 @@ export function exportBlockers(opts: {
       out.push(`Claim ${i + 1} is ${state ?? 'not checked'}: fix and re-run, or dismiss it.`);
     }
   });
+  if (opts.boardProblems?.length) out.push('A Board has problems: fix them on the Boards step.');
   return out;
 }
 
@@ -38,6 +41,8 @@ export class BsReview extends LitElement {
   @property({ attribute: false }) api: Api = new Api();
   @property({ attribute: false }) draft: Draft | null = null;
   @property({ attribute: false }) validation: Validation | null = null;
+  /** Phase 3: problems of the Boards the server holds (none when there are no Boards). */
+  @property({ attribute: false }) boardProblems: string[] = [];
   /** Milliseconds between the last edit and validation; tests set 0. */
   @property({ type: Number }) validateDelay = 400;
 
@@ -172,6 +177,13 @@ export class BsReview extends LitElement {
     this.dispatchEvent(new CustomEvent('rerun-report', { bubbles: true }));
   }
 
+  /** Phase 3: the Boards are drafted from the files the server holds, so save the edits first. */
+  async leaveForBoards() {
+    clearTimeout(this.timer);
+    if (!(await this.validate())) return;
+    this.dispatchEvent(new CustomEvent('to-boards', { bubbles: true }));
+  }
+
   private renderComments() {
     return html`<table class="comments">
       <caption>Comments (${this.comments.filter((c) => c.accepted).length} of ${this.comments.length} accepted)</caption>
@@ -194,7 +206,9 @@ export class BsReview extends LitElement {
 
   override render() {
     if (!this.draft) return html``;
-    const blockers = exportBlockers({ validation: this.validation, claims: this.claims, edited: this.edited, name: this.name });
+    const blockers = exportBlockers({
+      validation: this.validation, claims: this.claims, edited: this.edited, name: this.name, boardProblems: this.boardProblems,
+    });
     const v = this.validation;
     return html`<section aria-labelledby="review-h">
       <h2 id="review-h">Review</h2>
@@ -237,6 +251,7 @@ export class BsReview extends LitElement {
           Overwrite the draft's files if the directory exists (replaced files are backed up)</label>
         <button class="primary export" ?disabled=${this.busy || blockers.length > 0} @click=${() => void this.exportNow()}>Export</button>
         <button class="rerun-report" @click=${() => void this.leaveForReport()}>Re-run report</button>
+        <button class="to-boards" @click=${() => void this.leaveForBoards()}>Boards</button>
       </div>
       ${blockers.length ? html`<ul class="blockers">${blockers.map((b) => html`<li>${b}</li>`)}</ul>` : ''}
       ${this.reasons.length ? html`<div class="refused" role="alert"><p>Export refused:</p><ul>${this.reasons.map((r) => html`<li>${r}</li>`)}</ul></div>` : ''}

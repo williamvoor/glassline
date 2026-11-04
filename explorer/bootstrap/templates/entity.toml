@@ -1,0 +1,36 @@
+# The Entity Board template (SPEC §18, slice 4). Dataset-agnostic: no SQL, no table, column or
+# domain names. The bootstrap tool has Muse Wonder fill it in once per entity (a key-like column:
+# an identifier that appears in several tables or views), writing
+# `datasets/<name>/boards/<entity>.toml`, which a person reviews. The agent never loads this file.
+#
+# A row click on any Visual whose Result has a column named in key_columns opens this Board, with
+# that row's value bound to :<key_name>. Slots are written <like this>. Top-level keys come first
+# (TOML puts a key written after a [[queries]] table inside that table), then one [[queries]] per
+# query. Every query is filtered by :<key_name>. Query names replace the <..._query> slots in the
+# layout, and must differ from the layout's own names (root, metrics, trend, top). Every figure
+# comes from a query (ADR 0001).
+
+title = "<the entity, singular, plain text with no numbers>"
+question = "<one question about a single entity, plain text>"
+scope = "<what the Board covers: every row for this entity, not only the clicked answer's filters>"
+key = "<key_name>"
+key_type = "<text, int, float, date or bool>"
+key_columns = ["<result column names that hold this key>"]
+layout = """
+root = Column([metrics, trend, top])
+metrics = Row([<2 to 3 Metric calls on the totals query>])
+trend = <a Timeline or LineChart call on the trend query>
+top = DataTable("<top_query>", "<title>", "<columns>", "<column:format pairs>", bars="<value column>")
+"""
+
+[[queries]]
+name = "<totals_query>"
+sql = "<one row: the entity's headline totals, filtered by :key_name>"
+
+[[queries]]
+name = "<trend_query>"
+sql = "<one row per period in time order (LineChart), or one row per item with start and end dates (Timeline), filtered by :key_name>"
+
+[[queries]]
+name = "<top_query>"
+sql = "<the entity's top rows by value, at most 10 to 20, filtered by :key_name>"

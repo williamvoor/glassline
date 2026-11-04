@@ -109,26 +109,35 @@ def _tool_message(call_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"role": "tool", "tool_call_id": call_id, "content": json.dumps(payload, ensure_ascii=False, default=str)}
 
 
-async def run_draft(
-    report: dict[str, Any],
+SubmitCheck = Callable[[str], Awaitable[tuple[Any, list[str]]]]
+
+
+async def tool_loop(
+    *,
+    system: str,
+    user: str,
+    tools: list[dict[str, Any]],
+    prompt_cache_key: str,
+    submit: str,
+    check_submit: SubmitCheck,
+    nudge: str,
+    what: str,
     runner: SqlRunner,
     settings: DraftSettings,
-    *,
     completion: Completion | None = None,
     on_event: EventFn | None = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Run the loop. Returns (valid submit_draft arguments, usage). Raises DraftError."""
+) -> tuple[Any, dict[str, Any]]:
+    """The bootstrap's tool loop (ADR 0023), shared by the dataset draft and the Boards draft:
+    `run_sql` calls run, and the loop ends at a `submit` call that `check_submit` (raw arguments ->
+    (arguments, problems)) passes. Problems go back as the tool error. Raises DraftError."""
     completion = completion or litellm.acompletion
     emit = on_event or (lambda _e: None)
     usage = _Usage([])
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_draft_prompt(report)},
-        {"role": "user", "content": USER_MESSAGE},
-    ]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     request = {
         "model": settings.model,
-        "tools": TOOLS,
-        "prompt_cache_key": cache_key(report),
+        "tools": tools,
+        "prompt_cache_key": prompt_cache_key,
         "reasoning_effort": settings.effort,
         "max_tokens": settings.max_tokens,
         "num_retries": 0,
@@ -155,31 +164,27 @@ async def run_draft(
         if not tool_calls:
             messages.append({"role": "assistant", "content": message.content or ""})
             if nudged:
-                raise DraftError("the model stopped without calling submit_draft")
-            messages.append({"role": "user", "content": NUDGE})
+                raise DraftError(f"the model stopped without calling {submit}")
+            messages.append({"role": "user", "content": nudge})
             nudged = True
             continue
         messages.append(_assistant_message(message))
-        submits = [tc for tc in tool_calls if tc.function.name == "submit_draft"]
+        submits = [tc for tc in tool_calls if tc.function.name == submit]
         if submits:
             tc = submits[0]
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-                problems = validate_draft_args(args, report)
-            except json.JSONDecodeError as e:
-                args, problems = None, [f"arguments are not valid JSON: {e.msg}"]
+            args, problems = await check_submit(tc.function.arguments or "{}")
             if not problems:
                 return args, usage.to_dict()
-            emit({"type": "invalid_draft", "problems": problems})
-            replies = {t.id: {"error": {"message": "ignored: submit_draft was called"}} for t in tool_calls}
-            replies[tc.id] = {"error": {"message": "the draft is invalid; fix these and call submit_draft again",
+            emit({"type": f"invalid_{what.lower()}", "problems": problems})
+            replies = {t.id: {"error": {"message": f"ignored: {submit} was called"}} for t in tool_calls}
+            replies[tc.id] = {"error": {"message": f"the {what} is invalid; fix these and call {submit} again",
                                         "problems": problems}}
             messages.extend(_tool_message(t.id, replies[t.id]) for t in tool_calls)
             continue
 
         async def one(tc: Any) -> dict[str, Any]:
             if tc.function.name != "run_sql":
-                return {"error": {"message": f"unknown tool {tc.function.name!r}; use run_sql or submit_draft"}}
+                return {"error": {"message": f"unknown tool {tc.function.name!r}; use run_sql or {submit}"}}
             try:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError as e:
@@ -194,13 +199,41 @@ async def run_draft(
 
         results = await asyncio.gather(*(one(tc) for tc in tool_calls))
         messages.extend(_tool_message(tc.id, r) for tc, r in zip(tool_calls, results, strict=True))
-    raise DraftError(f"no valid draft after {settings.max_tool_iterations} model calls")
+    raise DraftError(f"no valid {what} after {settings.max_tool_iterations} model calls")
+
+
+async def run_draft(
+    report: dict[str, Any],
+    runner: SqlRunner,
+    settings: DraftSettings,
+    *,
+    completion: Completion | None = None,
+    on_event: EventFn | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run the loop. Returns (valid submit_draft arguments, usage). Raises DraftError."""
+
+    async def check(raw: str) -> tuple[Any, list[str]]:
+        try:
+            args = json.loads(raw)
+        except json.JSONDecodeError as e:
+            return None, [f"arguments are not valid JSON: {e.msg}"]
+        return args, validate_draft_args(args, report)
+
+    return await tool_loop(
+        system=build_draft_prompt(report), user=USER_MESSAGE, tools=TOOLS, prompt_cache_key=cache_key(report),
+        submit="submit_draft", check_submit=check, nudge=NUDGE, what="draft", runner=runner, settings=settings,
+        completion=completion, on_event=on_event,
+    )
 
 
 def estimate_cost(report: dict[str, Any], settings: DraftSettings) -> dict[str, Any]:
     """A rough ceiling before running: ~1 token per 3 characters (high for English and JSON), the full
     output allowance on every call, no cache discount. Tool results add input it can't foresee."""
-    prompt_chars = len(build_draft_prompt(report)) + len(USER_MESSAGE)
+    return estimate_for(len(build_draft_prompt(report)) + len(USER_MESSAGE), settings)
+
+
+def estimate_for(prompt_chars: int, settings: DraftSettings) -> dict[str, Any]:
+    """`estimate_cost`'s arithmetic for any prompt size (the Boards loop's too, phase 3)."""
     tokens = -(-prompt_chars // 3)
     p = settings.prices
     first = (tokens * p.input + settings.max_tokens * p.output) / 1_000_000

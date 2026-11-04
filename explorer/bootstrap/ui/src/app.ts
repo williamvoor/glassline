@@ -1,19 +1,22 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 
-import { Api } from './api.js';
+import { Api, ApiError } from './api.js';
 import './connect.js';
 import './report.js';
 import './review.js';
+import './boards.js';
 import type { ReportSelection } from './connect.js';
 import { MODELS } from './types.js';
-import type { Connection, Draft, DraftEvent, Estimate, Report, Validation } from './types.js';
+import { boardProblems } from './types.js';
+import type { BoardsState, Connection, Draft, DraftEvent, Estimate, Report, Validation } from './types.js';
 
-export type Step = 'connect' | 'report' | 'review';
+export type Step = 'connect' | 'report' | 'review' | 'boards';
 const STEPS: { key: Step; label: string }[] = [
   { key: 'connect', label: 'Connect' },
   { key: 'report', label: 'Report' },
   { key: 'review', label: 'Review' },
+  { key: 'boards', label: 'Boards' },
 ];
 
 /** Holds the state and shows one screen at a time, with the current step always visible. */
@@ -37,6 +40,13 @@ export class BootstrapApp extends LitElement {
   @state() draft: Draft | null = null;
   @state() validation: Validation | null = null;
   @state() error = '';
+  // Phase 3: the Boards step, at the model and effort last picked on the Report screen.
+  @state() boards: BoardsState | null = null;
+  @state() boardsEstimate: Estimate | null = null;
+  @state() boardEvents: DraftEvent[] = [];
+  @state() boardsRunning = false;
+  @state() model = '';
+  @state() effort = 'low';
 
   protected override createRenderRoot() {
     return this;
@@ -94,6 +104,8 @@ export class BootstrapApp extends LitElement {
   }
 
   async startDraft(model: string, effort: string) {
+    this.model = model;
+    this.effort = effort;
     await this.guard(async () => {
       const { run_id } = await this.api.startDraft(model, effort);
       this.running = true;
@@ -108,6 +120,7 @@ export class BootstrapApp extends LitElement {
           if (r.error) throw new Error(r.error);
           this.draft = r.draft ?? null;
           this.validation = r.validation ?? null;
+          this.boards = null; // the server clears them with a new draft
           this.step = 'review';
           return;
         }
@@ -127,6 +140,49 @@ export class BootstrapApp extends LitElement {
     });
   }
 
+  /** To the Boards step, with the Boards the server holds (none yet is a 404). */
+  async toBoards() {
+    await this.guard(async () => {
+      try {
+        this.boards = await this.api.currentBoards();
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 404)) throw e;
+        this.boards = null;
+      }
+      this.boardEvents = [];
+      this.boardsEstimate = null;
+      this.step = 'boards';
+    });
+  }
+
+  async refreshBoardsEstimate(model: string, effort: string) {
+    await this.guard(async () => {
+      this.boardsEstimate = await this.api.boardsEstimate(model, effort);
+    });
+  }
+
+  async startBoards(model: string, effort: string) {
+    await this.guard(async () => {
+      const { run_id } = await this.api.startBoards(model, effort);
+      this.boardsRunning = true;
+      this.boardEvents = [];
+      let after = 0;
+      for (;;) {
+        const r = await this.api.events(run_id, after);
+        this.boardEvents = [...this.boardEvents, ...r.events];
+        after = r.next;
+        if (r.done) {
+          this.boardsRunning = false;
+          if (r.error) throw new Error(r.error);
+          this.boards = r.boards ?? null;
+          return;
+        }
+        await new Promise((ok) => setTimeout(ok, this.pollMs));
+      }
+    });
+    this.boardsRunning = false;
+  }
+
   private renderStep() {
     switch (this.step) {
       case 'connect':
@@ -139,10 +195,18 @@ export class BootstrapApp extends LitElement {
         ></bs-report>
         ${this.draft ? html`<button class="to-review" @click=${() => void this.backToDraft()}>Back to the draft</button>` : ''}`;
       case 'review':
-        return html`<bs-review .api=${this.api} .draft=${this.draft} .validation=${this.validation}
+        return html`<bs-review .api=${this.api} .draft=${this.draft} .validation=${this.validation} .boardProblems=${boardProblems(this.boards)}
           @rerun-report=${() => {
             if (this.selection) void this.runReport(this.selection);
-          }}></bs-review>`;
+          }}
+          @to-boards=${() => void this.toBoards()}></bs-review>`;
+      case 'boards':
+        return html`<bs-boards .api=${this.api} .boards=${this.boards} .estimate=${this.boardsEstimate} .events=${this.boardEvents}
+          ?running=${this.boardsRunning} .model=${this.model || this.defaultModel} .effort=${this.effort}
+          @estimate=${(e: CustomEvent<{ model: string; effort: string }>) => void this.refreshBoardsEstimate(e.detail.model, e.detail.effort)}
+          @draft-boards=${(e: CustomEvent<{ model: string; effort: string }>) => void this.startBoards(e.detail.model, e.detail.effort)}
+          @boards-changed=${(e: CustomEvent<BoardsState>) => (this.boards = e.detail)}
+          @back=${() => void this.backToDraft()}></bs-boards>`;
     }
   }
 

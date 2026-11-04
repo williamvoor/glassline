@@ -15,10 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from explorer_agent.boards import QUERY_NAME
+
 from explorer_bootstrap.claims import export_blockers
 from explorer_bootstrap.drafts import FILE_NAMES, accepted_overlay, validate_files
 
 NAME = re.compile(r"[a-z][a-z0-9_]*")
+BOARDS_DIR = "boards"
 TARGETS = ("toml", "sql")
 _COMMENT_ON = {"table": "TABLE", "view": "VIEW", "materialized view": "MATERIALIZED VIEW",
                "foreign table": "FOREIGN TABLE"}
@@ -94,15 +97,18 @@ def _utc_stamp() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
 
 
-def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *, force: bool = False) -> ExportResult:
+def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *, force: bool = False,
+                   boards: list[dict[str, Any]] | None = None, board_problems: list[str] | tuple[str, ...] = ()) -> ExportResult:
     """Write the draft's files to root/name: dataset.toml, notes.md, glossary.md and the
-    accepted comments (comments.toml or comments.sql).
+    accepted comments (comments.toml or comments.sql), and the Boards (`[{name, toml}]`, phase 3)
+    to boards/. `board_problems` are the Boards' check problems: any refuses the export.
 
     A new directory is written atomically (temp sibling, then rename). With force=True an
     existing directory is kept and only those files are replaced, anything else in it
     (scenarios, examples, a previous comments file for the other target) left alone; files
     it replaces are kept in a dot-prefixed sibling backup the dataset picker ignores.
-    Raises ExportError with every reason."""
+    Under force, an existing boards/ is replaced whole (and kept in the backup) when Boards are
+    given, and left alone when they aren't. Raises ExportError with every reason."""
     reasons = []
     if not NAME.fullmatch(name or ""):
         reasons.append("name must be lowercase letters, digits and underscores, starting with a letter")
@@ -118,6 +124,10 @@ def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *,
     validation = validate_files(draft)
     reasons.extend(validation["errors"])
     reasons.extend(export_blockers(draft["claims"]))
+    reasons.extend(board_problems)
+    for b in boards or []:  # callers check the Boards first; the file name is still never trusted
+        if not QUERY_NAME.fullmatch(str(b.get("name", ""))):
+            reasons.append(f"boards: {b.get('name')!r} is not a Board file name")
     if reasons:
         raise ExportError(reasons)
 
@@ -137,6 +147,8 @@ def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *,
         try:
             for file_name, text in new_texts.items():
                 (tmp / file_name).write_text(text, encoding="utf-8")
+            if boards:
+                _write_boards(tmp / BOARDS_DIR, boards)
             umask = os.umask(0)
             os.umask(umask)
             tmp.chmod(0o777 & ~umask)  # mkdtemp makes it 0700; give it the usual directory mode
@@ -146,12 +158,17 @@ def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *,
             raise
         return ExportResult(dest)
     overwrote = sorted(f for f in new_texts if (dest / f).exists())
+    old_boards = dest / BOARDS_DIR
+    replace_boards = bool(boards) and old_boards.is_dir()
     backup: Path | None = None
-    if overwrote:
+    if overwrote or replace_boards:
         backup = root / f".{name}.bak-{_utc_stamp()}"
         backup.mkdir(mode=0o777)
         for f in overwrote:
             shutil.copy2(dest / f, backup / f)
+        if replace_boards:
+            shutil.copytree(old_boards, backup / BOARDS_DIR)
+            overwrote.append(f"{BOARDS_DIR}/")
     try:
         for file_name, text in new_texts.items():
             tmp_file = dest / f".{file_name}.new"
@@ -161,4 +178,31 @@ def export_dataset(draft: dict[str, Any], name: str, target: str, root: Path, *,
         for leftover in dest.glob(".*.new"):
             leftover.unlink(missing_ok=True)
         raise
+    if boards:
+        _replace_boards(dest, boards)
     return ExportResult(dest, overwrote, backup)
+
+
+def _write_boards(directory: Path, boards: list[dict[str, Any]]) -> None:
+    directory.mkdir(mode=0o777)
+    for b in boards:
+        (directory / f"{b['name']}.toml").write_text(b["toml"], encoding="utf-8")
+
+
+def _replace_boards(dest: Path, boards: list[dict[str, Any]]) -> None:
+    """boards/ replaced whole: written beside it, then swapped in, so a Board left out of the new
+    set doesn't linger and a failure leaves the old directory in place."""
+    new = Path(tempfile.mkdtemp(prefix=f".{BOARDS_DIR}-", dir=dest))
+    old = dest / f".{BOARDS_DIR}.old"
+    try:
+        new.rmdir()
+        _write_boards(new, boards)
+        if (dest / BOARDS_DIR).exists():
+            (dest / BOARDS_DIR).rename(old)
+        new.rename(dest / BOARDS_DIR)
+    except BaseException:
+        shutil.rmtree(new, ignore_errors=True)
+        if old.exists() and not (dest / BOARDS_DIR).exists():
+            old.rename(dest / BOARDS_DIR)
+        raise
+    shutil.rmtree(old, ignore_errors=True)

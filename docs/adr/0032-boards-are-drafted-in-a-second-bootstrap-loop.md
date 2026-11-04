@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted (2026-11-04)
 ---
 
 # Boards are drafted in a second bootstrap loop, as TOML checked by the agent's own code

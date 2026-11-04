@@ -31,6 +31,10 @@ describe('exportBlockers (U2)', () => {
     expect(exportBlockers({ ...base, claims: [claim(null)] })[0]).toContain('not checked');
     expect(exportBlockers({ ...base, claims: [claim('failed', { dismissed: true })] })).toEqual([]);
     expect(exportBlockers({ ...base, edited: new Set([0]) })).toEqual(['Re-run the edited claims.']);
+    expect(exportBlockers({ ...base, boardProblems: ['boards/explorer.toml: bad'] })).toEqual([
+      'A Board has problems: fix them on the Boards step.',
+    ]);
+    expect(exportBlockers({ ...base, boardProblems: [] })).toEqual([]);
   });
 });
 

@@ -18,6 +18,17 @@ trend = LineChart("<trend_query>", "<period column>", "<value column>", "<title>
 top = DataTable("<top_query>", "<title>", "<columns>", "<column:format pairs>", bars="<value column>")
 """
 
+# Optional: one or more Controls. Uncomment a block to add one. Every Control must be used as
+# :<control_name> by a query (see controls.md), and its name must differ from every output column.
+# [[controls]]
+# name = "<control_name>"
+# kind = "choice"
+# label = "<label>"
+# type = "text"
+# options_sql = "<value and label columns, one row per option; no placeholders>"
+# all_label = "All"
+# default = "all"
+
 [[queries]]
 name = "<totals_query>"
 sql = "<one row: the headline totals>"

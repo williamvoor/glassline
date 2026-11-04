@@ -411,3 +411,173 @@ async def test_export_force(ro_pool, tmp_path):
         assert body["backup"] is not None and body["path"] == "datasets/demo"
         assert (existing / "dataset.toml").read_text(encoding="utf-8") != "old toml\n"
         assert (existing / "scenarios.toml").read_text(encoding="utf-8") == "keep me\n"
+
+
+# --- phase 3: Boards (S12, S13) ----------------------------------------------------------------
+
+from test_boards_draft import EXPLORER as EXPLORER_BOARD, GRADE as GRADE_BOARD, good_set  # noqa: E402
+
+
+def _model_then_boards(*boards_submits):
+    steps = [
+        tool_calls(("run_sql", {"sql": "SELECT count(*) AS n FROM bs.mixed", "purpose": "count rows"})),
+        tool_calls(("submit_draft", valid_args())),
+    ]
+    steps += [tool_calls(("submit_boards", {"boards": b})) for b in boards_submits]
+    return ScriptedCompletion(steps)
+
+
+async def _boards(client):
+    r = await client.post("/api/boards/draft", json={})
+    assert r.status_code == 200, r.json()
+    return await _wait(client, r.json()["run_id"])
+
+
+# S12
+async def test_boards_flow_over_http(ro_pool, tmp_path):
+    app, root = _app(ro_pool, tmp_path, _model_then_boards(good_set()))
+    async with _client(app) as client:
+        assert (await client.get("/api/boards")).status_code == 404
+        assert (await client.post("/api/boards/draft", json={})).status_code == 404  # no draft yet
+        done, _ = await _drafted(client)
+        draft = done["draft"]
+        done, events = await _boards(client)
+        assert "error" not in done, done
+        assert [e["type"] for e in events] == ["call"]
+        state = done["boards"]
+        assert [b["name"] for b in state["boards"]] == ["explorer", "grade"]
+        assert state["problems"] == {"explorer": [], "grade": []} and state["set_problems"] == []
+        assert state["preview"]["grade"]["key"]["source"] == "bs.mixed.grade"
+        assert state["usage"]["totals"]["calls"] == 1
+        assert (await client.get("/api/boards")).json() == state
+
+        # validate stores and re-checks edited text
+        broken = [{**b, "toml": b["toml"].replace('"grade,amount"', '"grade,amont"')} if b["name"] == "explorer" else b
+                  for b in state["boards"]]
+        r = (await client.post("/api/boards/validate", json={"boards": broken})).json()
+        assert "amont" in r["problems"]["explorer"][0] and "explorer" not in r["preview"]
+        assert (await client.get("/api/boards")).json()["boards"][0]["toml"] == broken[0]["toml"]
+        bad = await client.post("/api/boards/validate", json={"boards": [{"name": "explorer"}]})
+        assert bad.status_code == 400 and bad.json()["reasons"]
+
+        edits = {"files": draft["files"], "comments": draft["comments"], "dismissed": []}
+        refused = await client.post("/api/export", json={**edits, "name": "bs_boards", "target": "toml"})
+        assert refused.status_code == 422 and any("amont" in r for r in refused.json()["reasons"])
+        assert (await client.post("/api/boards/validate", json={"boards": state["boards"]})).json()["problems"]["explorer"] == []
+        ok = await client.post("/api/export", json={**edits, "name": "bs_boards", "target": "toml"})
+        assert ok.status_code == 200, ok.json()
+    assert sorted(load_dataset(root / "bs_boards").boards) == ["explorer", "grade"]
+
+
+async def test_export_rechecks_boards_instead_of_trusting_stored_problems(ro_pool, tmp_path):
+    app, root = _app(ro_pool, tmp_path, _model_then_boards(good_set()))
+    async with _client(app) as client:
+        draft = (await _drafted(client))[0]["draft"]
+        await _boards(client)
+        stored = app.app.state.bootstrap.boards  # _Guard wraps the Starlette app
+        assert stored["problems"] == {"explorer": [], "grade": []}
+        stored["boards"][1]["toml"] = GRADE_BOARD.replace("FROM bs.mixed WHERE grade = :g ORDER", "FROM bs.nope WHERE grade = :g ORDER")
+        r = await client.post("/api/export", json={"files": draft["files"], "comments": draft["comments"], "dismissed": [],
+                                                   "name": "stale", "target": "toml"})
+        assert r.status_code == 422
+        assert any("boards/grade.toml" in x and "nope" in x for x in r.json()["reasons"])
+    assert not (root / "stale").exists()
+
+
+async def test_boards_need_valid_files_and_one_run_at_a_time(ro_pool, tmp_path):
+    gate = asyncio.Event()
+
+    class Slow(ScriptedCompletion):
+        async def __call__(self, **kw):
+            if any(t["function"]["name"] == "submit_boards" for t in kw["tools"]):
+                await gate.wait()
+            return await super().__call__(**kw)
+
+    model = Slow(_model_then_boards(good_set()).steps)
+    app, _ = _app(ro_pool, tmp_path, model)
+    async with _client(app) as client:
+        draft = (await _drafted(client))[0]["draft"]
+        bad = {"files": {**draft["files"], "dataset_toml": "name = "}, "comments": draft["comments"]}
+        await client.post("/api/validate", json=bad)
+        r = await client.post("/api/boards/draft", json={})
+        assert r.status_code == 400 and any("not valid TOML" in x for x in r.json()["reasons"])
+        await client.post("/api/validate", json={"files": draft["files"], "comments": draft["comments"]})
+        run_id = (await client.post("/api/boards/draft", json={})).json()["run_id"]
+        assert (await client.post("/api/boards/draft", json={})).status_code == 409
+        assert (await client.post("/api/draft", json={})).status_code == 409
+        assert (await client.post("/api/report", json={"schemas": ["bs"]})).status_code == 409
+        gate.set()
+        done, _ = await _wait(client, run_id)
+        assert done["boards"]["boards"]
+
+
+async def test_a_new_draft_clears_the_boards(ro_pool, tmp_path):
+    model = _model_then_boards(good_set())
+    model.steps += _model().steps
+    app, _ = _app(ro_pool, tmp_path, model)
+    async with _client(app) as client:
+        await _drafted(client)
+        await _boards(client)
+        assert (await client.get("/api/boards")).status_code == 200
+        run_id = (await client.post("/api/draft", json={})).json()["run_id"]
+        await _wait(client, run_id)
+        assert (await client.get("/api/boards")).status_code == 404
+
+
+# S13
+async def test_boards_estimate(ro_pool, tmp_path):
+    app, _ = _app(ro_pool, tmp_path, _model())
+    async with _client(app) as client:
+        assert (await client.post("/api/boards/estimate", json={})).status_code == 404
+        await _drafted(client)
+        draft_est = (await client.post("/api/estimate", json={})).json()
+        est = (await client.post("/api/boards/estimate", json={"model": "meta/muse-spark-1.3"})).json()
+        assert est["model"] == "meta/muse-spark-1.3"
+        assert est["prompt_chars"] > draft_est["prompt_chars"]
+        assert est["input_tokens_est"] == math.ceil(est["prompt_chars"] / 3)
+
+
+async def test_overlapping_validates_keep_the_newest_text(ro_pool, tmp_path, monkeypatch):
+    """Refuter round 1: an older validate finishing last must not overwrite a newer edit."""
+    import explorer_bootstrap.server as srv
+
+    real = srv.check_boards
+    gate = asyncio.Event()
+
+    async def gated(files, *a, **kw):
+        if "# older" in files[0]["toml"]:
+            await gate.wait()
+        return await real(files, *a, **kw)
+
+    app, _ = _app(ro_pool, tmp_path, _model_then_boards(good_set()))
+    async with _client(app) as client:
+        await _drafted(client)
+        boards = (await _boards(client))[0]["boards"]["boards"]
+        monkeypatch.setattr(srv, "check_boards", gated)
+        older = [{**boards[0], "toml": boards[0]["toml"] + "# older\n"}, boards[1]]
+        newer = [{**boards[0], "toml": boards[0]["toml"] + "# newer\n"}, boards[1]]
+        first = asyncio.create_task(client.post("/api/boards/validate", json={"boards": older}))
+        await asyncio.sleep(0.2)
+        second = asyncio.create_task(client.post("/api/boards/validate", json={"boards": newer}))
+        await asyncio.sleep(0.2)
+        gate.set()
+        await first
+        await second
+        assert (await client.get("/api/boards")).json()["boards"][0]["toml"].endswith("# newer\n")
+
+
+async def test_boards_routes_refuse_while_a_dataset_draft_runs_and_404_without_boards(ro_pool, tmp_path):
+    gate = asyncio.Event()
+
+    async def slow(_kw):
+        await gate.wait()
+        return tool_calls(("submit_draft", valid_args()))
+
+    app, _ = _app(ro_pool, tmp_path, ScriptedCompletion([tool_calls(("submit_draft", valid_args())), slow]))
+    async with _client(app) as client:
+        await _drafted(client)
+        assert (await client.post("/api/boards/validate", json={"boards": good_set()})).status_code == 404
+        run_id = (await client.post("/api/draft", json={})).json()["run_id"]
+        assert (await client.post("/api/boards/draft", json={})).status_code == 409
+        gate.set()
+        await _wait(client, run_id)

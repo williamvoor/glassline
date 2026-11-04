@@ -17,6 +17,8 @@ _INTS = {
     "BOOTSTRAP_CALL_TIMEOUT_S": 300,
     "BOOTSTRAP_SQL_ROW_CAP": 200,
     "BOOTSTRAP_ROWS_TO_MODEL": 20,
+    "BOOTSTRAP_MAX_ENTITY_BOARDS": 3,  # phase 3 (the user, 2026-11-04)
+    "BOOTSTRAP_BOARD_PREVIEW_ROWS": 5,
 }
 
 
@@ -41,6 +43,8 @@ class DraftSettings:
     sql_row_cap: int
     rows_to_model: int
     prices: Prices
+    max_entity_boards: int = 3
+    board_preview_rows: int = 5
 
 
 def load_prices(model: str, path: Path = PRICES_PATH) -> Prices:
@@ -82,4 +86,6 @@ def load_draft_settings(
         sql_row_cap=_positive_int(env, "BOOTSTRAP_SQL_ROW_CAP"),
         rows_to_model=_positive_int(env, "BOOTSTRAP_ROWS_TO_MODEL"),
         prices=load_prices(model),
+        max_entity_boards=_positive_int(env, "BOOTSTRAP_MAX_ENTITY_BOARDS"),
+        board_preview_rows=_positive_int(env, "BOOTSTRAP_BOARD_PREVIEW_ROWS"),
     )
