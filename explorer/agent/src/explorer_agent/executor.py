@@ -504,6 +504,8 @@ class ExplorerExecutor(AgentExecutor):
                 if board is not None:
                     meta[BOARD_KEY] = {"id": board.id, "controls": [{"name": c.name, "kind": c.kind} for c in board.board.controls]}
                 if self._saved is not None:
+                    if record is not None and MODEL_KEY in meta:
+                        record = {**record, "model": meta[MODEL_KEY]}  # Workspaces SPEC E10: the chip on reopen
                     self._record(conv, level, meta[TAB_KEY], meta[LOG_KEY], record, board)
                 await updater.complete(updater.new_agent_message(parts, metadata=meta))
                 self._save(conv)  # after the reply is sent (B13)
@@ -1056,6 +1058,8 @@ class ExplorerExecutor(AgentExecutor):
             level = conv.actions.surfaces[rec["surface_id"]]
             out: dict[str, Any] = {"prose": "", "a2ui": [], "changed": False, "failed_results": [],
                                    "board_changed": False, "board": None, "tab": dict(rec["tab"])}
+            if "model" in rec:  # E10: Levels saved before it have no key, so no chip
+                out["model"] = rec["model"]
             kind = rec["kind"]
             if kind == "board":
                 await self._rebuild_board(conv, lid, rec, level, out, defaults)

@@ -84,7 +84,8 @@ sql = "SELECT sum(total_value) AS total_value FROM mart.agency WHERE agency_name
 class Agent:
     """One agent process over a Workspace's saved store: build it again for a "restart"."""
 
-    def __init__(self, ro_pool, path: Path, steps=(), *, boards_dir: Path | None = None, max_conversations=100):
+    def __init__(self, ro_pool, path: Path, steps=(), *, boards_dir: Path | None = None, max_conversations=100,
+                 model: str | None = None):
         self.runner = SqlRunner(ro_pool, ("mart",), 5000, 100)
         boards = load_boards(boards_dir, ("mart",)) if boards_dir else {}
         self.pipeline = UiPipeline(allowed_schemas=("mart",), entity=entity_columns(boards),
@@ -99,7 +100,7 @@ class Agent:
             renderer = BoardRenderer(boards, self.runner, concurrency=2, row_cap=500, ttl_s=300, max_cache=20)
             views = BoardViews(renderer, self.pipeline)
         self.app = build_app(self.loop, url=URL, client_origin=ORIGIN, conversations=self.conversations,
-                             drills=DrillDowns(self.runner, self.pipeline), boards=views,
+                             drills=DrillDowns(self.runner, self.pipeline), boards=views, model=model,
                              saved=SavedViews(self.store, self.runner, self.pipeline))
         self.executor = self.app.state.executor
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url=URL)
@@ -246,6 +247,30 @@ async def test_p3_after_a_restart_a_saved_answer_rebuilds_to_the_same_a2ui(ro_po
         assert second.model.calls == []  # no model work to reopen
     finally:
         await second.close()
+
+
+@pytest.mark.db
+async def test_n15_a_saved_answer_keeps_its_model_and_an_old_one_has_no_key(ro_pool, db_path):
+    """Workspaces SPEC E10: the reopened Turn shows the same model chip; Levels saved before show none."""
+    first = Agent(ro_pool, db_path, answer_steps(), model="meta/muse-spark-1.3")
+    cid = (await first.ask())[-1]["contextId"]
+    await first.close()
+    second = Agent(ro_pool, db_path)
+    try:
+        assert (await second.level(cid, "1-1"))["model"] == "meta/muse-spark-1.3"
+    finally:
+        await second.close()
+
+    # An unnamed model sends no explorerModel, so the record has no key: like a Level saved before E10.
+    other = db_path.parent.parent / "old" / "conversations.sqlite"
+    third = Agent(ro_pool, other, answer_steps())
+    old_cid = (await third.ask())[-1]["contextId"]
+    await third.close()
+    fourth = Agent(ro_pool, other)
+    try:
+        assert "model" not in await fourth.level(old_cid, "1-1")
+    finally:
+        await fourth.close()
 
 
 @pytest.mark.db
