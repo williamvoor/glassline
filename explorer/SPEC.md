@@ -3001,7 +3001,7 @@ rerun check below catches that.
 
 ## 22. Amendment: visual polish for Boards and answers (2026-11-05)
 
-Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Amends §16 (look and feel) and §18 (Boards,
+Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Amends §16 (look and feel) and §18 (Boards,
 Controls). Decision: ADR 0043. The user chose the scope (2026-11-05): the five polish items, a
 Metric sparkline without a change figure, a `weight` argument on the Visual Macros, and the
 Controls as chips. ADR 0026 holds: the agent still sends structure, never colours, fonts or Vega
@@ -3111,6 +3111,13 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   - in dark mode, no shadow; on hover the border is `--line-strong`
   - under `prefers-reduced-motion`, no transition
 - **SQL details summary** in `--faint`, so it recedes on small cards.
+- Built (2026-11-05):
+  - **Title selector:** `explorer-app .a2ui-card > * > :first-child > .a2ui-text-h4 h4`. A2UI
+    renders in light DOM as Card `div` > Column element > Text element > `span` > `h4`.
+    `client/test/render.test.ts` runs the selector against the rendered fixture, so a change in
+    that shape fails a test.
+  - **Shadows:** the at-rest shadow is the `--a2ui-card-box-shadow` token, set to `none` in the
+    dark `:root`. Hover is a rule of its own.
 
 ### Step 4: proportions (agent and bootstrap)
 

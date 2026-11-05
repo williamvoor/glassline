@@ -59,3 +59,21 @@ describe('fixture transport', () => {
     expect(details[0]!.querySelector('summary')!.textContent).toBe('SQL — top suppliers (fixture)');
   });
 });
+
+// SPEC §22 step 3: index.html's Visual-title selector matches the real DOM shape.
+describe('Visual title selector', () => {
+  it('matches each Visual Card title h4 and nothing else', async () => {
+    const processor = createProcessor();
+    processor.processMessages(transport as unknown as A2uiMessage[]);
+    const el = document.createElement('a2ui-surface') as HTMLElement & {surface: unknown};
+    el.surface = processor.model.surfacesMap.get('turn-1');
+    document.body.appendChild(el);
+    await settle(el);
+
+    const titles = [...el.querySelectorAll('.a2ui-card > * > :first-child > .a2ui-text-h4 h4')];
+    const allH4 = [...el.querySelectorAll('h4')];
+    expect(titles.map(h => h.textContent)).toContain('Value by supplier');
+    expect(titles.length).toBe(allH4.filter(h => h.closest('.a2ui-card')).length);
+    for (const h of titles) expect(h.closest('.a2ui-card')!.querySelector('h4')).toBe(h); // the Card's first h4
+  });
+});

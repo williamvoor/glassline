@@ -157,3 +157,50 @@ describe('Metric value', () => {
     expect(rule).toMatch(/letter-spacing:\s*-0\.03em/);
   });
 });
+
+// SPEC §22 step 3 (P11): Card hierarchy.
+describe('Card hierarchy', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+  const rule = (selector: string): string => {
+    const at = style.indexOf(`${selector} {`);
+    return at < 0 ? '' : style.slice(at, style.indexOf('}', at));
+  };
+  const media = (query: string): string => {
+    let out = '';
+    for (let at = style.indexOf(query); at >= 0; at = style.indexOf(query, at + 1)) out += style.slice(at, style.indexOf('}\n', at));
+    return out;
+  };
+
+  it('turns only the first h4 of a Card into a mono uppercase muted label', () => {
+    const title = rule('explorer-app .a2ui-card > * > :first-child > .a2ui-text-h4 h4');
+    expect(title).toMatch(/font:\s*600 11\.5px\/[\d.]+ var\(--mono\)/);
+    expect(title).toMatch(/letter-spacing:\s*0\.08em/);
+    expect(title).toMatch(/text-transform:\s*uppercase/);
+    expect(title).toMatch(/color:\s*var\(--muted\)/);
+    expect(rule('explorer-app .a2ui-text h4')).toMatch(/font-size:\s*16px/); // prose h4s keep their style
+  });
+
+  it('pads Cards 14px 16px with a soft ink shadow at rest and a stronger one on hover, without moving', () => {
+    expect(style).toMatch(/--a2ui-card-padding:\s*14px 16px;/);
+    expect(style).toMatch(/--a2ui-card-box-shadow:\s*0 1px 2px color-mix\(in srgb, var\(--ink\) 4%, transparent\),\s*0 1px 3px color-mix\(in srgb, var\(--ink\) 6%, transparent\);/);
+    const hover = rule('explorer-app .a2ui-card:hover');
+    expect(hover).toMatch(/box-shadow:\s*0 2px 8px color-mix\(in srgb, var\(--ink\) 8%, transparent\)/);
+    expect(hover).not.toMatch(/transform|translate|margin/);
+    expect(rule('explorer-app .a2ui-card')).toMatch(/transition:\s*box-shadow 150ms/);
+  });
+
+  it('has no Card shadow in dark mode, and a strong border on hover there', () => {
+    const dark = media('@media (prefers-color-scheme: dark)');
+    expect(dark).toMatch(/--a2ui-card-box-shadow:\s*none/);
+    expect(dark).toMatch(/explorer-app \.a2ui-card:hover\s*\{[^}]*box-shadow:\s*none[^}]*border-color:\s*var\(--line-strong\)/);
+  });
+
+  it('drops the Card transition under reduced motion', () => {
+    expect(media('@media (prefers-reduced-motion: reduce)')).toMatch(/explorer-app \.a2ui-card\s*\{\s*transition:\s*none/);
+  });
+
+  it('greys the SQL details summary', () => {
+    expect(rule('details.sql-details summary')).toMatch(/color:\s*var\(--faint\)/);
+  });
+});
+

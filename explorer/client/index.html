@@ -36,7 +36,8 @@
         --a2ui-border-radius: 8px;
         --a2ui-font-family-title: var(--sans); --a2ui-font-family-monospace: var(--mono);
         --a2ui-card-background: var(--panel); --a2ui-card-border: 1px solid var(--line);
-        --a2ui-card-border-radius: 8px; --a2ui-card-padding: 16px 18px; --a2ui-card-box-shadow: none; --a2ui-card-margin: 0;
+        --a2ui-card-border-radius: 8px; --a2ui-card-padding: 14px 16px;
+        --a2ui-card-box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent), 0 1px 3px color-mix(in srgb, var(--ink) 6%, transparent); --a2ui-card-margin: 0;
         --a2ui-button-border: 1px solid var(--line-strong); --a2ui-button-border-radius: 999px;
         --a2ui-button-padding: 6px 14px; --a2ui-button-box-shadow: none; --a2ui-button-font-weight: 500;
         --a2ui-text-color-text: var(--fg); --a2ui-text-caption-color: var(--muted); --a2ui-text-a-color: var(--accent);
@@ -53,6 +54,7 @@
           --chart-1: #8aa8e0; --chart-2: #e8916f; --chart-3: #5d8fd6; --chart-4: #8fbf97; --chart-5: #bb98d0; --chart-6: #d9b872;
           --model-wonder: #a898ff; --model-wonder-soft: #262044; --model-spark: #4fcfbe; --model-spark-soft: #12302d;
           --glass-shadow: 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent) inset, 0 16px 40px -20px #000000;
+          --a2ui-card-box-shadow: none;
         }
       }
 
@@ -390,8 +392,14 @@
 
       /* Surfaces: Cards, titles, Metrics, buttons ------------------------------------------------ */
       explorer-app .level-view a2ui-surface { display: block; }
-      explorer-app .a2ui-card { height: 100%; }
+      explorer-app .a2ui-card { height: 100%; transition: box-shadow 150ms ease, border-color 150ms ease; }
+      /* SPEC §22 step 3: hover deepens the shadow without moving the Card (a lift makes bars harder to click). */
+      explorer-app .a2ui-card:hover { box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent); }
+      @media (prefers-color-scheme: dark) { explorer-app .a2ui-card:hover { box-shadow: none; border-color: var(--line-strong); } }
+      @media (prefers-reduced-motion: reduce) { explorer-app .a2ui-card { transition: none; } }
       explorer-app .a2ui-text h4 { margin: 0; font-size: 16px; font-weight: 600; }
+      /* A Visual's title: the h4 that is a Card's first Text. Model-written h4s in prose keep the rule above. */
+      explorer-app .a2ui-card > * > :first-child > .a2ui-text-h4 h4 { font: 600 11.5px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
       explorer-app .a2ui-text.a2ui-text-caption { font: normal 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
       explorer-app .a2ui-text.a2ui-text-caption em { font-style: normal; } /* A2UI wraps captions in <em> */
       explorer-app .a2ui-text h2 { margin: 2px 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
@@ -426,7 +434,7 @@
       }
       table.data-grid tr.askable:hover .ask-tag, table.data-grid tr.askable:focus .ask-tag { visibility: visible; }
       details.sql-details { margin: 8px 0 0; color: var(--muted); font: 12px/1.4 var(--mono); }
-      details.sql-details summary { cursor: pointer; }
+      details.sql-details summary { cursor: pointer; color: var(--faint); }
       details.sql-details pre {
         margin: 8px 0 0; padding: 10px 12px; overflow-x: auto; border-radius: 6px; background: var(--soft); color: var(--fg); font-size: 12px;
       }
