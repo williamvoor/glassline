@@ -24,3 +24,12 @@ AusTender contract notices (loaded into the austender/ database from the AusTend
   (AusTender terms, section 5). Only contract-notice data is loaded, and the database reshapes it
   into tables; that reshaping is ours, not the Commonwealth's.
   Committed test fixtures (austender/tests/seed/) are synthetic.
+
+Fonts (SIL Open Font License 1.1, https://openfontlicense.org)
+  Public Sans: Copyright 2015 The Public Sans Project Authors
+  (https://github.com/uswds/public-sans)
+  JetBrains Mono: Copyright 2020 The JetBrains Mono Project Authors
+  (https://github.com/JetBrains/JetBrainsMono)
+  The explorer client loads both from the @fontsource-variable npm packages, which carry the
+  licence text. They are not committed to this repository. The "Follow the Contract" HTML
+  prototype embeds both fonts, with their licence text, in the file.
