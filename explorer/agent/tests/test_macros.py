@@ -901,3 +901,155 @@ def test_auto_shows_a_whole_float_year_without_a_separator():
     # date_part('year', …) returns double precision.
     assert format_value(2015.0, "auto", "double precision", column="year") == "2015"
     assert format_value(2015.5, "auto", "double precision", column="year") == "2,015.50"
+
+
+# --- Metric trend sparkline (SPEC §22 step 2) ----------------------------------------------------
+
+
+def _trend_store() -> ResultStore:
+    s = ResultStore()
+    s.add(sql="SELECT 42 AS value", purpose="total", columns=["value"], column_types=["bigint"],
+          rows=[{"value": 42}], truncated=False)
+    s.add(sql="SELECT year, value FROM t", purpose="by year", columns=["year", "value", "name"],
+          column_types=["integer", "numeric", "text"],
+          rows=[{"year": 2022, "value": 3.0, "name": "c"}, {"year": 2020, "value": 1.0, "name": "a"},
+                {"year": 2021, "value": None, "name": "b"}, {"year": 2023, "value": 5.0, "name": "d"}],
+          truncated=False)
+    return s
+
+
+def test_metric_trend_adds_a_sparkline_from_the_stored_rows():
+    """P6: ordered by the first column, y = the Metric's column, non-numbers dropped, height 48,
+    not clickable, no axes or tooltip; between the value and the SQL."""
+    with macro_context(_trend_store()) as c:
+        comps = expand("Metric", result_id="r1", column="value", label="Total", trend="r2")
+    column = by_type(comps, "Column")[0]
+    order = [next(x for x in comps if x["id"] == cid)["component"] for cid in column["children"]]
+    assert order == ["Text", "Text", "VegaChart", "SqlDetails", "SqlDetails"]
+    chart = by_type(comps, "VegaChart")[0]
+    assert chart["height"] == 48 and "action" not in chart
+    spec = chart["spec"]
+    assert spec["mark"] == {"type": "line"}
+    assert [(v["year"], v["value"]) for v in spec["data"]["values"]] == [(2020, 1.0), (2022, 3.0), (2023, 5.0)]
+    assert spec["encoding"]["x"]["axis"] is None and spec["encoding"]["y"]["axis"] is None
+    assert spec["encoding"]["y"] | {"axis": None} == {"field": "value", "type": "quantitative", "axis": None}
+    assert "tooltip" not in spec["encoding"] and "color" not in spec["encoding"]
+    assert c.sources == [] and c.visuals == 0  # not a Visual: nothing to click, no Ask
+    # Both queries are shown (ADR 0001): the Metric's, then the trend's.
+    assert [(d["sql"], d["summary"]) for d in by_type(comps, "SqlDetails")] == [
+        ("SELECT 42 AS value", "total"), ("SELECT year, value FROM t", "by year")]
+
+
+def test_metric_trend_with_fewer_than_two_points_has_no_sparkline():
+    s = _trend_store()
+    s.add(sql="SELECT 1", purpose="p", columns=["year", "value"], column_types=["integer", "numeric"],
+          rows=[{"year": 2020, "value": 1.0}, {"year": 2021, "value": None}], truncated=False)
+    with macro_context(s):
+        comps = expand("Metric", result_id="r1", column="value", label="Total", trend="r3")
+    assert not by_type(comps, "VegaChart")
+    assert by_type(comps, "Text")[1]["text"] == "42"
+
+
+@pytest.mark.parametrize(("trend", "match"), [
+    ("r9", "unknown result_id 'r9'"),
+])
+def test_metric_trend_unknown_result_is_a_macro_error(trend, match):
+    with macro_context(_trend_store()), pytest.raises(MacroError, match=match):
+        expand("Metric", result_id="r1", column="value", label="Total", trend=trend)
+
+
+def test_metric_trend_without_the_column_is_a_macro_error():
+    s = _trend_store()
+    s.add(sql="SELECT 1", purpose="p", columns=["year", "total"], column_types=["integer", "numeric"],
+          rows=[{"year": 2020, "total": 1.0}], truncated=False)
+    with macro_context(s), pytest.raises(MacroError, match="r3 has no column 'value'"):
+        expand("Metric", result_id="r1", column="value", label="Total", trend="r3")
+
+
+def test_metric_trend_with_a_text_column_is_a_macro_error():
+    s = ResultStore()
+    s.add(sql="SELECT 'x' AS name", purpose="p", columns=["name"], column_types=["text"], rows=[{"name": "x"}],
+          truncated=False)
+    s.add(sql="SELECT 1", purpose="p", columns=["year", "name"], column_types=["integer", "text"],
+          rows=[{"year": 2020, "name": "a"}, {"year": 2021, "name": "b"}], truncated=False)
+    with macro_context(s), pytest.raises(MacroError, match="not a number"):
+        expand("Metric", result_id="r1", column="name", label="L", trend="r2")
+
+
+def test_board_metric_with_a_failed_trend_query_draws_without_the_sparkline():
+    """P7: the headline number is still right, so only the sparkline goes."""
+    s = _trend_store()
+    with macro_context(_Named({"total": s.get("r1")}), board=True, failed={"by_year": "57014"}):
+        comps = expand("Metric", result_id="total", column="value", label="Total", trend="by_year")
+    assert not by_type(comps, "VegaChart")
+    assert [t["text"] for t in by_type(comps, "Text")] == ["Total", "42"]
+    assert len(by_type(comps, "SqlDetails")) == 1  # no trend SQL without its sparkline
+
+
+def test_board_metric_with_an_empty_trend_query_draws_without_the_sparkline():
+    s = _trend_store()
+    with macro_context(_Named({"total": s.get("r1"), "by_year": _board_store().get("r1")}), board=True):
+        comps = expand("Metric", result_id="total", column="value", label="Total", trend="by_year")
+    assert not by_type(comps, "VegaChart") and by_type(comps, "Text")[1]["text"] == "42"
+
+
+def test_rebuilt_metric_with_a_failed_trend_rerun_draws_without_the_sparkline():
+    s = _trend_store()
+    with macro_context(s, rebuild=True, rerun_failed={"r2": ("57014", "SELECT 1")}):
+        comps = expand("Metric", result_id="r1", column="value", label="Total", trend="r2")
+    assert not by_type(comps, "VegaChart") and by_type(comps, "Text")[1]["text"] == "42"
+
+
+def test_check_columns_checks_the_metric_trend():
+    outputs = {"total": (["value"], ["numeric"]), "by_year": (["year", "value", "name"], ["integer", "numeric", "text"]),
+               "bare": (["year", "other"], ["integer", "numeric"])}
+    comps = [
+        {"id": "a", "component": "Metric", "result_id": "total", "column": "value", "label": "L", "trend": "by_year"},
+        {"id": "b", "component": "Metric", "result_id": "total", "column": "value", "label": "L", "trend": "nope"},
+        {"id": "c", "component": "Metric", "result_id": "total", "column": "value", "label": "L", "trend": "bare"},
+        {"id": "d", "component": "Metric", "result_id": "by_year", "column": "name", "label": "L", "trend": "by_year"},
+    ]
+    assert check_columns(comps, outputs) == [
+        "b: Metric trend names unknown query 'nope'; queries are: total, by_year, bare",
+        "c: trend column 'value' is not an output column of query 'bare'",
+        "d: trend column 'name' of query 'by_year' is text, not a number",
+    ]
+
+
+def test_metric_trend_passes_strict_validation():
+    to_transport_with(_trend_store(), '<a2ui>\nroot = Column([m])\nm = Metric("r1", "value", "Total", 0, "auto", "r2")\n</a2ui>')
+
+
+def _trend_of(columns, types, rows) -> list[dict]:
+    s = _trend_store()
+    s.add(sql="SELECT 1", purpose="p", columns=columns, column_types=types, rows=rows, truncated=False)
+    with macro_context(s):
+        comps = expand("Metric", result_id="r1", column="value", label="Total", trend="r3")
+    return by_type(comps, "VegaChart")
+
+
+def test_metric_trend_orders_numbers_by_value_then_text_and_drops_null_x():
+    rows = [{"k": 10, "value": 2.0}, {"k": "b", "value": 4.0}, {"k": 100, "value": 3.0}, {"k": None, "value": 9.0},
+            {"k": 9, "value": 1.0}, {"k": "a", "value": 5.0}]
+    chart = _trend_of(["k", "value"], ["text", "numeric"], rows)[0]
+    assert [v["k"] for v in chart["spec"]["data"]["values"]] == [9, 10, 100, "a", "b"]
+    assert chart["spec"]["encoding"]["x"]["type"] == "ordinal"
+
+
+def test_metric_trend_on_a_date_column_is_temporal():
+    rows = [{"day": "2024-02-01", "value": 2.0}, {"day": "2024-01-01", "value": 1.0}]
+    chart = _trend_of(["day", "value"], ["date", "numeric"], rows)[0]
+    assert chart["spec"]["encoding"]["x"]["type"] == "temporal"
+    assert [v["day"] for v in chart["spec"]["data"]["values"]] == ["2024-01-01", "2024-02-01"]
+
+
+def test_metric_trend_whose_first_column_is_the_value_is_an_error():
+    s = _trend_store()
+    s.add(sql="SELECT 1", purpose="p", columns=["value", "year"], column_types=["numeric", "integer"],
+          rows=[{"value": 1.0, "year": 1}, {"value": 2.0, "year": 2}], truncated=False)
+    with macro_context(s), pytest.raises(MacroError, match="first column must order the points"):
+        expand("Metric", result_id="r1", column="value", label="Total", trend="r3")
+    outputs = {"total": (["value"], ["numeric"]), "t": (["value", "year"], ["numeric", "integer"])}
+    comps = [{"id": "a", "component": "Metric", "result_id": "total", "column": "value", "label": "L", "trend": "t"}]
+    assert check_columns(comps, outputs) == [
+        "a: trend query 't': its first column must order the points, not be 'value'"]

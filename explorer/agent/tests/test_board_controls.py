@@ -514,3 +514,12 @@ async def test_the_display_copy_of_a_date_and_a_list_reruns(seed_runner):
     shown = await seed_runner.run(display_sql(sql, values))
     assert not isinstance(bound, SqlFail) and not isinstance(shown, SqlFail)
     assert bound.rows == shown.rows
+
+
+def test_a_metric_lists_its_trend_query_as_a_dependency():
+    """SPEC §22 step 2 (P7): a Control change that reruns the trend re-sends the Metric."""
+    comps = [{"id": "m", "component": "Metric", "result_id": "total", "column": "value", "label": "L", "trend": "by_year"},
+             {"id": "n", "component": "Metric", "result_id": "total", "column": "value", "label": "L"}]
+    deps = panel_dependencies(STUB_BOARD, comps)
+    assert deps["m"] == (frozenset({"total", "by_year"}), frozenset())
+    assert deps["n"] == (frozenset({"total"}), frozenset())

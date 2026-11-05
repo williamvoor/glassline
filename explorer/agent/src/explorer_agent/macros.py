@@ -1294,9 +1294,12 @@ def drill_down_view(result: StoredResult, spec: DrillSpec, title: str) -> Card:
     return _card([*parts, button])
 
 
+SPARKLINE_HEIGHT = 48  # px: a Metric's trend line (SPEC §22 step 2)
+
+
 @macro
 @_captured
-def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = "auto") -> Card:
+def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = "auto", trend: str = "") -> Card:
     """One headline number from a stored query result, with its label and SQL.
 
     Args:
@@ -1305,17 +1308,52 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
         label: Short label shown above the value, plain text.
         row: Row index (0 = first row).
         format: Value format: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct, text, date. currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
+        trend: Optional ID of a stored result drawn as a small line under the value: its first column orders the points, and its column with this Metric's column name is the value.
     """
     result = _result(result_id)
     _column(result, column)
     if _ctx().board and not 0 <= row < result.row_count:
         raise _no_rows(result, _fill(label, markdown=False))
     value = _row(result, row)[column]
+    sparkline = _sparkline(trend, column) if trend else []
     return _card([
         Text(text=_fill(label, markdown=False), variant="caption"),
         Text(text=_format(result, value, column, format), variant="h2"),
+        *sparkline[:1],
         _sql_details(result),
+        *sparkline[1:],  # the trend's SQL after the Metric's own (ADR 0001)
     ])
+
+
+def _sparkline(trend_id: str, column: str) -> list[Any]:
+    """A Metric's trend (SPEC §22 step 2): a line of `column` ordered by the first column, with no
+    axes, tooltip or clicks, and the trend's SQL. Empty when there are fewer than 2 numeric points,
+    or when the trend query failed (Board, rebuild): the headline number is still right."""
+    try:
+        trend = _result(trend_id)
+    except _PanelReplaced:
+        return []
+    _numeric_column(trend, column, "trend")
+    x = trend.columns[0]
+    if x == column:
+        raise MacroError(f"trend {trend.id}: its first column must order the points, not be {column!r}")
+    rows = sorted(
+        (r for r in trend.rows if _is_number(r.get(column)) and r.get(x) is not None),
+        key=lambda r: (not _is_number(r[x]), r[x] if _is_number(r[x]) else str(r[x])),  # numbers by value
+    )
+    if len(rows) < 2:
+        return []
+    values = [{x: r[x], column: r[column]} for r in rows]
+    spec = {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": values},
+        "mark": {"type": "line"},
+        "encoding": {
+            "x": {"field": _field(x), "type": "temporal" if trend.is_temporal(x) else "ordinal", "sort": None, "axis": None},
+            "y": {"field": _field(column), "type": "quantitative", "axis": None},
+        },
+    }
+    return [VegaChart(spec=spec, height=SPARKLINE_HEIGHT), _sql_details(trend)]
 
 
 def _row(result: StoredResult, index: int) -> dict[str, Any]:
@@ -1529,6 +1567,14 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
                 kind_of(query, comp["value"], "value", "numeric", cid)
         elif name == "Metric":
             kind_of(query, comp.get("column", ""), "column", "any", cid)
+            trend = comp.get("trend")
+            if trend and trend not in outputs:
+                problems.append(f"{cid}: Metric trend names unknown query {trend!r}; queries are: {', '.join(outputs)}")
+            elif trend and outputs[trend][0][:1] == [comp.get("column")]:
+                problems.append(f"{cid}: trend query {trend!r}: its first column must order the points, "
+                                f"not be {comp.get('column')!r}")
+            elif trend:
+                kind_of(trend, comp.get("column", ""), "trend", "numeric", cid)
         elif name == "DataTable":
             shown = _csv(comp.get("columns")) or list(outputs[query][0])
             for c in shown:

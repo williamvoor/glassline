@@ -306,3 +306,8 @@ def test_clicks_say_a_board_column_needs_no_drill_sql():
     # for Board rows (manual check 5, 2026-11-04).
     text = " ".join(instructions().split())
     assert text.index("give its charts and tables no `drill_sql`") < text.index("Give each other chart or table")
+
+
+def test_the_metric_docstring_offers_the_trend():
+    """SPEC §22 step 2 (P9)."""
+    assert "trend: Optional ID of a stored result" in (Metric.__doc__ or "")

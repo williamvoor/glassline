@@ -143,3 +143,17 @@ describe('chart tooltip', () => {
     expect(value).toMatch(/font-family:\s*var\(--mono\)/);
   });
 });
+
+// SPEC §22 step 2 (P11): the Metric value is a mono KPI figure.
+describe('Metric value', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+  const rule = style.match(/explorer-app \.a2ui-text h2\s*\{([^}]*)\}/)?.[1] ?? '';
+
+  it('is mono 34 px, weight 600, tabular, tightly tracked', () => {
+    expect(rule).toMatch(/font-family:\s*var\(--mono\)/);
+    expect(rule).toMatch(/font-size:\s*34px/);
+    expect(rule).toMatch(/font-weight:\s*600/);
+    expect(rule).toMatch(/font-variant-numeric:\s*tabular-nums/);
+    expect(rule).toMatch(/letter-spacing:\s*-0\.03em/);
+  });
+});

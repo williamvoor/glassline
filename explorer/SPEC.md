@@ -3001,7 +3001,7 @@ rerun check below catches that.
 
 ## 22. Amendment: visual polish for Boards and answers (2026-11-05)
 
-Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round. Amends §16 (look and feel) and §18 (Boards,
+Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Amends §16 (look and feel) and §18 (Boards,
 Controls). Decision: ADR 0043. The user chose the scope (2026-11-05): the five polish items, a
 Metric sparkline without a change figure, a `weight` argument on the Visual Macros, and the
 Controls as chips. ADR 0026 holds: the agent still sends structure, never colours, fonts or Vega
@@ -3075,11 +3075,29 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   - In a Board, the startup check (`check_columns`) reports an unknown `trend` query, or a
     missing or non-numeric column.
   - If the trend query fails at render, the Metric is drawn without the sparkline, because the
-    headline number is still right. The Metric's SQL details show the Metric's own query only.
+    headline number is still right.
+  - The Card shows two SQL details: the Metric's query, then the trend's (ADR 0001: every drawn
+    number shows its SQL). Without a sparkline there is only the Metric's. (Amended after review,
+    2026-11-05, the user's call: the draft showed the Metric's query only.)
 - **Re-queries.** `panel_dependencies` lists the `trend` query, so a Control change re-sends the
   Metric when its trend reruns.
 - The Metric docstring gains the `trend` line, so the prompt snapshots change (one deliberate
   update).
+- Amended during the build (2026-11-05):
+  - **Order.** Numbers in the first column sort by value, everything else as text after them.
+    Rows whose first column is NULL are dropped with the non-numeric ones.
+  - **Non-numeric `column` in answers.** A trend Result whose `column` isn't a number is a
+    `MacroError`, as in the Board check.
+  - **Not a Visual.** The sparkline takes no Visual index and registers no Source, so it has no
+    Ask and doesn't shift other Visuals' Drill indices.
+  - **The first column must differ from `column`** (after review): otherwise x is y. A
+    `MacroError` in answers, a startup problem in a Board.
+  - **A trend with a negative value draws as a line without the area**, as step 1's `withArea`
+    rule says. Accepted.
+  - Deferred (review): a `build_board` test with a trend (checked by hand by the refuter; unit
+    tests cover each part).
+  - **The `h2` rule stays unscoped.** It's the existing `explorer-app .a2ui-text h2` rule, so a
+    model-written `h2` also gets the KPI look, as it already had the 30 px figure.
 
 ### Step 3: Card hierarchy (client CSS)
 

@@ -596,9 +596,9 @@ async def _check_side_queries(board: Board, c: Control, runner: Any) -> None:
 
 
 def panel_dependencies(board: Board, comps: list[dict[str, Any]]) -> dict[str, tuple[frozenset[str], frozenset[str]]]:
-    """Per layout component (its root ID): the queries it reads (a Macro's `result_id`, and the
-    `{query[i].col}` placeholders in its texts) and the Controls its `drill_sql` binds. Only
-    components with any are listed. A Control change re-sends exactly these (SPEC §18 slice 2)."""
+    """Per layout component (its root ID): the queries it reads (a Macro's `result_id`, a Metric's
+    `trend`, and the `{query[i].col}` placeholders in its texts) and the Controls its `drill_sql`
+    binds. Only components with any are listed. A Control change re-sends exactly these (SPEC §18 slice 2)."""
     casts = board.casts
     out: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
     for comp in comps:
@@ -611,6 +611,8 @@ def panel_dependencies(board: Board, comps: list[dict[str, Any]]) -> dict[str, t
         if comp.get("component") in VISUAL_MACROS or comp.get("component") == "Metric":
             if isinstance(comp.get("result_id"), str):
                 queries.add(comp["result_id"])
+        if comp.get("component") == "Metric" and isinstance(comp.get("trend"), str) and comp["trend"]:
+            queries.add(comp["trend"])  # a Metric's sparkline (SPEC §22 step 2)
         controls: set[str] = set()
         sql = comp.get("drill_sql")
         if isinstance(sql, str) and sql.strip() and casts:
