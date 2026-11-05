@@ -9,8 +9,14 @@ express-stub.png
 glimmer-tune/runs/
 # Rebuilt by `data_cli export`
 glimmer-tune/exports/
-# Run 1/2 training exports, retired with the generators (glimmer-tune/docs/cleanup-plan.md)
-glimmer-tune/archive/exports/
+# Retired run 1/2 generators, tests and training data (kept locally only)
+glimmer-tune/archive/
+
+# Logs
+*.log
+
+# Dataset bootstrap backups
+explorer/datasets/.*.bak-*/
 
 # Secrets
 .env
