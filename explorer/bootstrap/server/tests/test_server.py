@@ -449,6 +449,7 @@ async def test_boards_flow_over_http(ro_pool, tmp_path):
         assert state["problems"] == {"explorer": [], "grade": []} and state["set_problems"] == []
         assert state["preview"]["grade"]["key"]["source"] == "bs.mixed.grade"
         assert state["usage"]["totals"]["calls"] == 1
+        assert isinstance(state["model"], str) and state["model"]  # Workspaces SPEC E9
         assert (await client.get("/api/boards")).json() == state
 
         # validate stores and re-checks edited text
@@ -456,6 +457,7 @@ async def test_boards_flow_over_http(ro_pool, tmp_path):
                   for b in state["boards"]]
         r = (await client.post("/api/boards/validate", json={"boards": broken})).json()
         assert "amont" in r["problems"]["explorer"][0] and "explorer" not in r["preview"]
+        assert r["model"] == state["model"]  # an edit keeps the drafting model (E9)
         assert (await client.get("/api/boards")).json()["boards"][0]["toml"] == broken[0]["toml"]
         bad = await client.post("/api/boards/validate", json={"boards": [{"name": "explorer"}]})
         assert bad.status_code == 400 and bad.json()["reasons"]

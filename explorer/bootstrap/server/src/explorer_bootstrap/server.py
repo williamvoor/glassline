@@ -43,7 +43,7 @@ from explorer_bootstrap.draft import Completion, DraftError, estimate_cost, run_
 from explorer_bootstrap.draft_schema import claim_problems
 from explorer_bootstrap.drafts import FILE_NAMES, DraftFileError, draft_dataset, new_draft, validate_files
 from explorer_bootstrap.export import NAME as EXPORT_NAME
-from explorer_bootstrap.export import ExportError, export_dataset
+from explorer_bootstrap.export import BOARDS_DIR, ExportError, export_dataset
 from explorer_bootstrap.report import OverlayDriftError, build_report
 from explorer_bootstrap.settings import ALLOWED_MODELS, SettingsError, load_draft_settings
 from explorer_bootstrap.registry import (
@@ -175,6 +175,17 @@ def _comments(raw: Any) -> list[dict[str, Any]] | None:
     return out
 
 
+KEPT_WHY = "Kept from the current Workspace."
+
+
+def _current_boards(directory: Path) -> list[dict[str, str]]:
+    """A Workspace's Board files as Board state entries (E6); none when it has no `boards/`."""
+    if not directory.is_dir():
+        return []
+    return [{"name": p.stem, "toml": p.read_text(encoding="utf-8"), "why": KEPT_WHY}
+            for p in sorted(directory.glob("*.toml"))]
+
+
 @dataclass
 class _Conn:
     """The login the server works with. In Settings mode it is chosen at runtime (D2)."""
@@ -209,6 +220,7 @@ def build_app(
     conn = _Conn(pool, database)
     settings_mode = data_dir is not None
     regen: dict[str, str | None] = {"name": None}  # D5: the next export goes back into this Workspace
+    kept: dict[str, list[dict[str, str]]] = {"boards": []}  # E6: the regenerated Workspace's Boards
 
     async def reload_now() -> tuple[int, Any]:
         return await (reload() if reload is not None else reload_agent(agent_url))
@@ -299,6 +311,7 @@ def build_app(
         if not built.objects:
             return _err(f"no tables or views visible to this login in: {', '.join(schemas)}")
         state.report = built.to_dict()
+        state.draft = state.boards = None  # Workspaces SPEC E5: a new report makes them stale
         return JSONResponse(state.report)
 
     async def settings_for(request: Request):
@@ -474,8 +487,10 @@ def build_app(
         files = state.boards["boards"]
         check = await check_boards(files, dataset, runner, settings.max_entity_boards)
         if preview:
+            model = state.boards.get("model")
             state.boards = await boards_state(files, check, dataset, runner, state.draft["report"], settings,
                                               state.boards.get("usage"))
+            state.boards["model"] = model  # E9: an edit keeps who drafted them
         else:
             state.boards.update(check.to_dict())
 
@@ -514,6 +529,7 @@ def build_app(
                                           on_event=run.events.append)
                 state.boards = await boards_state(result.files, result.check, dataset, runner,
                                                   draft_now["report"], settings, result.usage)
+                state.boards["model"] = settings.model  # E9: the run card and summary name it
             except (DraftError, DraftFileError) as e:
                 run.error = str(e)
             except Exception as e:  # never leak a traceback (or a query) to the page
@@ -528,6 +544,47 @@ def build_app(
 
     async def current_boards(_request: Request) -> JSONResponse:
         return JSONResponse(state.boards)  # null before any Boards: an answer, not an error
+
+    async def keep_boards(_request: Request) -> JSONResponse:
+        """E6: a regenerate keeps the Workspace's current Boards, checked against the new Draft."""
+        if state.running:
+            return _err("a draft is running; wait for it to finish", 409)
+        if state.draft is None:
+            return _err("no draft yet", 404)
+        if not kept["boards"]:
+            return _err("there are no current Boards to keep", 404)
+        async with boards_lock:
+            state.boards = {"boards": [dict(b) for b in kept["boards"]], "problems": {}, "set_problems": [],
+                            "preview": {}, "usage": None}
+            try:
+                await recheck_boards(preview=True)
+            except DraftFileError as e:
+                state.boards = None
+                return JSONResponse({"reasons": str(e).split("; ")}, status_code=400)
+            except SettingsError as e:
+                state.boards = None
+                return _err(str(e))
+            state.boards["model"] = None
+            return JSONResponse(state.boards)
+
+    async def session(_request: Request) -> JSONResponse:
+        """E7: what the server holds, so a reloaded page can resume. Names only, never a DSN."""
+        run = state.run
+        return JSONResponse({
+            "dsn_env": conn.dsn_env, "report": state.report, "regenerating": regen["name"],
+            "draft": state.draft is not None, "boards": state.boards is not None,
+            "run": {"id": run.id, "kind": run.kind} if run is not None and not run.done else None,
+        })
+
+    async def discard(_request: Request) -> JSONResponse:
+        """E8: drop the report, Draft, Boards and the Regenerate target; the login stays."""
+        if state.running:
+            return _err("a draft is running; wait for it to finish", 409)
+        async with boards_lock:  # never under a validate or keep that is mid-check (refuter)
+            state.report = state.draft = state.boards = None
+            regen["name"] = None
+            kept["boards"] = []
+        return JSONResponse({"discarded": True})
 
     async def validate_boards(request: Request) -> JSONResponse:
         if state.running:
@@ -598,6 +655,7 @@ def build_app(
         except (ValueError, PoolTimeout, psycopg.Error):
             return _err(f"cannot connect with {name} (check it and that the database is running)", 502)
         regen["name"] = None  # a new login is never the regenerate target's until regenerate says so
+        kept["boards"] = []
         old = conn.pool
         conn.pool = conn.dsn_env = None
         state.report = state.draft = state.boards = None
@@ -694,6 +752,7 @@ def build_app(
             return _err(_db_message(e), 500)
         state.report = built.to_dict()
         regen["name"] = name
+        kept["boards"] = _current_boards(workspace_dir(data_dir, name) / "dataset" / BOARDS_DIR)
         return JSONResponse(state.report)
 
     async def settings_export(body: dict[str, Any], boards: list[dict[str, Any]] | None,
@@ -725,6 +784,7 @@ def build_app(
         status, _ = await reload_now()
         log.info("workspace exported: %s regenerate=%s reload=%s", name, regen["name"] is not None, status)
         regen["name"] = None
+        kept["boards"] = []
         return JSONResponse({"path": f"workspaces/{name}/dataset", "workspace": name, "overwrote": result.overwrote,
                              "backup": result.backup.name if result.backup else None, "reloaded": status == 200})
 
@@ -760,6 +820,9 @@ def build_app(
         Route("/api/boards/draft", needs_login(start_boards), methods=["POST"]),
         Route("/api/boards", current_boards, methods=["GET"]),
         Route("/api/boards/validate", needs_login(validate_boards), methods=["POST"]),
+        Route("/api/boards/keep", needs_login(keep_boards), methods=["POST"]),
+        Route("/api/session", session),
+        Route("/api/discard", discard, methods=["POST"]),
     ]
     if settings_mode:
         routes += [

@@ -333,3 +333,159 @@ async def test_d5_a_failed_regenerate_clears_the_regenerate_target(pg, tmp_path)
             assert r.status_code == 200 and r.json()["workspace"] == "ccc" and r.json()["backup"] is None
     finally:
         await agent.registry.close()
+
+
+# --- phase 3: the New Workspace wizard (E5–E9, N6, N10, N17) ------------------------------------
+
+import asyncio  # noqa: E402
+
+from test_boards_draft import EXPLORER, GRADE  # noqa: E402
+
+
+@pytest.mark.db
+async def test_n10_session_and_discard(pg, tmp_path):
+    env = {"BS_DATABASE_URL": pg.ro_dsn}
+    app, _ = _settings_app(tmp_path, env, None, _model())
+    async with _client(app) as c:
+        empty = (await c.get("/api/session")).json()
+        assert empty == {"dsn_env": None, "report": None, "regenerating": None, "draft": False, "boards": False,
+                         "run": None}
+        await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+        assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
+        s = await c.get("/api/session")
+        assert s.json()["dsn_env"] == "BS_DATABASE_URL" and s.json()["report"]["schemas"] == ["bs"]
+        assert pg.ro_dsn not in s.text
+        run_id = (await c.post("/api/draft", json={})).json()["run_id"]
+        await _wait(c, run_id)
+        assert (await c.get("/api/session")).json()["draft"] is True
+        r = await c.post("/api/discard", json={})
+        assert r.status_code == 200
+        after = (await c.get("/api/session")).json()
+        assert after == {"dsn_env": "BS_DATABASE_URL", "report": None, "regenerating": None, "draft": False,
+                         "boards": False, "run": None}  # the login stays
+        assert (await c.get("/api/draft")).status_code == 404
+
+
+@pytest.mark.db
+async def test_n10_discard_is_refused_during_a_run_and_the_session_names_the_run(pg, tmp_path):
+    env = {"BS_DATABASE_URL": pg.ro_dsn}
+    gate = asyncio.Event()
+
+    async def blocked(**_kw):
+        await gate.wait()
+        raise RuntimeError("stopped")
+
+    app, _ = _settings_app(tmp_path, env, None, blocked)
+    async with _client(app) as c:
+        await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+        await c.post("/api/report", json={"schemas": ["bs"]})
+        run_id = (await c.post("/api/draft", json={})).json()["run_id"]
+        assert (await c.get("/api/session")).json()["run"] == {"id": run_id, "kind": "draft"}
+        assert (await c.post("/api/discard", json={})).status_code == 409
+        gate.set()
+        await _wait(c, run_id)
+        assert (await c.get("/api/session")).json()["run"] is None
+
+
+async def _regenerated_with_kept_boards(c, data, model):
+    """A Workspace exported, regenerated and drafted again, with its current Boards kept."""
+    await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+    assert (await _export(c)).status_code == 200
+    boards = data / "workspaces" / "bs_ws" / "dataset" / "boards"
+    boards.mkdir()
+    (boards / "explorer.toml").write_text(EXPLORER)
+    assert (await c.post("/api/workspaces/bs_ws/regenerate", json={})).status_code == 200
+    model.steps.extend(_model().steps)
+    await _wait(c, (await c.post("/api/draft", json={})).json()["run_id"])
+    assert (await c.post("/api/boards/keep", json={})).status_code == 200
+    s = (await c.get("/api/session")).json()
+    assert s["boards"] is True and s["regenerating"] == "bs_ws" and s["draft"] is True
+
+
+@pytest.mark.db
+async def test_n17_a_new_report_clears_the_draft_and_boards(pg, tmp_path):
+    env = {"BS_DATABASE_URL": pg.ro_dsn}
+    data = tmp_path / "data"
+    data.mkdir()
+    agent = Agent(data, env)
+    model = _model()
+    app, data = _settings_app(tmp_path, env, agent, model)
+    try:
+        async with _client(app) as c:
+            await _regenerated_with_kept_boards(c, data, model)
+            assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
+            assert (await c.get("/api/draft")).status_code == 404
+            assert (await c.get("/api/boards")).json() is None
+            s = (await c.get("/api/session")).json()
+            assert s["draft"] is False and s["boards"] is False
+    finally:
+        await agent.registry.close()
+
+
+@pytest.mark.db
+async def test_n10_discard_clears_boards_the_regenerate_target_and_the_kept_boards(pg, tmp_path):
+    env = {"BS_DATABASE_URL": pg.ro_dsn}
+    data = tmp_path / "data"
+    data.mkdir()
+    agent = Agent(data, env)
+    model = _model()
+    app, data = _settings_app(tmp_path, env, agent, model)
+    try:
+        async with _client(app) as c:
+            await _regenerated_with_kept_boards(c, data, model)
+            assert (await c.post("/api/discard", json={})).status_code == 200
+            s = (await c.get("/api/session")).json()
+            assert s == {"dsn_env": "BS_DATABASE_URL", "report": None, "regenerating": None, "draft": False,
+                         "boards": False, "run": None}
+            # A new Draft on the same login has nothing to keep: the kept Boards went too.
+            assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
+            model.steps.extend(_model().steps)
+            await _wait(c, (await c.post("/api/draft", json={})).json()["run_id"])
+            assert (await c.post("/api/boards/keep", json={})).status_code == 404
+    finally:
+        await agent.registry.close()
+
+
+@pytest.mark.db
+async def test_n6_regenerate_keeps_the_current_boards_checked_against_the_new_draft(pg, tmp_path):
+    env = {"BS_DATABASE_URL": pg.ro_dsn}
+    data = tmp_path / "data"
+    data.mkdir()
+    agent = Agent(data, env)
+    model = _model()
+    app, data = _settings_app(tmp_path, env, agent, model)
+    try:
+        async with _client(app) as c:
+            await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+            assert (await _export(c)).status_code == 200
+            await c.post("/api/workspaces/bs_ws/regenerate", json={})  # no boards/ yet
+            model.steps.extend(_model().steps)
+            await _wait(c, (await c.post("/api/draft", json={})).json()["run_id"])
+            assert (await c.post("/api/boards/keep", json={})).status_code == 404  # nothing to keep
+
+            boards = data / "workspaces" / "bs_ws" / "dataset" / "boards"
+            boards.mkdir()
+            (boards / "explorer.toml").write_text(EXPLORER)
+            (boards / "grade.toml").write_text(GRADE.replace("bs.mixed WHERE", "bs.gone WHERE"))
+            assert (await c.post("/api/boards/keep", json={})).status_code == 404  # no draft after regenerate
+            assert (await c.post("/api/workspaces/bs_ws/regenerate", json={})).json()["schemas"] == ["bs"]
+            assert (await c.get("/api/session")).json()["regenerating"] == "bs_ws"
+            model.steps.extend(_model().steps)
+            done, _ = await _wait(c, (await c.post("/api/draft", json={})).json()["run_id"])
+
+            r = await c.post("/api/boards/keep", json={})
+            assert r.status_code == 200, r.text
+            state = r.json()
+            assert [b["name"] for b in state["boards"]] == ["explorer", "grade"]
+            assert state["model"] is None and state["boards"][0]["why"] == "Kept from the current Workspace."
+            assert state["problems"]["explorer"] == [] and state["problems"]["grade"]  # the stale query
+            assert (await c.get("/api/session")).json()["boards"] is True
+
+            fixed = [state["boards"][0], {**state["boards"][1], "toml": GRADE}]
+            assert (await c.post("/api/boards/validate", json={"boards": fixed})).json()["problems"]["grade"] == []
+            r = await c.post("/api/export", json={"files": done["draft"]["files"], "comments": done["draft"]["comments"],
+                                                  "name": "ignored", "target": "toml", "dismissed": [0]})
+            assert r.status_code == 200, r.text
+            assert (boards / "grade.toml").read_text() == GRADE
+    finally:
+        await agent.registry.close()
