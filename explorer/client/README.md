@@ -2,7 +2,7 @@
 
 Vite + Lit chat view that talks A2A to the explorer agent and renders its A2UI surfaces with the merged catalog (basic + `VegaChart` + `DataGrid` + `SqlDetails`).
 
-To test by hand, from `explorer/`: `./run.sh --real` starts the real agent (Muse Spark and the dataset database, settings from `genUI/.env`) and this client; `./run.sh` does the same with the stub agent. Then open http://127.0.0.1:5173.
+To test by hand, from `explorer/`: `./run.sh --real` starts the real agent (Muse Spark and the dataset database, settings from the repo root `.env`) and this client; `./run.sh` does the same with the stub agent. Then open http://127.0.0.1:5173.
 
 The chat view shows the dataset description and its example questions (`examples` in `dataset.toml`, sent in the agent card), each turn's progress steps and elapsed time, Retry on a failed turn, and New conversation.
 

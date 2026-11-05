@@ -16,7 +16,7 @@ Startup checks that the login is read-only and builds the system prompt once. It
 `AGENT_HOST:AGENT_PORT`. Any configuration or database problem prints one `explorer: …` line and
 exits 1.
 
-- `.env` is read from the repo root (`genUI/.env`), or from the path in `EXPLORER_ENV_FILE`. It never
+- `.env` is read from the repo root, or from the path in `EXPLORER_ENV_FILE`. It never
   overrides variables already set. All settings are listed in `../.env.example`.
 - The client (`../client`) calls the agent directly (ADR 0007). For a UI without a model or
   database, use the stub server: `uv run python -m explorer_agent.testing.stub_server --port 10002`.

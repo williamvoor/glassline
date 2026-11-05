@@ -1,6 +1,6 @@
-# genUI
+# Glassline
 
-genUI is a Postgres data explorer that answers plain-English questions with prose, charts,
+Glassline is a Postgres data explorer that answers plain-English questions with prose, charts,
 tables, and metrics. An LLM writes read-only SQL; the server builds the displayed values from
 stored query Results. Users can inspect the SQL behind every Visual.
 
@@ -73,7 +73,7 @@ other client languages that this application does not use. Consult it for API ex
 protocol behavior, with the version pinned by this repository in mind.
 
 The clone has its own upstream README and contributor instructions. Its demo setup is
-independent of genUI's setup. Do not run its workspace install as a prerequisite for Explorer,
+independent of Glassline's setup. Do not run its workspace install as a prerequisite for Explorer,
 modify it for app changes, or depend on its local paths at runtime. Explorer's Python SDKs
 come from locked Git dependencies; its browser packages come from npm, and VegaChart is
 vendored. Glimmer's catalogs and gallery Seeds are also vendored with provenance.

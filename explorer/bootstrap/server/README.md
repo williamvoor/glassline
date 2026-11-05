@@ -12,7 +12,7 @@ new dataset directory. Nothing here writes to the database.
 uv sync
 ```
 
-Set `BOOTSTRAP_DATABASE_URL` in the repo root `.env` (`genUI/.env`; see `explorer/.env.example`)
+Set `BOOTSTRAP_DATABASE_URL` in the repo root `.env` (see `explorer/.env.example`)
 or in the environment. Use a read-only login, such as AusTender's `explorer_ro`. The report
 makes every session read-only with a statement timeout anyway, but a read-only login is the
 safer default.

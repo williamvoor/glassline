@@ -18,7 +18,7 @@ uv run austender migrate      # creates roles austender_loader and explorer_ro, 
 ```
 
 `INGEST_USER_AGENT` is required for any command that calls the API (it fails fast if unset). Use something
-descriptive with a contact address, e.g. `genUI-austender/0.1 (research; you@example.org)`.
+descriptive with a contact address, e.g. `glassline-austender/0.1 (research; you@example.org)`.
 
 ## Commands
 
