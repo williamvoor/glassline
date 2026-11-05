@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--workers", type=int, default=8)
     b.add_argument("--limit", type=int, default=None, help="only the first N rows (a smoke test)")
     b.add_argument("--dry-run", action="store_true", help="print the cost estimate and stop")
-    b.add_argument("--source", choices=("gallery", "synthetic"), default=None, help="only this dev source")
+    b.add_argument("--source", choices=("gallery",), default=None, help="only this dev source")
     b.add_argument("--n", type=int, default=1, help="samples per row (best-of-n)")
     b.add_argument("--temperature", type=float, default=0.0)
     b.add_argument("--top-p", type=float, default=None)

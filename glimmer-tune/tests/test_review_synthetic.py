@@ -24,8 +24,8 @@ from a2ui_eval.seeds import ROOT
 
 @pytest.fixture(scope="module")
 def generated():
-    """14 frozen synthetic dev rows (the generator is archived)."""
-    return read_jsonl(ROOT / "data" / "synth" / "dev" / "cases.jsonl")[:14]
+    """14 gallery dev rows: the review mode takes any cases.jsonl with `reference` messages."""
+    return read_jsonl(ROOT / "data" / "dev" / "cases.jsonl")[:14]
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_synthetic_sample(review, generated):
     for v in views:
         assert "render_error" not in v and v["v09"] and all(m["version"] == "v0.9" for m in v["v09"])
         assert v["synthetic"] is True and v["lint"] == [] and v["verdict"] is None and v["reviewed"] is False
-        assert v["skeleton"] and v["domain"] and v["detail"] and v["expected"]
+        assert v["expected"]
 
 
 def test_sample_larger_than_file_returns_all(generated):

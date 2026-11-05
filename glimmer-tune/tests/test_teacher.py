@@ -19,7 +19,7 @@ def _row(i: str) -> dict:
             "messages": [{"role": "system", "content": "S" * 400}, {"role": "user", "content": f"{i:<40}"}]}
 
 
-ROWS = [_row("dev/a/0000"), _row("dev/a/0001"), _row("synth/dev/k/00000")]
+ROWS = [_row("dev/a/0000"), _row("dev/a/0001"), _row("dev/b/0000")]
 ALLOWED = {r["id"] for r in ROWS}
 
 
@@ -209,7 +209,7 @@ def test_reasoning_tokens_are_kept_separately(tmp_path):
 
 
 def test_source_filter_keeps_gallery_rows():
-    rows = [{**r, "source": "synthetic" if r["id"].startswith("synth/") else "gallery"} for r in ROWS]
+    rows = [{**r, "source": "gallery" if r["id"].startswith("dev/a/") else "other"} for r in ROWS]
     assert [r["id"] for r in teacher.only_source(rows, "gallery")] == ["dev/a/0000", "dev/a/0001"]
     assert teacher.only_source(rows, None) == rows
 
@@ -230,7 +230,6 @@ def _rows_data(tmp_path):
 
     data = tmp_path / "data"
     write_jsonl(data / "dev" / "cases.jsonl", [{"id": "dev/a/0000"}])
-    write_jsonl(data / "synth" / "dev" / "cases.jsonl", [{"id": "synth/dev/k/00000"}])
     write_jsonl(data / "test" / "cases.jsonl", [{"id": "test/x/0000"}])
     write_jsonl(data / "intents" / "train.jsonl", [{"id": "intent/grid/00001"}])
     write_jsonl(data / "intents" / "tune.jsonl", [{"id": "intent/form/00002"}])
@@ -240,7 +239,7 @@ def _rows_data(tmp_path):
 def test_allowed_ids_cover_dev_and_the_intent_set_but_never_test(tmp_path):
     """Phase 3 samples the teacher on tune intents and Phase 4 on train intents; test stays refused."""
     ids = teacher.allowed_row_ids(_rows_data(tmp_path))
-    assert ids == {"dev/a/0000", "synth/dev/k/00000", "intent/grid/00001", "intent/form/00002"}
+    assert ids == {"dev/a/0000", "intent/grid/00001", "intent/form/00002"}
 
 
 def test_allowed_ids_without_an_intent_set_are_dev_only(tmp_path):
@@ -248,5 +247,4 @@ def test_allowed_ids_without_an_intent_set_are_dev_only(tmp_path):
 
     data = tmp_path / "data"
     write_jsonl(data / "dev" / "cases.jsonl", [{"id": "dev/a/0000"}])
-    write_jsonl(data / "synth" / "dev" / "cases.jsonl", [])
     assert teacher.allowed_row_ids(data) == {"dev/a/0000"}

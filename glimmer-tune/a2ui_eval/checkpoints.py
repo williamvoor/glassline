@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 from .catalog_check import CatalogCheck, kinds
-from .export import is_synthetic
 from .io import read_jsonl
 from .refs import RefIndex
 from .score import score_response
@@ -32,8 +31,8 @@ CATALOG = ROOT / "catalogs" / "basic_v0_9.json"  # ADR 0008
 DEV_EXPORT = ROOT / "exports" / "sft_dev.jsonl"
 TEST_EXPORT = ROOT / "exports" / "sft_test.jsonl"
 SUBSET_PER_FAMILY = 6  # Approach v2: 6 x 7 gallery dev families = 42 rows (brief: >= 42)
-SELECTION_RULE = "gallery"  # runs 1/2 used the mean of gallery and synthetic; don't mix the two
-SOURCES = ("gallery", "synthetic")
+SELECTION_RULE = "gallery"  # runs 1/2 also scored a synthetic dev set (since deleted); the selection is gallery only
+SOURCES = ("gallery",)
 FINISH = ("stop", "length", "error")
 BOOTSTRAP = {"samples": 2000, "level": 0.95, "seed": 0}
 
@@ -43,7 +42,7 @@ class CheckpointError(Exception):
 
 
 def dev_cases(data: Path = DATA) -> list[dict[str, Any]]:
-    return read_jsonl(data / "dev" / "cases.jsonl") + read_jsonl(data / "synth" / "dev" / "cases.jsonl")
+    return read_jsonl(data / "dev" / "cases.jsonl")
 
 
 def test_cases(data: Path = DATA) -> list[dict[str, Any]]:
@@ -53,31 +52,24 @@ def test_cases(data: Path = DATA) -> list[dict[str, Any]]:
 SPLIT_CASES = {"dev": dev_cases, "test": test_cases}
 
 
-def _source(case: dict[str, Any]) -> str:
-    return "synthetic" if is_synthetic(case) else "gallery"
-
-
 def export_dev(system_prompt: str, data: Path = DATA, seed: int = 0, per_family: int = SUBSET_PER_FAMILY) -> list[dict[str, Any]]:
-    """One prompt row per dev case (gallery, then synthetic, each id-sorted). `subset` marks a
-    fixed `per_family` gallery rows of each gallery family, drawn by `random.Random(seed)` from
-    id-sorted ids (Approach v2). Synthetic rows are never in the subset: they are a regression
-    guard, scored with `--full`."""
+    """One prompt row per dev case (id-sorted). `subset` marks a fixed `per_family` rows of each
+    gallery family, drawn by `random.Random(seed)` from id-sorted ids (Approach v2)."""
     cases = dev_cases(data)
     by_family: dict[str, list[str]] = {}
     for c in cases:
-        if _source(c) == "gallery":
-            by_family.setdefault(c["family"], []).append(c["id"])
+        by_family.setdefault(c["family"], []).append(c["id"])
     subset: set[str] = set()
     for family in sorted(by_family):
         ids = sorted(by_family[family])
         if len(ids) < per_family:
             raise CheckpointError(f"gallery dev family {family} has {len(ids)} rows, fewer than the subset of {per_family}")
         subset |= set(random.Random(f"{seed}:{family}").sample(ids, per_family))
-    ordered = sorted(cases, key=lambda c: (SOURCES.index(_source(c)), c["id"]))
+    ordered = sorted(cases, key=lambda c: c["id"])
     return [
         {
             "id": c["id"],
-            "source": _source(c),
+            "source": "gallery",
             "subset": c["id"] in subset,
             "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": c["intent"]}],
         }
@@ -112,7 +104,7 @@ def export_test(system_prompt: str, data: Path = DATA) -> list[dict[str, Any]]:
     return [
         {
             "id": c["id"],
-            "source": _source(c),
+            "source": "gallery",
             "family": c["family"],
             "subset": False,
             "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": c["intent"]}],
@@ -144,9 +136,9 @@ def scorer_version() -> dict[str, Any]:
 
 
 def references_version() -> dict[str, Any]:
-    """The same for the eval references (`data/dev`, `data/synth/dev`, `data/test`): a fixed dev Reference changes
+    """The same for the eval references (`data/dev`, `data/test`): a fixed dev Reference changes
     scores, so old and new numbers must not be mixed (SPEC, item 7 amendment, decision 9)."""
-    return _git_version("data/dev", "data/synth/dev", "data/test")
+    return _git_version("data/dev", "data/test")
 
 
 def selection_ci(
@@ -233,8 +225,7 @@ def score_predictions(
     `split="test"` scores against test references, with a family-level interval.
 
     `selection` is the gallery mean row slot F1 (Approach v2, `SELECTION_RULE`), with a
-    family-level interval on dev as on test. Synthetic rows are scored and reported under
-    `sources` as a regression guard, but don't move `selection`."""
+    family-level interval on dev as on test."""
     checkpoints = {p.get("checkpoint") for p in predictions}
     if len(checkpoints) != 1:
         raise CheckpointError(f"predictions must be for one checkpoint, got {sorted(map(str, checkpoints))}")

@@ -72,7 +72,7 @@ Score on dev; the test split stays frozen until the decided final evaluation
 
 - Muse Glimmer 30B (base or adapters) generates A2UI only.
 - Hosted Model API models (`muse-spark-1.x`, `muse-wonder-*`) are evaluation
-  only; their output never enters training data (ADR 0035).
+  only; their output never enters training data.
 - Spark Open may teach/write intents/judge (ADR 0034); an adapter trained on its
   output is a Muse Model License Derivative — record that in the run manifest.
 - Reasoning strength is `low` in training rows and normal inference.

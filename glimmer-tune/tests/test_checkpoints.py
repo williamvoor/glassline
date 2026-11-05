@@ -18,22 +18,19 @@ def dev_rows():
 
 
 def test_export_dev_rows_and_subset(dev_rows):
-    """T3, Approach v2: every dev case once; the subset is 6 gallery rows per family (42) and no
-    synthetic rows; the frozen system text; no answer turn."""
+    """T3, Approach v2: every dev case once; the subset is 6 rows per family (42); the frozen
+    system text; no answer turn."""
     gallery = read_jsonl(DATA / "dev" / "cases.jsonl")
-    synth = read_jsonl(DATA / "synth" / "dev" / "cases.jsonl")
-    assert len(dev_rows) == len(gallery) + len(synth) == 284
-    assert sorted(r["id"] for r in dev_rows) == sorted(c["id"] for c in gallery + synth)
-    by_source = {s: [r for r in dev_rows if r["source"] == s] for s in ("gallery", "synthetic")}
-    assert len(by_source["gallery"]) == 84 and len(by_source["synthetic"]) == 200
-    assert not any(r["subset"] for r in by_source["synthetic"])
-    picked = [r["id"] for r in by_source["gallery"] if r["subset"]]
+    assert len(dev_rows) == len(gallery) == 84
+    assert sorted(r["id"] for r in dev_rows) == sorted(c["id"] for c in gallery)
+    assert {r["source"] for r in dev_rows} == {"gallery"}
+    picked = [r["id"] for r in dev_rows if r["subset"]]
     assert len(picked) == 42
     per_family = {}
     for i in picked:
         per_family[i.split("/")[1]] = per_family.get(i.split("/")[1], 0) + 1
     assert len(per_family) == 7 and set(per_family.values()) == {6}
-    intents = {c["id"]: c["intent"] for c in gallery + synth}
+    intents = {c["id"]: c["intent"] for c in gallery}
     for r in dev_rows:
         assert r["messages"] == [{"role": "system", "content": PROMPT}, {"role": "user", "content": intents[r["id"]]}]
     again = export_dev(PROMPT, DATA)
@@ -42,30 +39,30 @@ def test_export_dev_rows_and_subset(dev_rows):
 
 
 def _cases():
-    return {c["id"]: c for c in read_jsonl(DATA / "dev" / "cases.jsonl") + read_jsonl(DATA / "synth" / "dev" / "cases.jsonl")}
+    return {c["id"]: c for c in read_jsonl(DATA / "dev" / "cases.jsonl")}
 
 
-def test_score_summary_per_source(dev_rows):
-    """T4: per-source summary; selection is the macro mean of row F1; length and error rows."""
+def test_score_summary(dev_rows):
+    """T4: the summary; selection is the macro mean of row F1; length and error rows."""
     cases = _cases()
-    g = [r["id"] for r in dev_rows if r["source"] == "gallery"][:2]
-    s = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:2]
+    g = [r["id"] for r in dev_rows][:4]
     preds = [
         {"id": g[0], "checkpoint": "s025", "text": wrap(cases[g[0]]["reference_express"]), "finish": "stop"},
         {"id": g[1], "checkpoint": "s025", "text": None, "finish": "error"},
-        {"id": s[0], "checkpoint": "s025", "text": wrap(cases[s[0]]["reference_express"]), "finish": "stop"},
+        {"id": g[2], "checkpoint": "s025", "text": wrap(cases[g[2]]["reference_express"]), "finish": "stop"},
         # cut mid-block: the scorer must see it as truncated
-        {"id": s[1], "checkpoint": "s025", "text": "<a2ui>\n" + cases[s[1]]["reference_express"][:40], "finish": "length"},
+        {"id": g[3], "checkpoint": "s025", "text": "<a2ui>\n" + cases[g[3]]["reference_express"][:40], "finish": "length"},
     ]
     out = score_predictions(preds, dev_rows, DATA)
     assert out["checkpoint"] == "s025"
-    gal, syn = out["sources"]["gallery"], out["sources"]["synthetic"]
-    assert gal["rows"] == syn["rows"] == 2
-    assert gal["slot_f1"] == pytest.approx(0.5) and gal["compiles"] == 0.5 and gal["exact_match"] == 0.5
-    assert syn["truncated"] == 0.5 and 0.5 <= syn["slot_f1"] < 1.0
-    assert out["selection"] == pytest.approx(gal["slot_f1"])  # gallery only; synthetic is a guard
+    gal = out["sources"]["gallery"]
+    assert list(out["sources"]) == ["gallery"]
+    assert gal["rows"] == 4
+    assert gal["compiles"] == 0.5 and gal["exact_match"] == 0.5 and gal["truncated"] == 0.25
+    assert 0.5 <= gal["slot_f1"] < 0.75  # two exact rows, one error row, one cut row
+    assert out["selection"] == pytest.approx(gal["slot_f1"])
     assert out["selection_rule"] == "gallery"
-    assert {r["id"] for r in out["rows"]} == set(g + s)
+    assert {r["id"] for r in out["rows"]} == set(g)
     json.dumps(out)  # serialisable
 
 
@@ -95,45 +92,37 @@ def test_score_cli_subset_and_full(dev_rows, tmp_path, capsys):
     assert main(["score", str(preds), "--out", str(out), "--dev", str(dev)]) == 0
     assert json.loads(out.read_text())["selection"] == 0.0
     assert main(["score", str(preds), "--out", str(out), "--dev", str(dev), "--full"]) == 1
-    assert "missing predictions for 242" in capsys.readouterr().err
+    assert "missing predictions for 42" in capsys.readouterr().err
 
 
-def _rows(gallery: list[float], synthetic: list[float]) -> list[dict]:
-    return [{"source": "gallery", "slot_f1": f} for f in gallery] + [{"source": "synthetic", "slot_f1": f} for f in synthetic]
+def _rows(gallery: list[float]) -> list[dict]:
+    return [{"source": "gallery", "slot_f1": f} for f in gallery]
 
 
 def test_selection_ci_collapses_when_every_row_is_equal():
     from a2ui_eval.checkpoints import selection_ci
 
-    assert selection_ci(_rows([0.7] * 5, [0.7] * 9)) == pytest.approx([0.7, 0.7])
-
-
-def test_selection_ci_resamples_within_each_source():
-    """Stratified: each source keeps its row count, so a source that is all 1.0 next to one that
-    is all 0.0 gives exactly 0.5 in every resample. A pooled bootstrap would spread around 0.5."""
-    from a2ui_eval.checkpoints import selection_ci
-
-    assert selection_ci(_rows([1.0] * 4, [0.0] * 30)) == pytest.approx([0.5, 0.5])
+    assert selection_ci(_rows([0.7] * 5)) == pytest.approx([0.7, 0.7])
 
 
 def test_selection_ci_brackets_selection_is_seeded_and_narrows_with_rows():
     from a2ui_eval.checkpoints import _mean, selection_ci
 
-    small = _rows([0.0, 1.0] * 4, [0.2, 0.9] * 4)
+    small = _rows([0.0, 1.0] * 4)
     lo, hi = selection_ci(small)
-    point = (_mean([0.0, 1.0]) + _mean([0.2, 0.9])) / 2
+    point = _mean([0.0, 1.0])
     assert lo < point < hi
     assert selection_ci(small) == [lo, hi]
-    varied = _rows([i / 37 for i in range(37)], [(i * 7 % 23) / 23 for i in range(23)])
+    varied = _rows([i / 37 for i in range(37)])
     assert selection_ci(varied, seed=1) != selection_ci(varied)
-    big_lo, big_hi = selection_ci(_rows([0.0, 1.0] * 100, [0.2, 0.9] * 100))
+    big_lo, big_hi = selection_ci(_rows([0.0, 1.0] * 100))
     assert big_hi - big_lo < (hi - lo) / 2
 
 
-def test_selection_ci_with_one_source_and_no_rows():
+def test_selection_ci_with_no_rows():
     from a2ui_eval.checkpoints import selection_ci
 
-    lo, hi = selection_ci(_rows([], [0.0, 1.0] * 10))
+    lo, hi = selection_ci(_rows([0.0, 1.0] * 10))
     assert 0.0 < lo < 0.5 < hi < 1.0
     assert selection_ci([]) == [0.0, 0.0]
 
@@ -369,20 +358,16 @@ def test_score_reports_blind_next_to_literal(dev_rows):
     assert out["selection"] == pytest.approx(0.5)
 
 
-def test_blind_selection_is_wired_from_slot_blind_on_gallery_only(dev_rows):
-    """Refuter (N7): a renamed path makes blind > literal on a row. Approach v2: synthetic rows
-    don't move either selection score."""
+def test_blind_selection_is_wired_from_slot_blind(dev_rows):
+    """Refuter (N7): a renamed path makes blind > literal on a row."""
     import re
 
     cases = _cases()
-    gal = next(r["id"] for r in dev_rows if r["source"] == "gallery" and re.search(r"\$/\w+", cases[r["id"]]["reference_express"]))
-    syn = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:2]
+    gal = next(r["id"] for r in dev_rows if re.search(r"\$/\w+", cases[r["id"]]["reference_express"]))
     ref = cases[gal]["reference_express"]
     renamed = re.sub(r"\$/(\w+)", r"$/zz\1", ref)
     preds = [
         {"id": gal, "checkpoint": "s025", "text": wrap(renamed), "finish": "stop"},
-        {"id": syn[0], "checkpoint": "s025", "text": wrap(cases[syn[0]]["reference_express"]), "finish": "stop"},
-        {"id": syn[1], "checkpoint": "s025", "text": None, "finish": "error"},
     ]
     out = score_predictions(preds, dev_rows, DATA)
     row = next(r for r in out["rows"] if r["id"] == gal)
@@ -391,7 +376,6 @@ def test_blind_selection_is_wired_from_slot_blind_on_gallery_only(dev_rows):
     assert out["selection_blind"] == pytest.approx(1.0)
     assert out["selection"] == pytest.approx(row["slot_f1"])
     assert out["selection"] < out["selection_blind"]
-    assert out["sources"]["synthetic"]["slot_f1_blind"] == pytest.approx(0.5)  # still reported as the guard
 
 
 # --- blind interval and scorer version (run 2 prep, item 1) -----------------------------------
@@ -401,9 +385,9 @@ def test_selection_ci_takes_the_score_key():
     """The same stratified bootstrap serves the name-blind score: rows carry both keys."""
     from a2ui_eval.checkpoints import selection_ci
 
-    rows = [{"source": "gallery", "slot_f1": 0.0, "slot_f1_blind": 1.0}] * 4 + [{"source": "synthetic", "slot_f1": 0.0, "slot_f1_blind": 0.5}] * 6
+    rows = [{"source": "gallery", "slot_f1": 0.0, "slot_f1_blind": 1.0}] * 4
     assert selection_ci(rows) == pytest.approx([0.0, 0.0])
-    assert selection_ci(rows, key="slot_f1_blind") == pytest.approx([0.75, 0.75])
+    assert selection_ci(rows, key="slot_f1_blind") == pytest.approx([1.0, 1.0])
 
 
 def test_score_output_carries_blind_ci_and_scorer_version(dev_rows):
@@ -441,39 +425,35 @@ def test_scorer_version_without_git(monkeypatch):
 def test_score_reports_outside_catalog_per_row_and_source(dev_rows):
     """Item 2: invented operators and names are flagged on every row, and rated per source."""
     cases = _cases()
-    g = [r["id"] for r in dev_rows if r["source"] == "gallery"][:2]
-    s = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:1]
+    g = [r["id"] for r in dev_rows][:3]
     bad = '<a2ui>\nroot = Icon($done ? "check" : "close")\n</a2ui>'
     preds = [
         {"id": g[0], "checkpoint": "s025", "text": bad, "finish": "stop"},
         {"id": g[1], "checkpoint": "s025", "text": None, "finish": "error"},
-        {"id": s[0], "checkpoint": "s025", "text": wrap(cases[s[0]]["reference_express"]), "finish": "stop"},
+        {"id": g[2], "checkpoint": "s025", "text": wrap(cases[g[2]]["reference_express"]), "finish": "stop"},
     ]
     out = score_predictions(preds, dev_rows, DATA)
     rows = {r["id"]: r for r in out["rows"]}
     assert rows[g[0]]["outside_catalog"] is True and rows[g[0]]["outside_catalog_kinds"] == ["operator"]
-    assert rows[g[1]]["outside_catalog"] is False and rows[s[0]]["outside_catalog"] is False
-    assert out["sources"]["gallery"]["outside_catalog"] == pytest.approx(0.5)
-    assert out["sources"]["synthetic"]["outside_catalog"] == 0.0
+    assert rows[g[1]]["outside_catalog"] is False and rows[g[2]]["outside_catalog"] is False
+    assert out["sources"]["gallery"]["outside_catalog"] == pytest.approx(1 / 3)
 
 
 def test_score_reports_unreachable_per_row_and_source(dev_rows):
     """Item 7 amendment, R5: components that nothing attaches to the tree are flagged and rated."""
     cases = _cases()
-    g = [r["id"] for r in dev_rows if r["source"] == "gallery"][:2]
-    s = [r["id"] for r in dev_rows if r["source"] == "synthetic"][:1]
+    g = [r["id"] for r in dev_rows][:3]
     orphaned = wrap(cases[g[0]]["reference_express"] + '\nlost_button = Button(lost_text, "primary", Event("go"))\nlost_text = Text("Go")')
     preds = [
         {"id": g[0], "checkpoint": "s025", "text": orphaned, "finish": "stop"},
         {"id": g[1], "checkpoint": "s025", "text": wrap(cases[g[1]]["reference_express"]), "finish": "stop"},
-        {"id": s[0], "checkpoint": "s025", "text": None, "finish": "error"},
+        {"id": g[2], "checkpoint": "s025", "text": None, "finish": "error"},
     ]
     out = score_predictions(preds, dev_rows, DATA)
     rows = {r["id"]: r for r in out["rows"]}
     assert rows[g[0]]["unreachable"] == ["lost_button", "lost_text"]
-    assert rows[g[1]]["unreachable"] == [] and rows[s[0]]["unreachable"] == []
-    assert out["sources"]["gallery"]["unreachable"] == pytest.approx(0.5)
-    assert out["sources"]["synthetic"]["unreachable"] == 0.0
+    assert rows[g[1]]["unreachable"] == [] and rows[g[2]]["unreachable"] == []
+    assert out["sources"]["gallery"]["unreachable"] == pytest.approx(1 / 3)
 
 
 def test_score_output_carries_references_version(dev_rows, monkeypatch):
@@ -497,7 +477,7 @@ def test_score_output_carries_references_version(dev_rows, monkeypatch):
 
 
 def test_references_version_tracks_every_eval_source(monkeypatch):
-    """The synthetic dev set is half of every dev score, so its changes count too."""
+    """Every eval reference counts toward the version, so a change to any of them is visible."""
     from a2ui_eval import checkpoints
 
     seen = []
@@ -509,7 +489,7 @@ def test_references_version_tracks_every_eval_source(monkeypatch):
     monkeypatch.setattr(checkpoints.subprocess, "run", fake)
     checkpoints.references_version()
     status = next(a for a in seen if "status" in a)
-    assert {"data/dev", "data/synth/dev", "data/test"} <= set(status)
+    assert {"data/dev", "data/test"} <= set(status)
 
 
 def test_a_rootless_surface_is_unreachable(dev_rows):
@@ -557,7 +537,7 @@ def test_fewshot_dev_export_puts_examples_between_system_and_question(dev_rows):
 
 def test_selection_interval_resamples_gallery_families(dev_rows):
     """Approach v2: the dev interval is family-level over gallery rows, like the test split. A
-    family scoring all-or-nothing must widen it; synthetic rows must not narrow it."""
+    family scoring all-or-nothing must widen it."""
     from a2ui_eval.checkpoints import family_ci
 
     cases = _cases()
@@ -569,8 +549,6 @@ def test_selection_interval_resamples_gallery_families(dev_rows):
         else {"id": r["id"], "checkpoint": "s025", "finish": "error", "text": None}
         for r in gallery
     ]
-    synth = [r for r in dev_rows if r["source"] == "synthetic"][:50]
-    preds += [{"id": r["id"], "checkpoint": "s025", "finish": "stop", "text": wrap(cases[r["id"]]["reference_express"])} for r in synth]
     out = score_predictions(preds, dev_rows, DATA)
     gal_rows = [r for r in out["rows"] if r["source"] == "gallery"]
     assert all(r["family"] == r["id"].split("/")[1] for r in gal_rows)
@@ -581,6 +559,7 @@ def test_selection_interval_resamples_gallery_families(dev_rows):
 def test_selection_needs_gallery_rows(dev_rows):
     """A dev score with no gallery rows has no selection score: refuse instead of reporting 0."""
     cases = _cases()
-    s = next(r["id"] for r in dev_rows if r["source"] == "synthetic")
+    other = [{**r, "source": "other"} for r in dev_rows]
+    s = other[0]["id"]
     with pytest.raises(CheckpointError, match="gallery"):
-        score_predictions([{"id": s, "checkpoint": "s025", "finish": "stop", "text": wrap(cases[s]["reference_express"])}], dev_rows, DATA)
+        score_predictions([{"id": s, "checkpoint": "s025", "finish": "stop", "text": wrap(cases[s]["reference_express"])}], other, DATA)

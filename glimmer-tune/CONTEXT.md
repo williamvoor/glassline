@@ -68,7 +68,7 @@ _Avoid_: Defaults, theme
 A Case made from a Family's Template.
 _Avoid_: Hand row, real row
 
-**Synthetic row**: _(since 2026-11-04 only the 200 synthetic dev rows, a regression guard)_
+**Synthetic row**: _(none remain: the 200 synthetic dev rows were deleted on 2026-11-05)_
 A Case grown from a Skeleton by the generator.
 _Avoid_: Generated row, fake row
 

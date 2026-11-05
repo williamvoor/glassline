@@ -3,7 +3,7 @@
 Guidance for coding agents working in `glimmer-tune/`. Read `SPEC.md` first. It is a dated log of
 milestones and runs, so the latest sections win. The glossary is `CONTEXT.md` (Seed, Family,
 Case, Fingerprint, …), and the decisions are `../docs/adr/`
-(0003–0005, 0008, 0014, 0015, 0021, 0022, 0033–0035; 0009, 0011 and 0025 are superseded). Run results and reports are in `docs/`.
+(0003–0005, 0008, 0014, 0015, 0021, 0022, 0033, 0034; 0009, 0011 and 0025 are superseded). Run results and reports are in `docs/`.
 
 ## What this is
 
@@ -27,7 +27,6 @@ read-only and not importable; don't revive code from it without a decision. Tag
 | `data/splits.yaml` | Family → split (train/dev/test/excluded). Written by hand |
 | `data/system_prompt.txt` | The **frozen** system prompt (ADR 0015) |
 | `data/dev`, `data/test` | Frozen gallery eval cases; the source of truth (their generator is archived) |
-| `data/synth/dev` | Synthetic regression guard only; never training data |
 | `data/fewshot3.jsonl` | The frozen examples of base + 3, the explorer launch default |
 | `archive/` | Retired generators, data and tests (`docs/cleanup-plan.md`) |
 | `trainer/` | Separate `uv` project, `python -m glimmer_trainer {prepare,train,sample}` (ADR 0015) |
@@ -51,7 +50,7 @@ uv run --env-file ../.env python -m a2ui_eval.data_cli <cmd>   # commands that c
     Any adapter whose training data holds its output is a Muse Model License Derivative: record
     that in the run manifest, because shipping it means showing "Built with Muse Spark Open".
   - Hosted Model API models (`muse-spark-1.x`, `muse-wonder-*`) are for evaluation only. Their
-    output never enters training data in any role (ADR 0035).
+    output never enters training data in any role.
   - No Gemini, and no other models.
 - **Reasoning strength is `low` everywhere:** every eval setup, model and training row. The chat
   template defaults to `high`, so a row without it mismatches inference. The exceptions are a

@@ -204,9 +204,9 @@ def test_near_limit_per_source(sdk, train, dev):
     assert report.by_source["gallery"]["near_limit"] == 1
 
 
-def test_cli_export_guards_against_synthetic_dev(train, tmp_path, monkeypatch):
-    """The synthetic regression set is an eval set: a train row sharing its fingerprint or intent
-    is dropped (the CLI must pass data/synth/dev to the guard)."""
+def test_cli_export_guards_against_explorer_dev(train, tmp_path, monkeypatch):
+    """The explorer slice is an eval set: a train row sharing its fingerprint or intent is
+    dropped (the CLI must pass data/explorer_dev to the guard)."""
     import shutil
 
     from a2ui_eval import data_cli
@@ -214,9 +214,9 @@ def test_cli_export_guards_against_synthetic_dev(train, tmp_path, monkeypatch):
 
     shutil.copy(SPLITS_PATH, tmp_path / "splits.yaml")
     lists = [c for c in train if c["family"] == "34_child-list-template"]
-    clash_print = {"id": "synth/dev/x/00000", "split": "dev", "intent": "unrelated", "fingerprint": lists[0]["fingerprint"]}
-    clash_intent = {"id": "synth/dev/x/00001", "split": "dev", "intent": lists[1]["intent"], "fingerprint": "none"}
-    write_jsonl(tmp_path / "synth" / "dev" / "cases.jsonl", [clash_print, clash_intent])
+    clash_print = {"id": "explorer_dev/x/00000", "split": "dev", "intent": "unrelated", "fingerprint": lists[0]["fingerprint"]}
+    clash_intent = {"id": "explorer_dev/x/00001", "split": "dev", "intent": lists[1]["intent"], "fingerprint": "none"}
+    write_jsonl(tmp_path / "explorer_dev" / "cases.jsonl", [clash_print, clash_intent])
     write_jsonl(tmp_path / "train.jsonl", lists)
     monkeypatch.setattr(data_cli, "load_tokenizer_counter", lambda: words)
     out = tmp_path / "out.jsonl"

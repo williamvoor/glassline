@@ -14,20 +14,17 @@ from a2ui_eval.review import PREDICTION_VERDICTS, PredictionReview, ReviewError,
 
 @pytest.fixture
 def review(tmp_path):
-    gallery = sorted((c for c in dev_cases() if not c["id"].startswith("synth/")), key=lambda c: c["id"])[:3]
-    synth = next(c for c in dev_cases() if c["id"].startswith("synth/"))
+    gallery = sorted(dev_cases(), key=lambda c: c["id"])[:3]
     a, b, c = gallery
     preds = [
         {"id": a["id"], "checkpoint": "s250", "finish": "stop", "text": wrap(a["reference_express"])},
         {"id": b["id"], "checkpoint": "s250", "finish": "stop", "text": '<a2ui>\nroot = Icon($done ? "check" : "close")\n</a2ui>'},
         {"id": c["id"], "checkpoint": "s250", "finish": "error", "text": None},
-        {"id": synth["id"], "checkpoint": "s250", "finish": "stop", "text": wrap(synth["reference_express"])},
     ]
     rows = [
         {"id": a["id"], "source": "gallery", "slot_f1": 1.0, "slot_f1_blind": 1.0, "compiles": True, "outside_catalog_kinds": []},
         {"id": b["id"], "source": "gallery", "slot_f1": 0.0, "slot_f1_blind": 0.0, "compiles": False, "outside_catalog_kinds": ["operator"]},
         {"id": c["id"], "source": "gallery", "slot_f1": 0.0, "slot_f1_blind": 0.2, "compiles": False, "outside_catalog_kinds": []},
-        {"id": synth["id"], "source": "synthetic", "slot_f1": 0.0, "slot_f1_blind": 0.0, "compiles": True, "outside_catalog_kinds": []},
     ]
     p, s = tmp_path / "p.jsonl", tmp_path / "s.json"
     write_jsonl(p, preds)
@@ -38,7 +35,7 @@ def review(tmp_path):
 def test_gallery_rows_worst_first(review):
     r, (a, b, c) = review
     views = prediction_views(r)
-    assert [v["id"] for v in views] == [b["id"], c["id"], a["id"]]  # blind F1 0.0, 0.2, 1.0; no synthetic row
+    assert [v["id"] for v in views] == [b["id"], c["id"], a["id"]]  # blind F1 0.0, 0.2, 1.0
     worst = views[0]
     assert worst["prediction_mode"] is True and worst["outside_catalog_kinds"] == ["operator"]
     assert worst["prediction_v09"] == [] and worst["prediction_error"]  # shown, not crashed

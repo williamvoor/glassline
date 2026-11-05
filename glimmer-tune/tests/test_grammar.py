@@ -45,7 +45,7 @@ def accepts(parser: Lark, text: str) -> bool:
 
 
 def test_every_dev_reference_is_accepted(express):
-    cases = _cases("data/dev/cases.jsonl") + _cases("data/synth/dev/cases.jsonl")
+    cases = _cases("data/dev/cases.jsonl")
     rejected = [c["id"] for c in cases if c.get("reference_express") and not accepts(express, wrap(c["reference_express"]))]
     assert rejected == []
 

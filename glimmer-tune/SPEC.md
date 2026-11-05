@@ -1522,8 +1522,7 @@ only because the repo has no remote.
        own and defers to the model license.
      - An adapter is a Derivative if any Spark Open output (targets, intents or judge selection)
        reached its training data. Shipping such an adapter needs "Built with Muse Spark Open".
-   - **ADR 0035:** hosted Model API output stays out of training data. It is stricter than
-     clause (ix), which bars only models that compete with Meta's.
+   - Hosted Model API output stays out of training data.
 3. Phase 1 tooling (built 2026-11-04; nothing sampled yet):
    - `glimmer_trainer sample --n K --temperature T [--top-p --top-k]` gives best-of-n, with a `sample` index per prediction.
    - `a2ui_eval.teacher baseline` gains `--n`, `--temperature`, `--top-p`, `--source gallery` and `--max-tokens`, and records `reasoning_tokens`.
@@ -1689,7 +1688,7 @@ Phase 2 by about 11-08. Judge calibration (your 50 labels) by about 11-12. Gener
   `model:<spark-open id>`. Code validates the bank's structure. The slice's intents come from the
   same pipeline, using the held-out domains, and the user reviews them (`reviewed: true`).
   The explorer's dataset comments (`../explorer/datasets/*`) are never a source: the bootstrap
-  writes them with Muse Wonder, a hosted Model API model (ADR 0035).
+  writes them with Muse Wonder, a hosted Model API model.
 - **Q2. Glimmer base writes the slice's references, and the user picks and edits them.** For
   each slice intent: Glimmer base + 3 + grammar, best-of-8, through validator layers 1–3. The user
   picks a candidate and edits it. Provenance is `model:glimmer-base` plus `person:` when edited.
@@ -1917,3 +1916,23 @@ cd glimmer-tune && uv run pytest                                          # the 
 - **`pytest-xdist`** is a dev dependency. Each test file stays on one worker (`xdist_group` by file), so its module fixtures are built once. `test_generate.py` spreads across workers. The floor is now `test_synth_pipeline.py`, at about 100 s on one worker. (Since Approach v2 both files are in `archive/tests/`; see the Test command numbers.)
 - The trainer's suite (`cd trainer && uv run pytest`) takes seconds and is unchanged.
 - AGENTS.md's command list should point here. That edit waits until the other session's AGENTS.md changes are committed.
+
+## Amendment 2026-11-05: the synthetic dev set is deleted
+
+`data/synth/dev/cases.jsonl` (200 rows) is deleted, and its README with it. Everything above that describes it (the 284-row dev export, the `synthetic` source in scores, the
+"regression guard" role, `data/synth/dev` in the references version and the export guards) is
+history. From now on:
+
+- **Dev is the 84 gallery rows.** `dev_cases`, `export_dev` and `data_cli export-dev` read only
+  `data/dev`. The subset is still 6 rows per family (42); `--full` scores all 84.
+- **`SOURCES` is `("gallery",)`.** Score files carry only `sources.gallery`. `selection`,
+  `selection_rule` and the family-level interval are unchanged.
+- **`references_version` tracks `data/dev` and `data/test`.**
+- **The export leakage guards** check train rows against the intent draft, gallery dev and test,
+  and the explorer slice (`data/explorer_dev`).
+- **`teacher --source`** accepts `gallery` only.
+- **Tests:** the synthetic-only tests (`test_synthetic_dev_passes`, the stratified bootstrap test)
+  are gone. The review-mode tests use gallery dev rows as their fixture. The suite has 542 tests.
+- **Unchanged:** `review --synthetic` and `lint --synthetic` still take any `cases.jsonl` (distilled
+  rows, for example). Nothing builds such a file yet.
+

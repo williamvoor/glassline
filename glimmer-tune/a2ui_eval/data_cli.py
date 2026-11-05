@@ -71,12 +71,11 @@ def domain_splits(data: Path, gallery_families: set[str]) -> dict[str, str]:
 
 def export_eval_cases(data: Path) -> list[dict]:
     """Every eval case the export leakage guards check train rows against: the intent draft,
-    gallery dev and test, synthetic dev and the explorer slice (ADR 0038)."""
+    gallery dev and test and the explorer slice (ADR 0038)."""
     return (
         read_jsonl(data / DRAFT.name)
         + read_jsonl(data / "dev" / "cases.jsonl")
         + read_jsonl(data / "test" / "cases.jsonl")
-        + read_jsonl(data / "synth" / "dev" / "cases.jsonl")
         + read_jsonl(data / "explorer_dev" / "cases.jsonl")
     )
 
@@ -174,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     fz = sub.add_parser("freeze-prompt", help="write data/system_prompt.txt (ADR 0015)")
     fz.add_argument("--force", action="store_true", help="overwrite a different frozen prompt; invalidates trained adapters")
     fz.set_defaults(fn=cmd_freeze_prompt)
-    ed = sub.add_parser("export-dev", help="dev prompts for checkpoint scoring (gallery + synthetic; the subset is 6 gallery rows per family)")
+    ed = sub.add_parser("export-dev", help="dev prompts for checkpoint scoring (gallery; the subset is 6 rows per family)")
     ed.add_argument("--out", type=Path, default=None)
     ed.add_argument("--seed", type=int, default=0)
     ed.add_argument("--fewshot", action="store_true", help="put the 3 frozen examples (data/fewshot3.jsonl) before each question (needs --out)")
@@ -187,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     gr.set_defaults(fn=cmd_grammar)
     li = sub.add_parser("lint", help="plausibility linter (S8)")
     li.add_argument("--gallery", action="store_true", help="every single-turn converted seed, after the allowlist")
-    li.add_argument("--synthetic", type=Path, help="a cases.jsonl to lint (synthetic dev, or distilled rows)")
+    li.add_argument("--synthetic", type=Path, help="a cases.jsonl to lint (distilled rows)")
     li.set_defaults(fn=cmd_lint)
     return p
 

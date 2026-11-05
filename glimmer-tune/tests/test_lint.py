@@ -188,12 +188,6 @@ def test_cli_lint_gallery(monkeypatch, capsys):
     assert "gallery 09_login-form: form_submit" in capsys.readouterr().err
 
 
-def test_synthetic_dev_passes(model):
-    """The frozen synthetic regression set stays lint-clean (its generator is archived)."""
-    rows = read_jsonl(ROOT / "data" / "synth" / "dev" / "cases.jsonl")
-    assert len(rows) == 200 and lint_rows(rows, model, {}) == {}
-
-
 def test_repeated_value_scope(model):
     """SPEC "Sample review fixes D3-D7", D3: a literal equal to a bound value fires; short, letterless
     and template-relative strings don't; heading marks and case are ignored."""

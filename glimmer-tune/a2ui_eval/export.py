@@ -88,7 +88,7 @@ def export_sft(
 ) -> tuple[list[dict[str, Any]], ExportReport]:
     """`extra_fingerprints`: eval designs with no cases yet (the dev/test seeds themselves).
 
-    `eval_cases` should include the synthetic dev rows, so a train row with the same
+    `eval_cases` should include every eval row, so a train row with the same
     fingerprint (or intent) as one is dropped like any other overlap. Every train case is
     checked against `splits[case["family"]]`.
     `catalog_check` (a `CatalogCheck`) refuses any target with an operator or a name outside

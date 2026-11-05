@@ -27,7 +27,6 @@ Explorer serving path. Current run-2 evidence and open decisions are in the
 ```mermaid
 flowchart TD
     S[Vendored gallery Seeds] --> DEV[Frozen gallery dev/test Cases]
-    SYN[Frozen synthetic dev rows: regression guard] --> DEVP
     DEV --> DEVP[Dev prompts and references]
     DIST[Distilled train Cases, Approach v2: not built yet] --> EX[Export guards: splits, fingerprints, catalog, frozen prompt, length]
     EX --> TRAIN[Fireworks-format SFT rows]
@@ -40,7 +39,7 @@ flowchart TD
 
 Gallery Families belong to a single train/dev/test split. The dev (84) and test (136) Cases
 were generated from Family Templates that are now archived. The frozen case files are the
-source of truth. The 200 synthetic dev rows are kept as a regression guard only.
+source of truth. There is no synthetic dev set; the 200 rows of the run 2 one were deleted on 2026-11-05.
 
 Exports reject split/fingerprint leakage, invalid catalog use, a changed frozen system
 prompt, and excessive sequence length. SFT rows train the answer only; reasoning strength
@@ -65,7 +64,6 @@ the harness environment instead of importing its dependencies.
 | `data/system_prompt.txt` | Frozen prompt used by training and inference |
 | `data/dev/`, `data/test/` | Frozen gallery Cases; the test split is held for final evaluation |
 | `data/fewshot3.jsonl` | The 3 frozen few-shot examples of base + 3 (the launch default) |
-| `data/synth/dev/` | Synthetic regression guard (200 rows) |
 | `data/intents_draft.jsonl` | History: how the dev/test intents were reviewed |
 | `archive/` | Retired template and synthetic generators, their data and tests; not imported |
 | `trainer/` | Independent Python project for prepare/train/sample |
@@ -110,7 +108,7 @@ Run from `glimmer-tune/`. These commands make no live model calls:
 ```bash
 uv run python -m a2ui_eval.data_cli --help
 uv run python -m a2ui_eval.data_cli lint --gallery
-uv run python -m a2ui_eval.data_cli lint --synthetic data/synth/dev/cases.jsonl
+uv run python -m a2ui_eval.data_cli lint --synthetic PATH/cases.jsonl
 uv run python -m a2ui_eval.data_cli export-dev
 uv run python -m a2ui_eval.data_cli grammar
 ```
@@ -149,7 +147,7 @@ and wrapper's 8766. The review server's own default is 8765 if `--port` is omitt
 Default mode edits intent text and review flags in `data/intents_draft.jsonl`.
 
 To review rows from any cases file, use
-`uv run python -m a2ui_eval.review --synthetic data/synth/dev/cases.jsonl --sample 50 --port 8767`.
+`uv run python -m a2ui_eval.review --synthetic PATH/cases.jsonl --sample 50 --port 8767`.
 For checkpoint gallery review, pass `--predictions PATH --scores PATH`; verdicts are written
 alongside scores unless overridden. Build `review/dist` again after UI changes.
 
@@ -201,7 +199,7 @@ rendered review; results also report failure modes and uncertainty.
 
 - Muse Glimmer 30B, base or tuned adapters, generates A2UI only.
 - Hosted Model API models (`muse-spark-1.x`, `muse-wonder-*`) stay out of training data;
-  evaluation only (ADR 0035).
+  evaluation only.
 - Spark Open may teach, write intents and judge (ADR 0034). An adapter trained on any of its
   output is a Muse Model License Derivative: a product using it must show "Built with Muse
   Spark Open".

@@ -51,7 +51,7 @@ SLOW_FIXTURES: set[str] = set()  # the synthetic-generation fixtures went to arc
 SLOW_TESTS = {  # 2 s or more without a slow fixture (measured 2026-11-03)
     "test_every_dev_reference_is_accepted",
     "test_real_data_is_v0_9", "test_score_and_compare_cli_on_test", "test_score_output_carries_blind_ci_and_scorer_version",
-    "test_score_output_carries_selection_ci", "test_synthetic_dev_passes",
+    "test_score_output_carries_selection_ci",
 }
 # Files whose tests may run on any worker; every other file keeps one worker, so its
 # module fixtures are built once.
