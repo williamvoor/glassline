@@ -11,7 +11,7 @@ Runs: `runs-20261101T235731Z.jsonl`. Reference: [`reference-values.md`](referenc
 
 ## Q1. How much contract value did the Department of Defence award in calendar year 2014, and across how many contracts?
 
-Reference: [Q1](reference-values.md#q1)
+Reference: [Q1](reference-values.md#q1-department-of-defence-calendar-year-2014)
 
 ### Q1 · low · run 1
 
@@ -193,7 +193,7 @@ Score:
 
 ## Q2. Which 5 suppliers received the most value from limited tenders in 2022-23?
 
-Reference: [Q2](reference-values.md#q2)
+Reference: [Q2](reference-values.md#q2-top-5-suppliers-by-value-from-limited-tenders-2022-23)
 
 ### Q2 · low · run 1
 
@@ -257,7 +257,7 @@ Score:
 
 ## Q3. Which 10 contracts published in 2023-24 grew the most through amendments, from what to what?
 
-Reference: [Q3](reference-values.md#q3)
+Reference: [Q3](reference-values.md#q3-top-10-contracts-published-in-2023-24-by-growth-through-amendments)
 
 ### Q3 · low · run 1
 
@@ -587,7 +587,7 @@ Score:
 
 ## Q4. How has total contract value changed by financial year since the data starts?
 
-Reference: [Q4](reference-values.md#q4)
+Reference: [Q4](reference-values.md#q4-total-contract-value-by-financial-year)
 
 ### Q4 · low · run 1
 
@@ -1080,7 +1080,7 @@ Score:
 
 ## Q5. What share of 2024-25 contract value went to overseas suppliers?
 
-Reference: [Q5](reference-values.md#q5)
+Reference: [Q5](reference-values.md#q5-overseas-suppliers-share-of-2024-25-contract-value)
 
 ### Q5 · low · run 1
 
