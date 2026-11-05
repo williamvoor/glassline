@@ -1,5 +1,10 @@
 # Glassline
 
+Live service: https://52.70.126.131.sslip.io
+For the password e-mail me at williamvoor at gmail 
+or Discord oa23057
+(I had to put the service behind auth to avoid bots)
+
 Glassline is a Postgres data explorer that answers plain-English questions with prose, charts,
 tables, and metrics. An LLM writes read-only SQL; the server builds the displayed values from
 stored query Results. Users can inspect the SQL behind every Visual.
