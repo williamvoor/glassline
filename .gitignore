@@ -20,6 +20,7 @@ explorer/datasets/.*.bak-*/
 
 # Session summaries (working notes)
 docs/summary-*.md
+glimmer-tune/docs/summary-*.md
 
 # Paper, slides and demo video material (not published)
 docs/paper/
