@@ -228,3 +228,27 @@ describe('DataGrid share bars', () => {
     expect(style).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*table\.data-grid \.share-bar > span\s*\{\s*animation:\s*none/);
   });
 });
+
+// Workspaces SPEC phase 3 (ADR 0044): model tokens in both themes, and no motion under reduced motion (N16).
+describe('the New Workspace wizard', () => {
+  const css = indexHtml.slice(indexHtml.indexOf('<style>'), indexHtml.indexOf('</style>'));
+
+  it('defines the model accents for light and for dark', () => {
+    const light = defined(block(css, /^\s*:root\s*\{/m));
+    const dark = defined(block(block(css, /@media \(prefers-color-scheme: dark\)\s*\{/), /:root\s*\{/));
+    for (const t of ['--model-wonder', '--model-wonder-soft', '--model-spark', '--model-spark-soft']) {
+      expect(light, `light ${t}`).toContain(t);
+      expect(dark, `dark ${t}`).toContain(t);
+    }
+  });
+
+  it('turns off every Settings animation and transition, and the chips and cards, under reduced motion (N16)', () => {
+    const blocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{/g)].map(m => block(css.slice(m.index), /\{/));
+    const wizard = blocks.find(b => b.includes('explorer-settings *'));
+    expect(wizard, 'a reduced-motion block for Settings').toBeDefined();
+    expect(wizard).toMatch(/animation:\s*none\s*!important/);
+    expect(wizard).toMatch(/transition:\s*none\s*!important/);
+    expect(wizard).toContain('.model-chip .dot');
+    expect(wizard).toContain('.confirm-card');
+  });
+});
