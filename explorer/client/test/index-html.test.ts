@@ -252,3 +252,36 @@ describe('the New Workspace wizard', () => {
     expect(wizard).toContain('.confirm-card');
   });
 });
+
+// SPEC §22 step 6 (P11): Control chips from the tokens.
+describe('Control chips', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+
+  it('map the A2UI chip variables to tokens', () => {
+    expect(style).toMatch(/--a2ui-choicepicker-chip-border:\s*1px solid var\(--line-strong\);/);
+    expect(style).toMatch(/--a2ui-choicepicker-chip-background-selected:\s*var\(--primary\);/);
+  });
+
+  it('are mono 12 px, and a selected chip has --on-primary text', () => {
+    const chip = style.match(/explorer-app \.a2ui-chip\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(chip).toMatch(/font:\s*12px\/[\d.]+ var\(--mono\)/);
+    const selected = style.match(/explorer-app \.a2ui-chip\.a2ui-chip-selected\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(selected).toMatch(/color:\s*var\(--on-primary\)/);
+  });
+});
+
+// SPEC §22 P14 (the user, 2026-11-05): Surface Rows stack on phones, so weights apply on wide screens only.
+describe('Rows on phones', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+
+  it('stack Rows of Cards below 640 px, with each child full width whatever its weight', () => {
+    const at = style.indexOf('@media (width < 640px)');
+    expect(at).toBeGreaterThan(-1);
+    const block = style.slice(at, style.indexOf('\n      }', at));
+    const row = 'explorer-app a2ui-basic-row:has\\(> a2ui-card\\)';
+    expect(block).toMatch(new RegExp(`${row}\\s*\\{[^}]*flex-direction:\\s*column`));
+    const child = block.match(new RegExp(`${row} > \\*\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(child).toMatch(/flex:\s*0 0 auto !important/);
+    expect(child).toMatch(/width:\s*100%/);
+  });
+});

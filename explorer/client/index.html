@@ -42,6 +42,8 @@
         --a2ui-button-padding: 6px 14px; --a2ui-button-box-shadow: none; --a2ui-button-font-weight: 500;
         --a2ui-text-color-text: var(--fg); --a2ui-text-caption-color: var(--muted); --a2ui-text-a-color: var(--accent);
         --a2ui-divider-border: 1px solid var(--line);
+        --a2ui-choicepicker-chip-border: 1px solid var(--line-strong);
+        --a2ui-choicepicker-chip-background-selected: var(--primary); --a2ui-choicepicker-chip-padding: 4px 10px;
         --a2ui-row-gap: 16px; --a2ui-column-gap: 16px;
       }
       @media (prefers-color-scheme: dark) {
@@ -404,6 +406,15 @@
       explorer-app .a2ui-text.a2ui-text-caption em { font-style: normal; } /* A2UI wraps captions in <em> */
       explorer-app .a2ui-text h2 { margin: 2px 0; font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
       explorer-app a2ui-basic-button button:hover:not(:disabled) { border-color: var(--fg); }
+      /* Phones (SPEC §22 P14): Rows of Cards stack, so every Card is full width and weights apply on wide
+         screens only. A2UI sets each child's weight as an inline flex, hence !important. */
+      @media (width < 640px) {
+        explorer-app a2ui-basic-row:has(> a2ui-card) { flex-direction: column; }
+        explorer-app a2ui-basic-row:has(> a2ui-card) > * { flex: 0 0 auto !important; width: 100%; }
+      }
+      /* Controls as chips (SPEC §22 step 6). */
+      explorer-app .a2ui-chip { font: 12px/1.4 var(--mono); color: var(--fg); }
+      explorer-app .a2ui-chip.a2ui-chip-selected { color: var(--on-primary); }
 
       /* Chart tooltips (SPEC §22): vega-tooltip's element lives in body; the class beats its defaults */
       #vg-tooltip-element.explorer-theme {

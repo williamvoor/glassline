@@ -514,3 +514,24 @@ describe('treemap look (SPEC §22 step 5)', () => {
     expect(withTileStroke(lite, '#123456')).toBe(lite);
   });
 });
+
+// SPEC §22 P14 (the user, 2026-11-05): a Metric sparkline fits its data, area included.
+describe('Metric sparkline (SPEC §22 step 2, P14)', () => {
+  it('keeps its y domain off zero after withArea adds the area', async () => {
+    const spec = {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      data: {values: [{year: 2022, value: 1.1}, {year: 2023, value: 1.6}, {year: 2024, value: 1.65}]},
+      mark: {type: 'line'},
+      encoding: {
+        x: {field: 'year', type: 'ordinal', sort: null, axis: null, scale: {padding: 0}},
+        y: {field: 'value', type: 'quantitative', axis: null, scale: {zero: false}, stack: null},
+      },
+    };
+    const layered = withArea(spec, {line: '#000000', card: '#ffffff'});
+    const view = new vega.View(vega.parse(vegaLite.compile(transformSpec(layered, 48, 400) as never).spec), {renderer: 'none'});
+    await view.runAsync();
+    const [lo] = view.scale('y').domain() as number[];
+    view.finalize();
+    expect(lo).toBeGreaterThan(1);
+  });
+});

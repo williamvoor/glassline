@@ -932,7 +932,10 @@ def test_metric_trend_adds_a_sparkline_from_the_stored_rows():
     assert spec["mark"] == {"type": "line"}
     assert [(v["year"], v["value"]) for v in spec["data"]["values"]] == [(2020, 1.0), (2022, 3.0), (2023, 5.0)]
     assert spec["encoding"]["x"]["axis"] is None and spec["encoding"]["y"]["axis"] is None
-    assert spec["encoding"]["y"] | {"axis": None} == {"field": "value", "type": "quantitative", "axis": None}
+    assert spec["encoding"]["x"]["scale"] == {"padding": 0}  # the line spans the card (P14 screenshots)
+    assert spec["encoding"]["y"]["scale"] == {"zero": False}  # fit to the data: a trend shows its shape (the user, P14)
+    assert spec["encoding"]["y"]["stack"] is None and "stack" in spec["encoding"]["y"]  # else the area restacks to zero
+    assert spec["encoding"]["y"] | {"axis": None, "scale": None, "stack": None} == {"field": "value", "type": "quantitative", "axis": None, "scale": None, "stack": None}
     assert "tooltip" not in spec["encoding"] and "color" not in spec["encoding"]
     assert c.sources == [] and c.visuals == 0  # not a Visual: nothing to click, no Ask
     # Both queries are shown (ADR 0001): the Metric's, then the trend's.

@@ -39,7 +39,7 @@ from explorer_agent.drill import display_sql
 from explorer_agent.results import ResultStore, StoredResult
 from explorer_agent.sql import SqlFail, SqlOk
 from explorer_agent.testing.stub_server import STUB_BOARD, STUB_BUYERS, StubBoardRunner
-from explorer_agent.ui import UiPipeline
+from explorer_agent.ui import UiPipeline, validate
 
 ALLOWED = ("fixture", "mart")
 PATH = Path("<test>/boards/explorer.toml")
@@ -523,3 +523,38 @@ def test_a_metric_lists_its_trend_query_as_a_dependency():
     deps = panel_dependencies(STUB_BOARD, comps)
     assert deps["m"] == (frozenset({"total", "by_year"}), frozenset())
     assert deps["n"] == (frozenset({"total"}), frozenset())
+
+
+# --- Controls as chips (SPEC §22 step 6) ---------------------------------------------------------
+
+
+def _n(n: int) -> Options:
+    return Options(tuple(range(n)), tuple(f"o{i}" for i in range(n)))
+
+
+def test_short_choice_and_multi_controls_are_chips_counting_all():
+    """P13: up to CHIPS_MAX options, "All" included; longer lists keep the list; filterable unchanged."""
+    from explorer_agent.boards import CHIPS_MAX
+
+    assert CHIPS_MAX == 24
+    b = board()
+    method = lambda n: {c["id"]: c for c in controls_components(b, opts(b, method=_n(n)))}["board_control_method"]
+    amends = lambda n: {c["id"]: c for c in controls_components(b, opts(b, amends=_n(n)))}["board_control_amends"]
+    assert len(method(23)["options"]) == 24 and method(23)["displayStyle"] == "chips"  # 23 + "All"
+    assert len(method(24)["options"]) == 25 and "displayStyle" not in method(24)
+    assert amends(24)["displayStyle"] == "chips" and amends(24)["filterable"] is True
+    assert "displayStyle" not in amends(25) and amends(25)["filterable"] is True
+    comps = {c["id"]: c for c in controls_components(b, opts(b))}
+    assert all("displayStyle" not in comps[k] for k in ("board_control_hide_cancelled", "board_control_min_suppliers",
+                                                        "board_control_since"))
+
+
+async def test_the_stub_boards_chip_control_passes_strict_validation(pipeline):
+    r = BoardRenderer({EXPLORER: STUB_BOARD}, StubBoardRunner(), concurrency=2, row_cap=500, ttl_s=300, max_cache=20)
+    options, state, bound = await r.defaults(STUB_BOARD)
+    out = await r.outcomes(STUB_BOARD, bound)
+    results, failed = instance_results(out, ResultStore().reserve_id)
+    ui = build_board(STUB_BOARD, results, failed, pipeline, "turn-0-1-x", None, options, state)
+    comps = {c["id"]: c for m in ui.messages for c in (m.get("updateComponents") or {}).get("components", [])}
+    assert comps["board_control_buyer"]["displayStyle"] == "chips"
+    validate(ui.messages)
