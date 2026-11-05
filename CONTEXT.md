@@ -7,7 +7,7 @@ A data explorer that answers plain-English questions about a Postgres database w
 ### Data
 
 **Dataset**:
-One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, notes, glossary). Each Workspace has exactly one Dataset.
+One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, notes, glossary). Each Workspace has exactly one Dataset. Datasets are deployment data, not part of the explorer (ADR 0045).
 _Avoid_: Database (for the whole bundle), source, domain
 
 **Workspace**:

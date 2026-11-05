@@ -1,0 +1,24 @@
+title = "Supplier"
+question = "What has this supplier won, in which years, and from which agencies?"
+scope = "Every non-cancelled, valued contract for this supplier across all financial years, not only the clicked answer's filters"
+key = "supplier_key"
+key_type = "text"
+key_columns = ["supplier_key"]
+layout = """
+root = Column([metrics, trend, top])
+metrics = Row([Metric("supplier_totals", "supplier_name", "Supplier", 0, "text"), Metric("supplier_totals", "total_value", "Total spend", 0, "currency_compact"), Metric("supplier_totals", "contract_count", "Contracts", 0, "int")])
+trend = LineChart("supplier_trend", "financial_year", "total_value", "Spend by financial year", format="currency_compact")
+top = DataTable("supplier_agencies", "Top agencies for this supplier", "agency_name,total_value,contract_count", "total_value:currency_compact,contract_count:int", bars="total_value")
+"""
+
+[[queries]]
+name = "supplier_totals"
+sql = "SELECT supplier_name AS supplier_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count, count(DISTINCT financial_year) AS year_count FROM mart.supplier_fy WHERE supplier_key = :supplier_key GROUP BY supplier_name"
+
+[[queries]]
+name = "supplier_trend"
+sql = "SELECT supplier_key AS supplier_key, financial_year AS financial_year, total_value AS total_value, contract_count AS contract_count FROM mart.supplier_fy WHERE supplier_key = :supplier_key ORDER BY financial_year"
+
+[[queries]]
+name = "supplier_agencies"
+sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.supplier_agency_fy WHERE supplier_key = :supplier_key GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 15"

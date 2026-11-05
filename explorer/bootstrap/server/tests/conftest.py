@@ -16,7 +16,7 @@ from explorer_bootstrap.stats import open_report_pool
 RO_PASSWORD = "ro-Secret-9f2"
 LOADER_PASSWORD = "loader-Secret-7c1"
 EXPLORER_ROOT = Path(__file__).resolve().parents[3]  # genUI/explorer
-AUSTENDER_DATASET = EXPLORER_ROOT / "datasets" / "austender"
+AUSTENDER_DATASET = EXPLORER_ROOT / "agent" / "tests" / "fixtures" / "austender"
 
 FIXTURE_SQL = """
 CREATE SCHEMA bs;

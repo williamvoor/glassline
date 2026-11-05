@@ -353,7 +353,7 @@ uv run python -m explorer_bootstrap export --draft draft.json --name N --target 
 
 `draft` builds the report (same code as `report`, min/max on), runs the loop, verifies every
 claim, validates, writes `draft.json`, and prints progress, the claims table, validation and
-the usage/cost totals. `--root` defaults to `explorer/datasets`. Exit codes: 0 ok; 1 `export`
+the usage/cost totals. `--root` defaults to `~/.glassline`, outside the repo and created on export (ADR 0045); the owner's committed Datasets are in `datasets/` at the repo root. Exit codes: 0 ok; 1 `export`
 refused, or `verify` finished with blockers; 2 usage, config, connection, model or runtime
 error. Messages never show the DSN or keys.
 
@@ -404,6 +404,8 @@ error. Messages never show the DSN or keys.
 Same as phase 1 (`uv run pytest`; Docker; never the network or a model).
 
 ## Phase 2c: local server and Lit UI
+
+> **Superseded (2026-11-05):** the Lit UI was removed and standalone `serve` is retired. The server now runs only in Settings mode via `explorer/run.sh` (ADR 0041, ADR 0045, `../specs/workspaces/SPEC.md` D8).
 
 Status: **approved** (2026-11-02; decided by the builder on the user's delegation). Wraps the
 phase 2b functions; adds the pre-run cost estimate. Brief: `docs/bootstrap-build-prompt.md` §4–5.
@@ -573,7 +575,7 @@ It's built in two parts:
   manual run that drafts austender's Boards and measures B-M (BM). Part B needs real Boards to
   time, and the live run needs the user's OK first.
 - **Part B is built** (2026-11-04). SC1 is specified in `specs/scenarios/SPEC.md` (the Board
-  scenarios amendment). austender's Boards reached `datasets/austender/boards/` through a scratch
+  scenarios amendment). austender's Boards reached `datasets/austender/boards/` (now at the repo root, ADR 0045) through a scratch
   export (ADR 0036). Both halves of B-M are recorded in `explorer/SPEC.md` §18: the speed half
   and, measured by hand on 2026-11-04, the typed-question half.
 

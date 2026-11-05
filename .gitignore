@@ -16,7 +16,10 @@ glimmer-tune/archive/
 *.log
 
 # Dataset bootstrap backups
-explorer/datasets/.*.bak-*/
+# (datasets/ at the repo root is the owner's own deployment data, committed; explorer/datasets/ is
+# the old local root, ignored so leftovers aren't committed; the CLI now defaults to ~/.glassline)
+datasets/.*.bak-*/
+explorer/datasets/
 
 # Session summaries (working notes)
 docs/summary-*.md

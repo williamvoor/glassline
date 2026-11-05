@@ -38,7 +38,7 @@ The central design idea (ADR 0001): the model never retypes data. It references 
 - **Database:** the explorer connects only with the dataset's read-only role. Every query: `READ ONLY` transaction, `statement_timeout`, row cap with truncation reported, schema allowlist from config. The `fti` project (`../fti`) is not used; don't modify it. Its docs are a source of lessons about the AusTender API only.
 - **One merged catalog** with its own ID on both agent and client (ADR 0002). Components outside the surface's catalog render as nothing.
 - **Prompt caching:** prompt order is A2UI rules/catalog → instructions → dataset context → conversation/tool results. No per-request values (dates, IDs, timestamps) in the stable prefix. The prefix must be byte-identical across requests (needs a test). Send a fixed `prompt_cache_key`; log prompt and cached tokens per call.
-- **No AusTender hard-coding in `explorer/`:** dataset description, notes and allowed schemas are config in `explorer/datasets/<name>/`.
+- **No AusTender hard-coding in `explorer/`:** dataset description, notes and allowed schemas are config in `datasets/<name>/` (repo root: deployment data, ADR 0045) or in a Workspace under `EXPLORER_DATA_DIR`.
 - **LiteLLM:** pinned exactly (`1.106.6`); the `mcp` package is a required dep to work around a `tools=` import bug. Keep `uv.lock` committed.
 - **Express gotchas:** wrap output in `<a2ui>…</a2ui>` (code fences aren't recognised); Express doesn't stream.
 - **Commits:** Conventional Commits, template in `.gitmessage`.

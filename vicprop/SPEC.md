@@ -22,7 +22,7 @@ from `land.vic.gov.au`).
   migrations are `.sql` files, loading is a thin module of SQL inserts. No ORM, no Alembic.
 - Tests never touch the network. Database tests use a disposable Postgres 18 (Testcontainers).
 - Never modify anything outside `vicprop/` (the only exception is the new
-  `../explorer/datasets/vicprop/` config, which this spec also covers).
+  `../datasets/vicprop/` config, which this spec also covers).
 - Secrets live in `vicprop/.env` (git-ignored by the repo root `.gitignore`).
   Commit an `.env.example` with placeholders. Never print or log passwords or
   URLs containing them.
@@ -101,7 +101,7 @@ seeing the old data until it commits. Loading twice gives identical tables.
 
 ## 7. Explorer dataset config
 
-`../explorer/datasets/vicprop/`: `dataset.toml` (`allowed_schemas = ["mart"]`, AUD
+`../datasets/vicprop/`: `dataset.toml` (`allowed_schemas = ["mart"]`, AUD
 currency), `notes.md` (prefer the long `suburb_price` table; 2026 is preliminary;
 flagged medians need caution; `'-'` years have no row), `glossary.md` (locality, median
 price, preliminary, flagged), and `examples` starter questions. No `scenarios.toml` yet

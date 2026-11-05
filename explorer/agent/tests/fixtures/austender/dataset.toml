@@ -1,0 +1,11 @@
+name = "austender"
+description = "Australian Commonwealth contract notices published on AusTender, with agency, supplier, value, category and financial-year summaries."
+allowed_schemas = ["mart"]
+glossary = "glossary.md"
+notes = "notes.md"
+examples = ["Which agencies spent the most in 2024-25?", "Who were the top suppliers in 2023-24?", "Show the largest contracts published in 2024-25"]
+
+[currency]
+code = "AUD"
+symbol = "$"
+

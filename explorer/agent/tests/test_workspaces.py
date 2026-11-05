@@ -26,7 +26,7 @@ from explorer_agent.workspaces import AVAILABLE, UNAVAILABLE, Built, Guard, Regi
 from tests.test_server import CAPS, EXT_URI, final_parts
 
 REPO = EXPLORER_ROOT.parent
-DATASET = "explorer/datasets/austender"
+DATASET = "explorer/agent/tests/fixtures/austender"
 BASE = "http://127.0.0.1:10002"
 ORIGIN = "http://127.0.0.1:5173"
 
@@ -363,7 +363,7 @@ def test_workspace_mode_starts_from_the_command_line(pg, tmp_path):
         port = s.getsockname()[1]
     env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY")}
     env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "EXPLORER_DATA_DIR": str(data), "AGENT_PORT": str(port),
-                "A_DATABASE_URL": pg.ro_dsn, "DATASET_DIR": "datasets/austender"})
+                "A_DATABASE_URL": pg.ro_dsn, "DATASET_DIR": "agent/tests/fixtures/austender"})
     proc = subprocess.Popen([sys.executable, "-m", "explorer_agent"], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
     try:

@@ -36,7 +36,7 @@ uv run vicprop migrate | load [--xlsx PATH] | stats
   changes. Add a new `NNNN_*.sql` instead.
 - **Secrets:** `.env` is git-ignored. Never print or log passwords or DSNs that contain them. New
   settings go in `.env.example` with placeholders.
-- Don't modify anything outside `vicprop/`, except `../explorer/datasets/vicprop/` (the dataset config,
+- Don't modify anything outside `vicprop/`, except `../datasets/vicprop/` (the dataset config,
   covered by SPEC §7).
 - Keep `build_test_db(dsn)`'s signature stable and its dependencies light (`openpyxl`, `psycopg`,
   `tzdata`-free), because the explorer depends on it.

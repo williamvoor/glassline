@@ -323,3 +323,15 @@ def test_serve_sets_up_its_logging_once(monkeypatch, tmp_path, capsys):
     finally:
         logger.handlers = handlers_before
         logger.setLevel(logging.NOTSET)
+
+
+def test_export_default_root_is_outside_the_repo_and_created(capsys, tmp_path, monkeypatch):
+    assert cli.REPO_ROOT not in cli.DATASETS_ROOT.parents  # never write into the repo by default
+    default = tmp_path / "home" / ".glassline"
+    monkeypatch.setattr(cli, "DATASETS_ROOT", default)
+    draft = tmp_path / "d.json"
+    draft.write_text(json.dumps({"draft_version": 1, "report": {}, "files": {}, "comments": [], "claims": []}),
+                     encoding="utf-8")
+    code, out, _ = _run(capsys, "export", "--draft", str(draft), "--name", "x", "--target", "toml")
+    assert default.is_dir()
+    assert "is not a directory" not in out

@@ -23,7 +23,7 @@ flowchart LR
 
 The loader writes the database; Explorer reads a curated `mart` schema. There is no model or
 UI in this package. Dataset notes and starter questions belong in
-[`../explorer/datasets/austender/`](../explorer/datasets/austender/), while the table/column
+[`../datasets/austender/`](../datasets/austender/), while the table/column
 descriptions are SQL comments in this project's migrations.
 
 `fetch-month` appends raw releases. It does not refresh the explorer-facing tables: run
@@ -126,14 +126,15 @@ postgresql://explorer_ro:<password>@localhost:5434/austender
 ```
 
 Put that value in `DATABASE_URL` in the repository root `.env`, with
-`DATASET_DIR=datasets/austender`. URL-encode special characters in the password. Then follow
+`DATASET_DIR=../datasets/austender` (single-Dataset mode; relative paths start at `explorer/`). URL-encode special characters in the password. Then follow
 [Explorer's real-Dataset setup](../explorer/README.md#run-against-a-real-dataset).
 
-The agent's whole data dictionary is the `COMMENT ON` text of the `mart` tables and columns (about 6.8k
-characters); print it with:
+The Data dictionary comes from `mart` table/column comments, with any Dataset Comment overlay
+taking precedence. To inspect the database comments:
 
 ```sql
-SELECT c.relname, a.attname, col_description(c.oid, a.attnum)
+SELECT c.relname, obj_description(c.oid, 'pg_class') AS table_comment,
+       a.attname, col_description(c.oid, a.attnum) AS column_comment
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
 WHERE n.nspname = 'mart' AND c.relkind = 'r' ORDER BY 1, a.attnum;
@@ -157,7 +158,7 @@ read `mart`. Add the package as an editable path dev-dependency; it needs only `
   their full value in the source, so spend questions should use `mart.contract_supplier` or the `*_fy`
   summary tables, which exclude them.
 - A multi-supplier contract's current value is split equally across its suppliers (`value_share`), so
-  summing never double counts.
+  summing that column across contract-supplier rows does not double count.
 - Current value is the highest-numbered non-cancelled amendment's value (skipping amendments without a
   value), else the original. Amendments are
   full snapshots; the API gives them no date, so none is stored.
@@ -184,22 +185,6 @@ joining a contract to multiple suppliers; sum the allocated `value_share`. Value
 published, with no currency conversion. Financial year follows the original notice's Canberra
 publish date, not an amendment's republishing timestamp.
 
-## Code and data map
-
-| Path | Responsibility |
-|---|---|
-| `src/austender/api.py` | Pagination, serial requests, minimum spacing, retry/backoff |
-| `src/austender/ingest.py` | Canonical payload hashes, deduplication, raw storage, runs/checkpoints |
-| `src/austender/normalise.py` | Release parsing, notice/amendment snapshots, current values, identities |
-| `src/austender/mart.py` | Transactional rebuild and aggregates |
-| `src/austender/abn.py` | ABN validation and supplier/agency name normalisation |
-| `src/austender/db.py` | Connections, role grants, ordered checksum-verified migrations |
-| `src/austender/config.py`, `cli.py` | Environment settings and CLI |
-| `src/austender/testing.py` | Shared disposable-database builder |
-| `migrations/` | Schema, indexes, comments, and subsequent schema changes |
-| `tests/seed/` | Fictional source releases and hand-computed expected totals |
-| `backfill.sh`, `logs/` | Deliberate historical ingestion wrapper and ignored logs |
-
 ## Testing and changes
 
 From `austender/`:
@@ -214,11 +199,8 @@ Postgres 18 for roles, migrations, normalisation, mart totals, and idempotence. 
 call the public API or a model. The disposable test database is separate from the Compose
 database; a local backfill is unnecessary for tests.
 
-Never edit an applied migration: the runner stores its SHA-256 and rejects changed files.
-Add a new numbered SQL migration. Every new mart table/column needs an accurate `COMMENT ON`
-because it becomes the model's Data dictionary. The comment budget is tested at 12,000
-characters. Hand-compute seed expectations; do not derive expected totals from the rebuild
-implementation under test. Preserve `build_test_db(dsn)` for Explorer's test dependency.
+For migration, comment-budget and seed rules, see [AGENTS.md](AGENTS.md). Preserve the
+`build_test_db(dsn)` integration helper used by Explorer’s tests.
 
 ## Troubleshooting
 

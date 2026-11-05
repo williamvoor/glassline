@@ -1,0 +1,35 @@
+title = "Explorer"
+question = "How is Commonwealth contract spend distributed across agencies and financial years?"
+scope = "All non-cancelled, valued contracts in mart.agency_fy from 2012-13 to 2026-27; cancelled contracts excluded"
+layout = """
+root = Column([metrics, Row([breakdown, trend]), top])
+metrics = Row([Metric("totals", "total_value", "Total spend", 0, "currency_compact"), Metric("totals", "contract_count", "Contracts", 0, "int"), Metric("totals", "agency_count", "Agencies", 0, "int")])
+breakdown = Treemap("agency_share", "Spend share by agency", "agency_name", "total_value", "currency_compact")
+trend = LineChart("fy_trend", "financial_year", "total_value", "Spend by financial year", format="currency_compact")
+top = DataTable("top_agencies", "Top agencies by spend", "agency_name,total_value,contract_count", "total_value:currency_compact,contract_count:int", bars="total_value")
+"""
+
+[[controls]]
+name = "fy"
+kind = "choice"
+label = "Financial year"
+type = "text"
+options_sql = "SELECT financial_year AS value, financial_year AS label FROM (SELECT DISTINCT financial_year FROM mart.agency_fy) s ORDER BY value"
+all_label = "All"
+default = "all"
+
+[[queries]]
+name = "totals"
+sql = "SELECT sum(total_value) AS total_value, sum(contract_count) AS contract_count, count(DISTINCT agency_key) AS agency_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy)"
+
+[[queries]]
+name = "agency_share"
+sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy) GROUP BY agency_key, agency_name ORDER BY total_value DESC"
+
+[[queries]]
+name = "fy_trend"
+sql = "SELECT financial_year AS financial_year, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy) GROUP BY financial_year ORDER BY financial_year"
+
+[[queries]]
+name = "top_agencies"
+sql = "SELECT agency_key AS agency_key, agency_name AS agency_name, sum(total_value) AS total_value, sum(contract_count) AS contract_count FROM mart.agency_fy WHERE (:fy IS NULL OR financial_year = :fy) GROUP BY agency_key, agency_name ORDER BY total_value DESC LIMIT 15"

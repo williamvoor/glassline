@@ -30,7 +30,7 @@ from explorer_bootstrap.stats import QUERY_CANCELED, open_report_pool
 
 REPO_ROOT = Path(__file__).resolve().parents[5]  # genUI/
 ENV_FILE = REPO_ROOT / ".env"
-DATASETS_ROOT = REPO_ROOT / "explorer" / "datasets"
+DATASETS_ROOT = Path.home() / ".glassline"  # outside the repo; export creates it (ADR 0045)
 # Tests set this to a stub (explorer_agent.testing.stub_model); None means litellm.acompletion.
 COMPLETION: Completion | None = None
 URL_VAR = "BOOTSTRAP_DATABASE_URL"
@@ -83,7 +83,7 @@ def _parser() -> argparse.ArgumentParser:
     e.add_argument("--target", required=True, choices=("toml", "sql"), help="comments.toml (overlay) or comments.sql")
     e.add_argument("--force", action="store_true",
                    help="replace the draft's files in an existing directory (others left alone; replaced files kept in a backup)")
-    e.add_argument("--root", type=Path, default=DATASETS_ROOT, help="parent directory (default explorer/datasets)")
+    e.add_argument("--root", type=Path, help="parent directory (default ~/.glassline, created if missing; an explicit --root must exist)")
 
     s = sub.add_parser("serve", help="run the local UI and its API on 127.0.0.1")
     s.add_argument("--port", type=int, default=8765)
@@ -361,8 +361,12 @@ async def _export(args: argparse.Namespace, env: Mapping[str, str]) -> int:
                 board_problems = (await check_boards(boards, dataset, runner, settings.max_entity_boards)).flat()
             finally:
                 await pool.close()
+    root = args.root
+    if root is None:
+        root = DATASETS_ROOT
+        root.mkdir(parents=True, exist_ok=True)
     try:
-        result = export_dataset(draft, args.name, args.target, args.root, force=args.force,
+        result = export_dataset(draft, args.name, args.target, root, force=args.force,
                                 boards=boards, board_problems=board_problems)
     except ExportError as e:
         sys.stdout.write("Export refused:\n" + "".join(f"  {r}\n" for r in e.reasons))

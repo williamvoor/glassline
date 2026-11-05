@@ -249,7 +249,7 @@ committed `explorer/.env.example` with placeholders.
 | `REASONING_EFFORT` | `minimal` | Passed as `reasoning_effort` only when set; empty = not sent (other providers may reject it) |
 | `META_API_KEY` | (none) | Read by LiteLLM; other providers use their own variables |
 | `DATABASE_URL` | (required) | The dataset's read-only login |
-| `DATASET_DIR` | (required) | Dataset directory, relative to `explorer/` (no default, so the code names no dataset) |
+| `DATASET_DIR` | (required) | Dataset directory (no default, so the code names no dataset). Relative paths start at `explorer/`; absolute and `~` paths also work (§23). Ignored in Workspace mode |
 | `PROMPT_CACHE_KEY` | `explorer-<dataset>` | Fixed per dataset |
 | `SQL_TIMEOUT_MS` | `15000` | `statement_timeout` per query |
 | `SQL_ROW_CAP` | `5000` | Rows fetched and stored per query |
@@ -261,7 +261,7 @@ committed `explorer/.env.example` with placeholders.
 | `CLIENT_ORIGIN` | `http://127.0.0.1:5173` | CORS allow-origin for the client |
 | `LOG_LEVEL` | `INFO` | |
 
-**Dataset directory** (`explorer/datasets/austender/`, committed):
+**Dataset directory** (the example is `datasets/austender/` at the repo root, committed; moved out of `explorer/` by §23):
 
 ```toml
 # dataset.toml
@@ -286,7 +286,7 @@ symbol = "$"
 explorer/
   .env.example  SPEC.md  README.md
   catalog/explorer_custom_components.json
-  datasets/austender/{dataset.toml, notes.md, glossary.md}
+  datasets/                    git-ignored local default root for the bootstrap CLI (§23); ships no Dataset
   agent/
     pyproject.toml  uv.lock
     src/explorer_agent/
@@ -3260,3 +3260,25 @@ touch emulation without tapping).
 cd explorer/agent && uv run pytest
 cd explorer/client && npm test && npm run build
 ```
+
+## 23. Amendment: Datasets are deployment data (2026-11-05)
+
+Status: **approved** (2026-11-05, the user). Decision: ADR 0045. Amends §7 and §8, and the
+file tables in §13 to §22 that name `datasets/austender/...`: those paths now mean the repo-root
+`datasets/austender/`, or the frozen test copy where a test is meant.
+
+The explorer must not look tied to any dataset. Datasets are the owner's deployment data, and
+anyone else runs the bootstrap in Workspace mode.
+
+- `explorer/datasets/austender` and `explorer/datasets/vicprop` move to `datasets/austender` and
+  `datasets/vicprop` at the repo root. They stay committed, Boards included (ADR 0036).
+  `explorer/` ships no Dataset.
+- The bootstrap CLI's default `--root` is `~/.glassline` (created on export); `explorer/datasets/` stays git-ignored.
+- Tests use a frozen copy, `agent/tests/fixtures/austender/` (`dataset.toml`, `notes.md`,
+  `glossary.md`, `scenarios.toml`, `boards/`). It matches the AusTender test seed (ADR 0010) and
+  does not follow edits to the deployment copy. Where §10 to §22 say a test loads
+  `datasets/austender`, it loads this copy.
+- `DATASET_DIR` accepts absolute and `~` paths. A relative path still starts at `explorer/`, so
+  the owner writes `../datasets/austender`.
+- Workspace mode (`EXPLORER_DATA_DIR`, outside the repo) is the recommended setup in
+  `.env.example`. Single-Dataset mode stays for tests, `run.sh` and the owner's own database.

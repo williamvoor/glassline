@@ -11,7 +11,7 @@ import scenarios as sc
 from explorer_agent.llm import CONTENT_POLICY_PROSE, DRILLS_DROPPED_LOG
 from explorer_agent.sql import SqlFail, SqlOk
 
-AUSTENDER_SCENARIOS = Path(__file__).resolve().parents[2] / "datasets" / "austender" / "scenarios.toml"
+AUSTENDER_SCENARIOS = Path(__file__).resolve().parent / "fixtures" / "austender" / "scenarios.toml"
 
 
 def scenario(**raw) -> sc.Scenario:

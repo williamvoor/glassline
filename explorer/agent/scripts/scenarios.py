@@ -936,7 +936,7 @@ async def open_explorer(client: httpx.AsyncClient) -> dict[str, Any]:
 def board_titles(dataset: str, boards: dict[str, Any]) -> dict[str, str]:
     """Each Board's title -> its file name. Refuses a Dataset with no Explorer Board."""
     if EXPLORER not in boards:
-        raise SystemExit(f"{dataset} has no Explorer Board (datasets/{dataset}/boards/explorer.toml)")
+        raise SystemExit(f"{dataset} has no Explorer Board ({dataset} dataset: boards/explorer.toml)")
     return {b.title: b.name for b in boards.values()}
 
 

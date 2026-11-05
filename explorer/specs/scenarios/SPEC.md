@@ -14,7 +14,7 @@ Paths relative to `explorer/` unless stated.
 
 | File | What |
 |---|---|
-| `datasets/austender/scenarios.toml` | the AusTender scenarios (10, signed off by the user 2026-11-02) |
+| `datasets/austender/scenarios.toml` (repo root; tests use the frozen `explorer/agent/tests/fixtures/austender/`, ADR 0045) | the AusTender scenarios (10, signed off by the user 2026-11-02) |
 | `agent/scripts/scenarios.py` | runner and scorer: `run` and `report` subcommands. Imports the A2A client, agent process, log parser and secret scan from `effort_check.py`; no AusTender names in code |
 | `agent/scripts/effort_check.py` | `ask()` gains an optional `context_id` for multi-turn scenarios, and returns the reply's `contextId` as `context_id` (amended during build); nothing else changes |
 | `agent/tests/test_scenarios.py` | tests: no model, no network; scoring tests use a stub SQL runner |
