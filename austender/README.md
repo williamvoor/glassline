@@ -99,3 +99,14 @@ read `mart`. Add the package as an editable path dev-dependency; it needs only `
   Withheld") without an ABN gets `withheld:<notice_id>`, so placeholders never merge into one supplier.
 - `rebuild` empties and refills `mart` with `DELETE` in one transaction, so the explorer keeps reading the
   previous data until it commits.
+
+## Data licence and attribution
+
+Contract notices come from [AusTender](https://www.tenders.gov.au), Department of Finance,
+Commonwealth of Australia, licensed under
+[CC BY 3.0 AU](https://creativecommons.org/licenses/by/3.0/au/). The licence excludes the
+Commonwealth Coat of Arms and Approach to Market (ATM) material, which is copyright. This project
+loads contract-notice data only. Keep it that way: do not ingest or republish ATM material.
+The tables here reshape the notices; that reshaping is ours, not the Commonwealth's. Licence questions
+go to the AusTender Administrator, tenders@finance.gov.au. Credits for the whole repo are in the root
+`NOTICE`.

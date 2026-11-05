@@ -308,3 +308,15 @@ Glimmer, and preserve vendored Apache-2.0 notices.
 
 Issues live in [`docs/issues/`](docs/issues/), since the repository has no remote issue tracker.
 Use Conventional Commits with the template in [`.gitmessage`](.gitmessage).
+
+## License and attribution
+
+The code is licensed under the [Apache License 2.0](LICENSE). Third-party material and data
+credits are in [NOTICE](NOTICE). In particular:
+
+- The `vicprop/` source workbook is from the Victorian Government
+  ([land.vic.gov.au](https://land.vic.gov.au)) under
+  [CC BY 3.0 AU](https://creativecommons.org/licenses/by/3.0/au/).
+- The `austender/` database holds contract notices from
+  [AusTender](https://www.tenders.gov.au), Department of Finance, Commonwealth of Australia,
+  under CC BY 3.0 AU. Approach to Market material is excluded from that licence and isn't used.

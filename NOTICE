@@ -1,0 +1,26 @@
+genUI
+Copyright 2026 William Voorsluys
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party material
+--------------------
+
+VegaChart for A2UI v0.9 (explorer/client/src/vendor/vegachart/)
+  Copyright 2024 Google LLC, Apache License 2.0. Modified; see the NOTICE and LICENSE in that
+  directory.
+
+Victorian suburb median house prices (vicprop/houses-by-suburb-2015-2025.xlsx)
+  Source: Victorian Government, https://land.vic.gov.au
+  Licensed under the Creative Commons Attribution 3.0 Australia licence (CC BY 3.0 AU),
+  https://creativecommons.org/licenses/by/3.0/au/
+  The workbook is included unchanged. The database built from it (vicprop/) reshapes it into
+  tables; that reshaping is ours, not the Victorian Government's.
+
+AusTender contract notices (loaded into the austender/ database from the AusTender OCDS API)
+  Source: AusTender, Department of Finance, Commonwealth of Australia, https://www.tenders.gov.au
+  AusTender materials are licensed under CC BY 3.0 AU, except the Commonwealth Coat of Arms and
+  Approach to Market (ATM) material, which is copyright and not used here
+  (AusTender terms, section 5). Only contract-notice data is loaded, and the database reshapes it
+  into tables; that reshaping is ours, not the Commonwealth's.
+  Committed test fixtures (austender/tests/seed/) are synthetic.
