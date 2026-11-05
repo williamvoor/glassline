@@ -210,6 +210,27 @@ export function withHover(vegaSpec: Record<string, unknown>): Record<string, unk
   };
 }
 
+/**
+ * Explorer (SPEC §22): top-level full-Vega `rect` marks (Treemap tiles) without a `stroke` get one in the
+ * card's colour, so tiles are separated in both schemes. Vega ignores the config's `rect.stroke`
+ * for a mark that encodes `fill`, so the config can't do it. Vega-Lite specs are unchanged.
+ */
+export function withTileStroke(vegaSpec: Record<string, unknown>, stroke: string): Record<string, unknown> {
+  const marks = vegaSpec['marks'];
+  if (!isFullVega(vegaSpec) || !Array.isArray(marks)) return vegaSpec;
+  return {
+    ...vegaSpec,
+    marks: marks.map(mark => {
+      if (!isPlainObject(mark) || mark['type'] !== 'rect') return mark;
+      const encode = isPlainObject(mark['encode']) ? mark['encode'] : {};
+      const update = isPlainObject(encode['update']) ? encode['update'] : {};
+      const enter = isPlainObject(encode['enter']) ? encode['enter'] : {};
+      if (update['stroke'] !== undefined || enter['stroke'] !== undefined) return mark;
+      return {...mark, encode: {...encode, update: {...update, stroke: {value: stroke}}}};
+    }),
+  };
+}
+
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 /** vega-tooltip adds `<theme>-theme` to its element in `document.body` (SPEC §22). */
@@ -845,7 +866,7 @@ export class A2uiVegaChartElement extends A2uiLitElement<
       const action = this.resolvedAction;
       // The cursor first: it reads the unit spec's `mark`, which `withArea` moves into a layer.
       const transformedSpec = transformSpec(
-        withArea(withHover(withCursor(vegaSpec, action)), pageAreaColors()),
+        withTileStroke(withArea(withHover(withCursor(vegaSpec, action)), pageAreaColors()), pageAreaColors().card),
         containerHeight, effectiveWidth, facetSize, pageChartConfig(),
       );
 

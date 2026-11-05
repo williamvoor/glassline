@@ -178,7 +178,7 @@ describe('VegaChart theme', () => {
 // SPEC §18: the treemap is full Vega, built by the agent (fixture from agent tests/test_macros.py).
 import * as vega from 'vega';
 import treemapSpec from './fixtures/treemap_spec.json';
-import {FULL_VEGA_FALLBACK_WIDTH, transformSpec} from '../src/vendor/vegachart/vegaChart.js';
+import {FULL_VEGA_FALLBACK_WIDTH, transformSpec, withTileStroke} from '../src/vendor/vegachart/vegaChart.js';
 
 describe('VegaChart labels and full Vega (SPEC §18)', () => {
   it('takes the confirmation label from _label', async () => {
@@ -401,7 +401,7 @@ describe('VegaChart polish (SPEC §22 step 1)', () => {
     view.finalize();
   });
 
-  it('P1: full Vega treemap tiles take the radius from the config; the seam colour waits for step 5', async () => {
+  it('P1: full Vega treemap tiles take the radius from the config (the seam colour is withTileStroke, step 5)', async () => {
     const spec = transformSpec(treemapSpec as Record<string, unknown>, 290, 600, undefined,
       themedChartConfig(name => (name === '--panel' ? '#101418' : '')));
     const view = new vega.View(vega.parse(spec as vega.Spec), {renderer: 'none'});
@@ -410,8 +410,6 @@ describe('VegaChart polish (SPEC §22 step 1)', () => {
     expect(tiles.length).toBeGreaterThan(0);
     view.finalize();
     expect(tiles.every(t => t.cornerRadius === 3)).toBe(true);
-    // The agent's spec still sets `stroke: white` until step 5 drops it; the config is the fallback.
-    expect((spec['config'] as Record<string, any>).rect.stroke).toBe('#101418');
   });
 
   it('P5: embeds with the explorer tooltip theme', async () => {
@@ -478,5 +476,41 @@ describe('VegaChart bar ends (SPEC §22 step 1)', () => {
     const groups = await clipGroups(stacked);
     expect(groups).toHaveLength(2); // one per category, not one per segment
     expect(groups.every(g => g.cornerRadiusTopLeft === 3)).toBe(true);
+  });
+});
+
+// SPEC §22 step 5 (P12): with the agent's stroke gone, the theme's rect config separates tiles.
+describe('treemap look (SPEC §22 step 5)', () => {
+  it('draws tiles with the panel-coloured stroke, the config width and full opacity', async () => {
+    const config = themedChartConfig(name => ({'--panel': '#fafbfc'})[name] ?? '');
+    const spec = transformSpec(withTileStroke(treemapSpec as Record<string, unknown>, '#fafbfc'), 290, 600, null, config as never);
+    const view = new vega.View(vega.parse(spec as vega.Spec), {renderer: 'none'});
+    await view.runAsync();
+    type Item = {stroke?: string; strokeWidth?: number; fillOpacity?: number};
+    const group = (view.scenegraph() as unknown as {root: {items: {items: {marktype: string; items: Item[]}[]}[]}}).root.items[0]!;
+    const rects = group.items.find(m => m.marktype === 'rect')!.items;
+    expect(rects.every(r => r.stroke === '#fafbfc' && r.strokeWidth === 2 && r.fillOpacity === 1)).toBe(true);
+    view.finalize();
+  });
+
+  it('withTileStroke strokes only full-Vega rects without a stroke, and leaves the input alone', () => {
+    const spec = {
+      $schema: 'https://vega.github.io/schema/vega/v5.json',
+      marks: [
+        {type: 'rect', encode: {update: {fill: {value: 'x'}}}},
+        {type: 'rect', encode: {update: {stroke: {value: 'red'}}}},
+        {type: 'text', encode: {update: {}}},
+        {type: 'rect'},
+      ],
+    };
+    const before = structuredClone(spec);
+    const out = withTileStroke(spec, '#123456') as typeof spec & {marks: {encode?: {update?: Record<string, unknown>}}[]};
+    expect(out.marks[0]!.encode!.update!['stroke']).toEqual({value: '#123456'});
+    expect(out.marks[1]!.encode!.update!['stroke']).toEqual({value: 'red'});
+    expect(out.marks[2]!.encode!.update!['stroke']).toBeUndefined();
+    expect(out.marks[3]!.encode!.update!['stroke']).toEqual({value: '#123456'});
+    expect(spec).toEqual(before);
+    const lite = {mark: 'rect', encoding: {}};
+    expect(withTileStroke(lite, '#123456')).toBe(lite);
   });
 });

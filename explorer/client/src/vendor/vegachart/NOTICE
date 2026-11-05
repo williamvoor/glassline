@@ -26,3 +26,5 @@ Changes by the explorer project:
   rendering, `withArea` layers a gradient area under a single-series line and `withHover` gives bar
   unit specs a hover fade (both skip specs they can't safely change), clicks on `area` items are
   ignored like `line` items, and the embed passes `tooltip: {theme: 'explorer'}`.
+  `withTileStroke` gives full-Vega rect marks without a stroke a card-coloured one (Vega ignores the
+  config's `rect.stroke` when a mark encodes `fill`).

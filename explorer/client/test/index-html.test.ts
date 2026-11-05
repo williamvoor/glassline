@@ -204,3 +204,27 @@ describe('Card hierarchy', () => {
   });
 });
 
+// SPEC §22 step 5 (P11): DataGrid share bars.
+describe('DataGrid share bars', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+  const rule = (selector: string): string => {
+    const at = style.indexOf(`${selector} {`);
+    return at < 0 ? '' : style.slice(at, style.indexOf('}', at));
+  };
+
+  it('are 4 px on a --soft track with a --chart-1 fill and 2 px radius', () => {
+    const track = rule('table.data-grid .share-bar');
+    expect(track).toMatch(/height:\s*4px/);
+    expect(track).toMatch(/background:\s*var\(--soft\)/);
+    expect(track).toMatch(/border-radius:\s*2px/);
+    const fill = rule('table.data-grid .share-bar > span');
+    expect(fill).toMatch(/background:\s*var\(--chart-1\)/);
+    expect(fill).toMatch(/border-radius:\s*2px/);
+  });
+
+  it('grow from 0 over 300 ms, and not under reduced motion', () => {
+    expect(rule('table.data-grid .share-bar > span')).toMatch(/animation:\s*share-grow 300ms/);
+    expect(style).toMatch(/@keyframes share-grow\s*\{\s*from\s*\{\s*width:\s*0;?\s*\}\s*\}/);
+    expect(style).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*table\.data-grid \.share-bar > span\s*\{\s*animation:\s*none/);
+  });
+});

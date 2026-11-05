@@ -3001,7 +3001,7 @@ rerun check below catches that.
 
 ## 22. Amendment: visual polish for Boards and answers (2026-11-05)
 
-Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Step 4 built, refuter PASS-WITH-NOTES, six MINOR notes fixed. Amends §16 (look and feel) and §18 (Boards,
+Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Step 4 built, refuter PASS-WITH-NOTES, six MINOR notes fixed. Step 5 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Amends §16 (look and feel) and §18 (Boards,
 Controls). Decision: ADR 0043. The user chose the scope (2026-11-05): the five polish items, a
 Metric sparkline without a change figure, a `weight` argument on the Visual Macros, and the
 Controls as chips. ADR 0026 holds: the agent still sends structure, never colours, fonts or Vega
@@ -3027,6 +3027,8 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   - `rect.stroke: --panel`, `rect.strokeWidth: 2`, `rect.cornerRadius: 3`, so Treemap tiles
     are separated by the card's colour in both schemes. The radius applies from step 1. The
     agent's explicit `stroke: white` wins over the config until step 5 drops it.
+    (Corrected in step 5: Vega skips the config's colour for a mark that encodes `fill`, so
+    the stroke colour comes from `withTileStroke`.)
   - Rounded bar ends need no guard for stacks: Vega-Lite rounds one clip group per stack, so
     only the outer end is rounded (checked 2026-11-05). `BarChart` rejects negative values, so
     rounding at the zero line doesn't arise.
@@ -3145,11 +3147,17 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   is animated from 0 over 300 ms on first render; there is no animation under
   `prefers-reduced-motion`.
 - **Treemap** (`_treemap_parts`):
-  - The explicit `stroke: white` and `strokeWidth` are dropped, so the config's `rect` keys
-    from step 1 apply.
+  - The explicit `stroke: white` and `strokeWidth` are dropped. The config's `rect`
+    `strokeWidth` and `cornerRadius` from step 1 apply.
+  - The stroke colour comes from a client transform, `withTileStroke` in `vegaChart.ts`. It
+    gives each top-level full-Vega `rect` mark that encodes no `stroke` a `stroke` of `--panel` in
+    `encode.update`. (Amended during the build, 2026-11-05: real Vega ignores the config's
+    `rect.stroke` when a mark encodes `fill`, as the Treemap does, so step 1's config alone left
+    the tiles unseparated. Found by a real-Vega test.)
   - The "Other" tile gets `fillOpacity: 0.55`, so the aggregate reads as different. That's an
     opacity, not a colour.
-  - Tiles get `hover: {fillOpacity: 0.85}` (Other: 0.45) and `update` restores them.
+  - Tiles get `hover: {fillOpacity: 0.85}` (Other: 0.45) and `update` restores them. Other fades further on hover, from 0.55 to 0.45.
+  - Deferred (review): a real-Vega test of the Other tile and the hover. The refuter checked both by hand. Whether the share bars replay their animation when a Control change swaps a DataGrid is left for the screenshots.
   - The Treemap fixture is regenerated.
 
 ### Step 6: Controls as chips (agent)

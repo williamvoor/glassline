@@ -891,12 +891,17 @@ def _treemap_parts(
             {
                 "type": "rect",
                 "from": {"data": "tiles"},
-                "encode": {"update": {
-                    "x": {"field": "x0"}, "y": {"field": "y0"}, "x2": {"field": "x1"}, "y2": {"field": "y1"},
-                    "fill": {"scale": "color", "value": "tile"},
-                    "stroke": {"value": "white"}, "strokeWidth": {"value": 1},
-                    "tooltip": {"field": "_tooltip"},
-                }},
+                # No stroke: the client's `rect` config separates tiles in the card's colour (SPEC §22).
+                # "Other" stands for many rows, so it's lighter; `update` restores the hover fade.
+                "encode": {
+                    "update": {
+                        "x": {"field": "x0"}, "y": {"field": "y0"}, "x2": {"field": "x1"}, "y2": {"field": "y1"},
+                        "fill": {"scale": "color", "value": "tile"},
+                        "fillOpacity": {"signal": "datum._id === 'other' ? 0.55 : 1"},
+                        "tooltip": {"field": "_tooltip"},
+                    },
+                    "hover": {"fillOpacity": {"signal": "datum._id === 'other' ? 0.45 : 0.85"}},
+                },
             },
             {
                 "type": "text",

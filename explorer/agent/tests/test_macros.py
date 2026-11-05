@@ -1142,3 +1142,27 @@ def test_an_invalid_weight_in_lenient_mode_draws_undrawable_at_weight_one(bad, m
         comps = expand("Metric", result_id="r1", column="value", label="L", weight=bad)
     assert root(comps)["weight"] == 1
     assert [t["text"] for t in by_type(comps, "Text")] == [PANEL_UNDRAWABLE]
+
+
+# --- Treemap look (SPEC §22 step 5) ---------------------------------------------------------------
+
+
+def _treemap_with_other() -> dict:
+    s = ResultStore()
+    _add(s, [{"name": f"n{i}", "value": float(100 - i)} for i in range(MAX_TREEMAP_TILES + 3)])
+    with macro_context(s):
+        return _treemap(expand("Treemap", result_id="r1", title="T", label="name", value="value"))[1]
+
+
+def test_treemap_leaves_the_tile_stroke_to_the_client_config():
+    """P12: no stroke colour or width, so the theme's `rect` config separates tiles in both schemes."""
+    enc = _treemap_with_other()["marks"][0]["encode"]
+    assert not any(k in e for e in enc.values() for k in ("stroke", "strokeWidth"))
+
+
+def test_treemap_other_tile_is_lighter_and_tiles_fade_on_hover():
+    spec = _treemap_with_other()
+    assert any(t["_id"] == "other" for t in _tiles(spec))
+    enc = spec["marks"][0]["encode"]
+    assert enc["update"]["fillOpacity"] == {"signal": "datum._id === 'other' ? 0.55 : 1"}
+    assert enc["hover"]["fillOpacity"] == {"signal": "datum._id === 'other' ? 0.45 : 0.85"}

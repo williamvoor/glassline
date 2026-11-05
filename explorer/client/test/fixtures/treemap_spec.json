@@ -119,17 +119,19 @@
             "scale": "color",
             "value": "tile"
           },
-          "stroke": {
-            "value": "white"
-          },
-          "strokeWidth": {
-            "value": 1
+          "fillOpacity": {
+            "signal": "datum._id === 'other' ? 0.55 : 1"
           },
           "tooltip": {
             "field": "_tooltip"
           },
           "cursor": {
             "signal": "isValid(datum._row) ? 'pointer' : null"
+          }
+        },
+        "hover": {
+          "fillOpacity": {
+            "signal": "datum._id === 'other' ? 0.45 : 0.85"
           }
         }
       }

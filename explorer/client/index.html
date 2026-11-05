@@ -424,8 +424,11 @@
       table.data-grid td[style*='right'] { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
       table.data-grid caption { caption-side: bottom; padding-top: 6px; color: var(--muted); font: 12px/1.4 var(--mono); text-align: left; }
       table.data-grid tr.clickable { cursor: pointer; }
-      table.data-grid .share-bar { display: block; height: 3px; margin-top: 4px; background: var(--line); border-radius: 2px; }
-      table.data-grid .share-bar > span { display: block; height: 100%; background: var(--chart-1); border-radius: 2px; }
+      table.data-grid .share-bar { display: block; height: 4px; margin-top: 4px; background: var(--soft); border-radius: 2px; }
+      /* SPEC §22 step 5: the fill grows from 0 when the row first renders (Lit keeps the span after that). */
+      table.data-grid .share-bar > span { display: block; height: 100%; background: var(--chart-1); border-radius: 2px; animation: share-grow 300ms ease-out; }
+      @keyframes share-grow { from { width: 0; } }
+      @media (prefers-reduced-motion: reduce) { table.data-grid .share-bar > span { animation: none; } }
       table.data-grid tr.clickable:hover, table.data-grid tr.clickable:focus { background: var(--accent-soft); outline: none; }
       table.data-grid tr.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
       table.data-grid .ask-tag {
