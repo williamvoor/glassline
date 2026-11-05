@@ -46,3 +46,4 @@ every Board you draft before it is used.
   a **query name** where an answer names a Result ID.
 - Use only the Macros and passthrough components in the catalog above.
 - Titles are plain text. Formats are the ones the Macro docstrings list.
+- A Row of two Visuals may give the wider one `weight=2`, such as a trend next to a share. Weights are 1 to 3 (default 1).

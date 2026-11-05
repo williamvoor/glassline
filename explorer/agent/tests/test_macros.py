@@ -519,7 +519,7 @@ import json
 import os
 from pathlib import Path
 
-from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, check_columns
+from explorer_agent.macros import MAX_TREEMAP_TILES, NO_ROWS, PANEL_UNDRAWABLE, check_columns
 from explorer_agent.results import StoredResult
 
 TREEMAP_FIXTURE = Path(__file__).resolve().parents[2] / "client" / "test" / "fixtures" / "treemap_spec.json"
@@ -1053,3 +1053,92 @@ def test_metric_trend_whose_first_column_is_the_value_is_an_error():
     comps = [{"id": "a", "component": "Metric", "result_id": "total", "column": "value", "label": "L", "trend": "t"}]
     assert check_columns(comps, outputs) == [
         "a: trend query 't': its first column must order the points, not be 'value'"]
+
+
+# --- weight (SPEC §22 step 4) ---------------------------------------------------------------------
+
+_TS = "2024-01-01T00:00:00"
+
+
+def _weight_store() -> ResultStore:
+    s = ResultStore()
+    s.add(sql="SELECT 1", purpose="p", columns=["name", "value", "start", "end"],
+          column_types=["text", "numeric", "date", "date"],
+          rows=[{"name": "A", "value": 2.0, "start": "2024-01-01", "end": "2024-06-01"},
+                {"name": "B", "value": 1.0, "start": "2024-02-01", "end": "2024-07-01"}], truncated=False)
+    return s
+
+
+_SIX = [
+    ("BarChart", dict(x="name", y="value", title="T")),
+    ("LineChart", dict(x="name", y="value", title="T")),
+    ("Treemap", dict(title="T", label="name", value="value")),
+    ("Timeline", dict(title="T", label="name", start="start", end="end")),
+    ("DataTable", dict(title="T")),
+    ("Metric", dict(column="value", label="L")),
+]
+
+
+@pytest.mark.parametrize(("name", "args"), _SIX)
+def test_weight_sets_the_card_weight_on_all_six_macros(name, args):
+    """P8."""
+    with macro_context(_weight_store()):
+        assert root(expand(name, result_id="r1", **args))["weight"] == 1
+        assert root(expand(name, result_id="r1", weight=3, **args))["weight"] == 3
+
+
+@pytest.mark.parametrize("bad", [0, 4, -1, 1.5, True])
+@pytest.mark.parametrize(("name", "args"), _SIX)
+def test_weight_outside_one_to_three_is_a_macro_error(name, args, bad):
+    with macro_context(_weight_store()), pytest.raises(MacroError, match="weight must be 1, 2 or 3"):
+        expand(name, result_id="r1", weight=bad, **args)
+
+
+@pytest.mark.parametrize(("name", "args"), _SIX)
+def test_a_replaced_board_panel_keeps_its_weight(name, args):
+    """No rows and a failed query: the row's proportions don't jump."""
+    empty = _add(ResultStore(), [], columns=("name", "value", "start", "end"), types=("text", "numeric", "date", "date"))
+    with macro_context(_Named({"q": empty}), board=True):
+        assert root(expand(name, result_id="q", weight=2, **args))["weight"] == 2
+    with macro_context(_Named({}), board=True, failed={"q": "57014"}):
+        assert root(expand(name, result_id="q", weight=2, **args))["weight"] == 2
+
+
+def test_an_undrawable_board_panel_keeps_its_weight():
+    s = ResultStore()
+    r = _add(s, [{"name": "A", "value": 1.0}])
+    with macro_context(_Named({"q": r}), board=True):  # a MacroError in Board mode draws PANEL_UNDRAWABLE
+        comps = expand("BarChart", result_id="q", x="nope", y="value", title="T", weight=2)
+    assert root(comps)["weight"] == 2 and by_type(comps, "VegaChart") == []
+
+
+def test_check_columns_reports_a_bad_weight():
+    outputs = {"q": (["name", "value"], ["text", "numeric"])}
+    comps = [{"id": "a", "component": "BarChart", "result_id": "q", "x": "name", "y": "value", "title": "T", "weight": 4},
+             {"id": "b", "component": "Metric", "result_id": "q", "column": "value", "label": "L", "weight": 2}]
+    assert check_columns(comps, outputs) == ["a: weight must be 1, 2 or 3, not 4"]
+
+
+def test_weight_passes_strict_validation_and_reaches_the_card(store):
+    msgs = to_transport_with(store, '<a2ui>\nroot = Row([m])\nm = Metric("r1", "value", "Total", weight=2)\n</a2ui>')
+    comps = [c for m in msgs for c in m.get("updateComponents", {}).get("components", [])]
+    assert next(c for c in comps if c["id"] == "m")["weight"] == 2
+
+
+def test_an_integral_float_weight_and_a_positional_weight_are_accepted():
+    with macro_context(_weight_store()):
+        assert root(expand("Metric", result_id="r1", column="value", label="L", weight=2.0))["weight"] == 2
+    with macro_context(_weight_store()):
+        from explorer_agent.macros import Metric
+        assert Metric("r1", "value", "L", 0, "auto", "", 3).weight == 3
+
+
+@pytest.mark.parametrize("bad", [4, "abc", None, float("nan")])
+@pytest.mark.parametrize("mode", [dict(board=True), dict(rebuild=True)])
+def test_an_invalid_weight_in_lenient_mode_draws_undrawable_at_weight_one(bad, mode):
+    s = _weight_store()
+    store = _Named({"r1": s.get("r1")}) if mode.get("board") else s
+    with macro_context(store, **mode):
+        comps = expand("Metric", result_id="r1", column="value", label="L", weight=bad)
+    assert root(comps)["weight"] == 1
+    assert [t["text"] for t in by_type(comps, "Text")] == [PANEL_UNDRAWABLE]

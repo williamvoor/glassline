@@ -177,6 +177,16 @@ async def test_startup_check_fails_on_a_query_error_and_on_a_column_of_the_wrong
         await check_board(board, CheckRunner(_outputs("text")), pipeline)
 
 
+async def test_startup_check_fails_on_a_weight_outside_one_to_three(tmp_path, pipeline):
+    """SPEC §22 step 4 (P8): a bad weight is a startup error in a Board."""
+    for bad in ("4", "0"):
+        board = load_board(write(tmp_path, GOOD.replace('"buyer", "value")"""', f'"buyer", "value", weight={bad})"""')), ALLOWED)
+        with pytest.raises(BoardError, match=f"weight must be 1, 2 or 3, not {bad}"):
+            await check_board(board, CheckRunner(_outputs()), pipeline)
+    board = load_board(write(tmp_path, GOOD.replace('"buyer", "value")"""', '"buyer", "value", weight=2)"""')), ALLOWED)
+    await check_board(board, CheckRunner(_outputs()), pipeline)
+
+
 async def test_startup_check_fails_on_a_layout_that_does_not_parse(tmp_path, pipeline):
     board = load_board(write(tmp_path, _replace("tiles])", "tiles")), ALLOWED)
     with pytest.raises(BoardError, match="layout"):
@@ -845,3 +855,12 @@ async def test_the_entity_template_is_dataset_agnostic_and_loads_once_filled(tmp
                                "LIMIT 10": (["supplier", "value"], ["text", "numeric"]),
                                "buyer = $1": (["value"], ["numeric"])})
     await check_board(board, runner, UiPipeline(allowed_schemas=ALLOWED))
+
+
+def test_the_template_and_the_layout_rules_carry_the_weight_guidance():
+    """SPEC §22 step 4 (P10): the trend next to the share is weighted 2; the rules say 1–3."""
+    layout = tomllib.loads(TEMPLATE.read_text(encoding="utf-8"))["layout"]
+    trend = next(line for line in layout.splitlines() if line.startswith("trend = "))
+    assert trend.endswith(", weight=2)")
+    rules = (TEMPLATE.parents[1] / "server" / "src" / "explorer_bootstrap" / "prompts" / "boards.md").read_text(encoding="utf-8")
+    assert "weight=2" in rules and "1 to 3" in rules

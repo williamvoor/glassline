@@ -14,7 +14,7 @@ layout = """
 root = Column([metrics, Row([breakdown, trend]), top])
 metrics = Row([<2 to 4 Metric calls on the totals query>])
 breakdown = Treemap("<share_query>", "<title>", "<category column>", "<value column>", "<format>")
-trend = LineChart("<trend_query>", "<period column>", "<value column>", "<title>", format="<format>")
+trend = LineChart("<trend_query>", "<period column>", "<value column>", "<title>", format="<format>", weight=2)
 top = DataTable("<top_query>", "<title>", "<columns>", "<column:format pairs>", bars="<value column>")
 """
 

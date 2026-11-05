@@ -12,6 +12,7 @@ import calendar
 import contextlib
 import datetime as dt
 import functools
+import inspect
 import logging
 import math
 import re
@@ -130,10 +131,35 @@ class _PanelReplaced(Exception):  # noqa: N818 - control flow, not an error
         self.card = card
 
 
+WEIGHTS = (1, 2, 3)  # a Visual Card's share of its Row (SPEC §22 step 4)
+
+
+def weight_problem(weight: Any) -> str:
+    """Why `weight` isn't a valid Card weight, or "" when it is."""
+    if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight not in WEIGHTS:
+        return f"weight must be 1, 2 or 3, not {weight!r}"
+    return ""
+
+
 def _captured(func: Callable[..., Any]) -> Callable[..., Any]:
+    signature = inspect.signature(func)
+    has_weight = "weight" in signature.parameters
+
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
+            weight = signature.bind_partial(*args, **kwargs).arguments.get("weight", 1) if has_weight else 1
+        except TypeError:
+            weight = 1  # bad arguments: `func` raises, inside `run`'s error bookkeeping
+        card = run(weight, args, kwargs)
+        if has_weight and isinstance(card, Card) and not weight_problem(weight):
+            card.weight = int(weight)  # also a replaced panel's, so the Row's proportions don't jump
+        return card
+
+    def run(weight: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        try:
+            if has_weight and (problem := weight_problem(weight)):
+                raise MacroError(problem)
             return func(*args, **kwargs)
         except _PanelReplaced as e:
             return e.card
@@ -728,6 +754,7 @@ def BarChart(
     drill_x: str = "",
     drill_y: str = "",
     drill_title: str = "",
+    weight: int = 1,
 ) -> Card:
     """Bar chart of a stored query result, followed by its SQL.
 
@@ -745,6 +772,7 @@ def BarChart(
         drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked bar's label is appended.
+        weight: Share of the Row this Card takes: 1 (default), 2 or 3. Give the wider Visual 2 when a Row has two.
     """
     title_text = _fill(title, markdown=False)
     return _chart(
@@ -769,6 +797,7 @@ def LineChart(
     drill_x: str = "",
     drill_y: str = "",
     drill_title: str = "",
+    weight: int = 1,
 ) -> Card:
     """Line chart of a stored query result in its row order (or by date), followed by its SQL.
 
@@ -785,6 +814,7 @@ def LineChart(
         drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked point's label is appended.
+        weight: Share of the Row this Card takes: 1 (default), 2 or 3. Give the wider Visual 2 when a Row has two.
     """
     title_text = _fill(title, markdown=False)
     return _chart(
@@ -910,6 +940,7 @@ def Treemap(
     drill_x: str = "",
     drill_y: str = "",
     drill_title: str = "",
+    weight: int = 1,
 ) -> Card:
     """Treemap of a stored query result: one tile per row, its area proportional to the value, followed by its SQL. Shows the 12 largest rows; the rest become one "Other" tile.
 
@@ -925,6 +956,7 @@ def Treemap(
         drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked tile's label is appended.
+        weight: Share of the Row this Card takes: 1 (default), 2 or 3. Give the wider Visual 2 when a Row has two.
     """
     return _card(_treemap_parts(
         _result(result_id), title=_fill(title, markdown=False), label=label, value=value, fmt=format, clickable=clickable,
@@ -1091,6 +1123,7 @@ def Timeline(
     drill_x: str = "",
     drill_y: str = "",
     drill_title: str = "",
+    weight: int = 1,
 ) -> Card:
     """Timeline of a stored query result: one bar per row from its start date to its end date, with a line at today, followed by its SQL. Shows at most 30 bars.
 
@@ -1111,6 +1144,7 @@ def Timeline(
         drill_x: For drill_as bar or line: the drill_sql output column for categories or dates.
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked bar's label is appended.
+        weight: Share of the Row this Card takes: 1 (default), 2 or 3. Give the wider Visual 2 when a Row has two.
     """
     return _card(_timeline_parts(
         _result(result_id), title=_fill(title, markdown=False), label=label, start=start, end=end, color=color,
@@ -1223,6 +1257,7 @@ def DataTable(
     drill_y: str = "",
     drill_title: str = "",
     bars: str = "",
+    weight: int = 1,
 ) -> Card:
     """Table of a stored query result, followed by its SQL.
 
@@ -1238,6 +1273,7 @@ def DataTable(
         drill_y: For drill_as bar or line: the numeric drill_sql output column.
         drill_title: Optional title of the drill-down (default: this title); the clicked row's label is appended.
         bars: Optional comma-separated numeric shown columns to draw as share bars under their numbers (each cell's share of the column's largest value), e.g. "value".
+        weight: Share of the Row this Card takes: 1 (default), 2 or 3. Give the wider Visual 2 when a Row has two.
     """
     return _table(
         _result(result_id), title=_fill(title, markdown=False), columns=columns, format=format, clickable=clickable,
@@ -1299,7 +1335,8 @@ SPARKLINE_HEIGHT = 48  # px: a Metric's trend line (SPEC §22 step 2)
 
 @macro
 @_captured
-def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = "auto", trend: str = "") -> Card:
+def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = "auto", trend: str = "",
+           weight: int = 1) -> Card:
     """One headline number from a stored query result, with its label and SQL.
 
     Args:
@@ -1309,6 +1346,7 @@ def Metric(result_id: str, column: str, label: str, row: int = 0, format: str = 
         row: Row index (0 = first row).
         format: Value format: auto, currency, currency_m, currency_compact, int, decimal, pct, fraction_pct, text, date. currency_compact = money in K, M or B (38414946047 -> $38.4B), pct = value already in percent (6.6 -> 6.6%), fraction_pct = value is a fraction (0.066 -> 6.6%).
         trend: Optional ID of a stored result drawn as a small line under the value: its first column orders the points, and its column with this Metric's column name is the value.
+        weight: Share of the Row this Card takes: 1 (default), 2 or 3. Give the wider Visual 2 when a Row has two.
     """
     result = _result(result_id)
     _column(result, column)
@@ -1545,6 +1583,8 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
             continue
         for key in ("title", "label", "drill_title"):
             template(comp.get(key), cid)
+        if "weight" in comp and (problem := weight_problem(comp["weight"])):
+            problems.append(f"{cid}: {problem}")
         query = comp.get("result_id")
         if query not in outputs:
             problems.append(f"{cid}: {name} names unknown query {query!r}; queries are: {', '.join(outputs)}")

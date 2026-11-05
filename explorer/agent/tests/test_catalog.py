@@ -24,8 +24,9 @@ def test_macro_schemas_keep_parameter_types_and_order():
     bar = comps["BarChart"]
     assert list(bar["properties"]) == [
         "result_id", "x", "y", "title", "color", "horizontal", "format",
-        "clickable", "drill_sql", "drill_as", "drill_x", "drill_y", "drill_title",
+        "clickable", "drill_sql", "drill_as", "drill_x", "drill_y", "drill_title", "weight",
     ]
+    assert bar["properties"]["weight"]["type"] == "integer"  # SPEC §22 step 4
     assert bar["required"] == ["result_id", "x", "y", "title"]
     assert bar["properties"]["horizontal"]["type"] == "boolean"
     assert comps["Metric"]["properties"]["row"]["type"] == "integer"

@@ -311,3 +311,11 @@ def test_clicks_say_a_board_column_needs_no_drill_sql():
 def test_the_metric_docstring_offers_the_trend():
     """SPEC §22 step 2 (P9)."""
     assert "trend: Optional ID of a stored result" in (Metric.__doc__ or "")
+
+
+def test_the_visual_macro_docstrings_offer_the_weight():
+    """SPEC §22 step 4 (P9)."""
+    from explorer_agent.macros import Timeline, Treemap
+
+    for m in (BarChart, LineChart, Treemap, Timeline, DataTable, Metric):
+        assert "weight: Share of the Row" in (m.__doc__ or "")

@@ -3001,7 +3001,7 @@ rerun check below catches that.
 
 ## 22. Amendment: visual polish for Boards and answers (2026-11-05)
 
-Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Amends §16 (look and feel) and §18 (Boards,
+Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Step 4 built, refuter PASS-WITH-NOTES, six MINOR notes fixed. Amends §16 (look and feel) and §18 (Boards,
 Controls). Decision: ADR 0043. The user chose the scope (2026-11-05): the five polish items, a
 Metric sparkline without a change figure, a `weight` argument on the Visual Macros, and the
 Controls as chips. ADR 0026 holds: the agent still sends structure, never colours, fonts or Vega
@@ -3131,6 +3131,13 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   to a share), and that weights are 1–3.
 - `bootstrap/templates/explorer.toml` shows it on its trend slot.
 - Existing Board files aren't rewritten. They are bootstrap-only, and a re-draft picks it up.
+- Built (2026-11-05):
+  - **Where it's applied.** `weight` is checked and applied in `_captured`, the wrapper of every
+    Macro, so the no-rows, failed and undrawable Cards get it too. The parameter is last on all six
+    Macros. An integral float such as `2.0` is accepted, and `True` is not.
+  - **Board check.** `check_columns` reports a bad `weight` on the six Macros that take one.
+  - **Lenient renders** (Board, rebuilt Level; after review). An invalid weight gets past the
+    startup check only if that check was bypassed. It draws the undrawable Card at weight 1.
 
 ### Step 5: DataGrid bars and Treemap (client CSS and agent)
 
