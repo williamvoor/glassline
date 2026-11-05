@@ -20,6 +20,9 @@ import {
   type SavedSummary, type SavedView, type WorkspaceApi, type WorkspaceInfo,
 } from './workspaces.js';
 import './settings/settings.js';
+import type {SettingsView} from './settings/settings.js';
+import {confirmCard} from './cards.js';
+import {modelChip} from './model-chip.js';
 
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
@@ -34,6 +37,8 @@ export const SUPERSEDED_KEY = 'explorerSuperseded';
 export const CONTROLS = 'controls';
 const EXPLORER_KEY = 'explorer';
 const SETTINGS_HASH = '#/settings';
+const WIZARD_HASH = '#/settings/new'; // the New Workspace wizard (Workspaces SPEC phase 3, E1)
+const settingsHash = (view: SettingsView) => (view === 'wizard' ? WIZARD_HASH : SETTINGS_HASH);
 
 type TabKind = 'board' | 'question' | 'drill' | 'ask';
 
@@ -133,8 +138,6 @@ export class ExplorerApp extends LitElement {
   /** Replaceable in tests. */
   workspaceApi: WorkspaceApi = httpApi(this.agentUrl);
   /** Replaceable in tests. */
-  confirmFn: (message: string) => boolean = message => window.confirm(message);
-  /** Replaceable in tests. */
   connector: () => Promise<AgentConnection> = () =>
     connect(this.workspace?.url ?? this.agentUrl, this.processor.getRendererCapabilities({versions: ['v0.9']}),
             undefined, () => this.viewState());
@@ -148,6 +151,8 @@ export class ExplorerApp extends LitElement {
   @state() private listError?: string;
   @state() private settingsOpen = false; // #/settings (Workspaces SPEC phase 2)
   @state() private settingsMounted = false; // once opened, kept (hidden), so a draft survives closing it
+  @state() private settingsView: SettingsView = 'list';
+  @state() private confirmingDeleteAll = false; // the inline card, not a pop-up (ADR 0044)
   private routeWritten?: string; // the hash this app wrote last: its own change is not a navigation
   private onHash = () => {
     if (window.location.hash !== this.routeWritten) void this.followRoute();
@@ -204,8 +209,10 @@ export class ExplorerApp extends LitElement {
 
   /** Opens what the hash names: a Workspace, or a saved Conversation in it. */
   private async followRoute() {
-    if (window.location.hash === SETTINGS_HASH) {
+    const hash = window.location.hash;
+    if (hash === SETTINGS_HASH || hash === WIZARD_HASH) {
       this.settingsOpen = this.settingsMounted = true; // the investigation stays as it is behind it
+      this.settingsView = hash === WIZARD_HASH ? 'wizard' : 'list';
       return;
     }
     this.settingsOpen = false;
@@ -230,10 +237,23 @@ export class ExplorerApp extends LitElement {
     }
   }
 
-  private openSettings() {
+  private openSettings(view: SettingsView = this.settingsView) {
     this.settingsOpen = this.settingsMounted = true;
-    this.routeWritten = SETTINGS_HASH;
-    if (window.location.hash !== SETTINGS_HASH) window.history.replaceState(null, '', SETTINGS_HASH);
+    this.settingsView = view;
+    const hash = settingsHash(view);
+    this.routeWritten = hash;
+    if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
+  }
+
+  /** Settings switched between its list and the wizard: the hash follows. */
+  private onSettingsView(view: SettingsView) {
+    if (this.settingsOpen) this.openSettings(view);
+  }
+
+  /** The wizard's "Open <name>": the new Workspace is in the list once it's reloaded. */
+  private async openNewWorkspace(name: string) {
+    await this.workspacesChanged();
+    if (this.workspaces.some(w => w.name === name && w.status === 'available')) this.switchWorkspace(name);
   }
 
   private closeSettings() {
@@ -325,7 +345,8 @@ export class ExplorerApp extends LitElement {
 
   private async deleteAllSaved() {
     const ws = this.workspace;
-    if (!ws || !this.confirmFn(`Delete all saved conversations in ${ws.name}? This can't be undone.`)) return;
+    this.confirmingDeleteAll = false;
+    if (!ws) return;
     try {
       await this.workspaceApi.removeAll(ws);
     } catch (e) {
@@ -407,7 +428,7 @@ export class ExplorerApp extends LitElement {
       const surfaceId = surfaceIdOf(level.a2ui);
       this.patch(key, {
         loading: false, surfaceId, proseHtml: await renderSafeMarkdown(level.prose), dataChanged: level.changed,
-        boardChanged: level.board_changed,
+        boardChanged: level.board_changed, ...('model' in level ? {model: level.model ?? null} : {}),
       });
       if (surfaceId && level.board) {
         this.controls.get(key)?.dispose();
@@ -829,7 +850,14 @@ export class ExplorerApp extends LitElement {
                       @click=${() => void this.deleteSaved(c.id)}>Delete</button>
                   </li>`)}
                 </ol>
-                <button type="button" class="delete-all" @click=${() => void this.deleteAllSaved()}>Delete all</button>`
+                ${this.confirmingDeleteAll
+                  ? confirmCard({
+                      message: `Delete all saved conversations in ${this.workspace.name}? This can't be undone.`,
+                      confirm: 'Delete all', tone: 'danger',
+                      onConfirm: () => void this.deleteAllSaved(),
+                      onCancel: () => (this.confirmingDeleteAll = false),
+                    })
+                  : html`<button type="button" class="delete-all" @click=${() => (this.confirmingDeleteAll = true)}>Delete all</button>`}`
               : html`<p class="saved-empty">No saved conversations yet.</p>`}
           </div>`
         : nothing}`;
@@ -845,7 +873,7 @@ export class ExplorerApp extends LitElement {
       ${this.workspaceMode
         ? html`<button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
             aria-pressed=${this.settingsOpen ? 'true' : 'false'}
-            @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings())}>Settings</button>`
+            @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>Settings</button>`
         : nothing}
       <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
         New conversation
@@ -865,9 +893,9 @@ export class ExplorerApp extends LitElement {
     if (this.noWorkspace) {
       return html`<div class="empty no-workspaces">
         <h2>No Workspaces yet</h2>
-        <p>A Workspace is one database with its description, notes and Boards. Add one in Settings: pick a
-          read-only login, draft the Dataset and its Boards, and export.</p>
-        <p><button type="button" class="primary open-settings" @click=${() => this.openSettings()}>Open Settings</button></p>
+        <p>A Workspace is one database with its description, notes and Boards. Pick a read-only login, let a model
+          draft the Dataset and its Boards, review them, and export.</p>
+        <p><button type="button" class="primary open-settings" @click=${() => this.openSettings('wizard')}>New Workspace</button></p>
       </div>`;
     }
     const examples = this.info?.examples ?? [];
@@ -1015,15 +1043,17 @@ export class ExplorerApp extends LitElement {
       : nothing}`;
   }
 
-  /** The status line under a tab: time, steps and the serving model (SPEC §16). */
+  /** The status line under a tab: time, steps and the serving model as a chip (SPEC §16, Workspaces
+   * SPEC phase 3). A reopened Turn has no timing, only its saved model. */
   private renderMeta(tab: Tab) {
-    if (tab.running || tab.elapsedMs === undefined || tab.kind === 'board') return nothing;
-    const parts = [
-      ...(tab.steps.length ? [`${tab.steps.length} step${tab.steps.length === 1 ? '' : 's'}`] : []),
-      ...(tab.model === null ? ['No model · database only'] : tab.model ? [tab.model] : []),
-    ];
+    if (tab.running || tab.kind === 'board') return nothing;
+    const chip = tab.model === undefined ? nothing : modelChip(tab.model);
+    if (tab.elapsedMs === undefined) {
+      return tab.model === undefined ? nothing : html`<p class="meta meta-saved">${chip}</p>`;
+    }
+    const parts = tab.steps.length ? [`${tab.steps.length} step${tab.steps.length === 1 ? '' : 's'}`] : [];
     return html`<details class="meta">
-      <summary><span class="elapsed">${tab.error ? 'Failed after' : 'Answered in'} ${seconds(tab.elapsedMs)}</span>${parts.map(
+      <summary>${chip}${tab.model === undefined ? nothing : ' '}<span class="elapsed">${tab.error ? 'Failed after' : 'Answered in'} ${seconds(tab.elapsedMs)}</span>${parts.map(
         p => html` · <span>${p}</span>`,
       )}</summary>
       ${tab.steps.length ? html`<ol class="steps">${tab.steps.map(s => html`<li>${s}</li>`)}</ol>` : nothing}
@@ -1057,7 +1087,10 @@ export class ExplorerApp extends LitElement {
   override render() {
     const settings = this.settingsMounted
       ? html`<main class="settings-page" ?hidden=${!this.settingsOpen}>
-          <explorer-settings ?hidden=${!this.settingsOpen} @workspaces-changed=${() => void this.workspacesChanged()}></explorer-settings>
+          <explorer-settings ?hidden=${!this.settingsOpen} .view=${this.settingsView}
+            @workspaces-changed=${() => void this.workspacesChanged()}
+            @settings-view=${(e: CustomEvent<SettingsView>) => this.onSettingsView(e.detail)}
+            @open-workspace=${(e: CustomEvent<string>) => void this.openNewWorkspace(e.detail)}></explorer-settings>
         </main>`
       : nothing;
     const tab = this.tab(this.selected);

@@ -389,11 +389,14 @@ describe('Actions, tabs and the investigation log', () => {
     await app.ask('q');
     await settle(app);
     const line = () => q(app, '.canvas .meta summary')!.textContent!.replace(/\s+/g, ' ').trim();
-    expect(line()).toMatch(/^Answered in \d+\.\d s · meta\/muse-spark-1\.3$/);
+    // Workspaces SPEC N15: the model is a chip with its display name (the ID in its tooltip); none is SQL.
+    expect(line()).toMatch(/^Muse Spark Answered in \d+\.\d s$/);
+    expect(q(app, '.canvas .meta .model-chip.model-spark')!.getAttribute('title')).toBe('meta/muse-spark-1.3');
     await click(app, rows(app)[0]!);
-    expect(line()).toMatch(/^Answered in \d+\.\d s · 1 step · No model · database only$/);
+    expect(line()).toMatch(/^SQL Answered in \d+\.\d s · 1 step$/);
+    expect(q(app, '.canvas .meta .model-chip.model-sql')).not.toBeNull();
     await click(app, tabButton(app, 'q'));
-    expect(line()).toContain('meta/muse-spark-1.3');
+    expect(line()).toContain('Muse Spark');
   });
 
   it('shows a real Drill-down\'s line with no steps and no model', async () => {
@@ -404,7 +407,7 @@ describe('Actions, tabs and the investigation log', () => {
     await settle(app);
     await click(app, rows(app)[0]!);
     expect(q(app, '.canvas .meta summary')!.textContent!.replace(/\s+/g, ' ').trim())
-      .toMatch(/^Answered in \d+\.\d s · No model · database only$/);
+      .toMatch(/^SQL Answered in \d+\.\d s$/);
   });
 
   it('keeps the question\'s explorerViewing on Retry', async () => {

@@ -1,4 +1,4 @@
-import type { BoardFile, BoardsState, Claim, Connection, Draft, DraftComment, Estimate, EventsReply, Files, Report, SchemaDump, Validation } from './types.js';
+import type { BoardFile, BoardsState, Claim, Connection, Draft, DraftComment, Estimate, EventsReply, Files, Report, SchemaDump, Session, Validation } from './types.js';
 
 /** An API error: `message` for one problem, `reasons` when the server lists several. */
 export class ApiError extends Error {
@@ -76,7 +76,7 @@ export class Api {
     return this.call<Validation>('/api/validate', { files, comments });
   }
   export(body: { name: string; target: 'toml' | 'sql'; files: Files; comments: DraftComment[]; dismissed: number[]; force: boolean }) {
-    return this.call<{ path: string; overwrote: string[]; backup: string | null }>('/api/export', body);
+    return this.call<{ path: string; overwrote: string[]; backup: string | null; workspace?: string; reloaded?: boolean }>('/api/export', body);
   }
   boardsEstimate(model: string, effort: string) {
     return this.call<Estimate>('/api/boards/estimate', { model, effort });
@@ -110,5 +110,15 @@ export class Api {
   }
   regenerate(name: string) {
     return this.call<Report>(`/api/workspaces/${encodeURIComponent(name)}/regenerate`, {});
+  }
+  // The New Workspace wizard (Workspaces SPEC phase 3, E6–E8)
+  session() {
+    return this.call<Session>('/api/session');
+  }
+  discard() {
+    return this.call<{ discarded: boolean }>('/api/discard', {});
+  }
+  keepBoards() {
+    return this.call<BoardsState>('/api/boards/keep', {});
   }
 }

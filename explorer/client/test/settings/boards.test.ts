@@ -11,7 +11,7 @@ import { claim, fakeFetch, makeDraft, mount, settle } from './helpers.js';
 
 afterEach(() => (document.body.innerHTML = ''));
 
-const ESTIMATE = { model: 'm', prompt_chars: 30000, input_tokens_est: 10000, max_calls: 12, first_call_usd: 0.1, run_ceiling_usd: 1.2 };
+const ESTIMATE = { model: 'meta/muse-wonder-1.0', prompt_chars: 30000, input_tokens_est: 10000, max_calls: 12, first_call_usd: 0.1, run_ceiling_usd: 1.2 };
 
 function state(extra: Partial<BoardsState> = {}): BoardsState {
   return {
@@ -56,8 +56,30 @@ describe('bs-boards (U7)', () => {
     el.addEventListener('draft-boards', (e) => seen.push((e as CustomEvent).detail.model));
     el.estimate = ESTIMATE;
     await settle(el);
-    expect(el.querySelector('.estimate')!.textContent).toContain('$0.1000');
+    expect(el.querySelector('.estimate')!.textContent).toContain('$0.10 for the first call');
+    // Workspaces SPEC N4: the button carries the run ceiling, and one click starts the run.
+    expect(el.querySelector('button.draft-boards')!.textContent).toContain('Draft Boards (at most $1.20)');
     (el.querySelector('button.draft-boards') as HTMLButtonElement).click();
+    expect(seen).toEqual(['meta/muse-wonder-1.0']);
+  });
+
+  it('asks on a card before drafting over existing Boards (N7)', async () => {
+    const seen: string[] = [];
+    const { el } = setup({}, { boards: state() });
+    el.addEventListener('draft-boards', (e) => seen.push((e as CustomEvent).detail.model));
+    el.estimate = ESTIMATE;
+    await settle(el);
+    (el.querySelector('button.draft-boards') as HTMLButtonElement).click();
+    await settle(el);
+    expect(seen).toEqual([]);
+    expect(el.querySelector('.confirm-card')!.textContent).toContain('replaces the Boards');
+    (el.querySelector('.card-cancel') as HTMLButtonElement).click();
+    await settle(el);
+    expect(el.querySelector('.confirm-card')).toBeNull();
+    expect(seen).toEqual([]);
+    (el.querySelector('button.draft-boards') as HTMLButtonElement).click();
+    await settle(el);
+    (el.querySelector('.card-confirm') as HTMLButtonElement).click();
     expect(seen).toEqual(['meta/muse-wonder-1.0']);
   });
 
@@ -81,10 +103,12 @@ describe('bs-boards (U7)', () => {
     });
     await settle(el);
     expect((el.querySelector('button.draft-boards') as HTMLButtonElement).disabled).toBe(true);
-    const progress = el.querySelector('.progress')!.textContent!;
-    expect(progress).toContain('run_sql: distinct buyers');
-    expect(progress).toContain('Boards rejected (2 problems)');
-    expect(el.querySelector('.totals')!.textContent).toContain('1 calls');
+    const card = el.querySelector('.run-card')!;
+    expect(card.querySelector('.model-chip.model-wonder.live')).not.toBeNull();
+    expect(card.querySelector('li.sql')!.textContent).toContain('distinct buyers');
+    expect(card.querySelector('li.sql .model-chip.model-sql')).not.toBeNull();
+    expect(card.querySelector('li.rejected')!.textContent).toContain('Rejected (2 problems)');
+    expect(card.querySelector('.run-calls')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('1 call');
   });
 
   it('has a tab per Board with its why line and preview', async () => {
@@ -165,102 +189,5 @@ describe('boardProblems (U7)', () => {
     expect(boardProblems(null)).toEqual([]);
     expect(boardProblems(state())).toEqual([]);
     expect(boardProblems(state({ set_problems: ['s'], problems: { explorer: ['e'], buyer: ['b'] } }))).toEqual(['s', 'e', 'b']);
-  });
-});
-
-describe('Settings: the Boards step (U7, ported from bootstrap-app)', () => {
-  it('goes review -> boards -> draft -> back, and Board problems block Export on Review', async () => {
-    let polls = 0;
-    const draft = makeDraft([claim('verified')]);
-    const broken = state({ problems: { explorer: ['boards/explorer.toml: bad'], buyer: [] } });
-    const f = fakeFetch({
-      'GET /api/connection': () => [200, { host: 'h', name: 'db', schemas: [] }],
-      'GET /api/workspaces': () => [200, { workspaces: [] }],
-      'GET /api/connections': () => [200, { connections: [], current: null }],
-      'POST /api/estimate': () => [200, ESTIMATE],
-      'POST /api/validate': () => [200, { errors: [], context_chars: 10 }],
-      'GET /api/boards': () => [200, null], // no Boards yet: an answer, not a console 404 (M1)
-      'POST /api/boards/estimate': () => [200, ESTIMATE],
-      'POST /api/boards/draft': () => [200, { run_id: 'b1' }],
-      'GET /api/draft/b1/events': () =>
-        ++polls === 1
-          ? [200, { events: [{ type: 'call', usage: { prompt_tokens: 1, cached_tokens: 0, completion_tokens: 1, cost_usd: 0 } }], next: 1, done: false }]
-          : [200, { events: [], next: 1, done: true, boards: broken }],
-      'GET /api/draft': () => [200, { draft, validation: { errors: [], context_chars: 10 } }],
-      'POST /api/draft': () => [200, { run_id: 'd1' }],
-      'GET /api/draft/d1/events': () => [200, { events: [], next: 0, done: true, draft, validation: { errors: [], context_chars: 10 } }],
-    });
-    const el = document.createElement('explorer-settings') as ExplorerSettings;
-    el.api = new Api(f.fn);
-    el.pollMs = 0;
-    el.confirmFn = () => true;
-    document.body.appendChild(el);
-    await settle(el);
-    await el.startDraft('meta/muse-spark-1.3', 'medium'); // as the Report screen fires it
-    await settle(el);
-    expect(el.querySelector('.steps li.current')!.textContent!.trim()).toBe('Review');
-    (el.querySelector('button.to-boards') as HTMLButtonElement).click();
-    await settle(el, 20);
-    expect(el.querySelector('.steps li.current')!.textContent!.trim()).toBe('Boards');
-    expect(f.calls.map((c) => c.path)).toContain('POST /api/validate'); // edits saved before leaving
-    expect(el.querySelector('bs-boards .estimate')).not.toBeNull();
-    (el.querySelector('button.draft-boards') as HTMLButtonElement).click();
-    await settle(el, 20);
-    expect(f.calls.find((c) => c.path === 'POST /api/boards/draft')!.body).toEqual({ model: 'meta/muse-spark-1.3', effort: 'medium' });
-    expect(el.querySelectorAll('bs-boards [role=tab]').length).toBe(2);
-    (el.querySelector('bs-boards button.back') as HTMLButtonElement).click();
-    await settle(el, 20);
-    expect(el.querySelector('.steps li.current')!.textContent!.trim()).toBe('Review');
-    expect((el.querySelector('button.export') as HTMLButtonElement).disabled).toBe(true);
-    expect(el.querySelector('.blockers')!.textContent).toContain('A Board has problems');
-  });
-});
-
-// M1 (2026-11-05): Export was only on Review, and going back from Boards rebuilt Review from the
-// server's draft, so a typed Workspace name and dismissed claims were lost on the way.
-describe('Settings: Export from the Boards step', () => {
-  it('continues to Export with the name and dismissed claims kept, and says nothing about run.sh', async () => {
-    let polls = 0;
-    const draft = makeDraft([claim('verified'), claim('failed')]);
-    const f = fakeFetch({
-      'GET /api/connection': () => [200, { host: 'h', name: 'db', schemas: [] }],
-      'GET /api/workspaces': () => [200, { workspaces: [] }],
-      'GET /api/connections': () => [200, { connections: [], current: null }],
-      'POST /api/estimate': () => [200, ESTIMATE],
-      'POST /api/validate': () => [200, { errors: [], context_chars: 10 }],
-      'GET /api/boards': () => [200, null],
-      'POST /api/boards/estimate': () => [200, ESTIMATE],
-      'POST /api/boards/draft': () => [200, { run_id: 'b1' }],
-      'GET /api/draft/b1/events': () =>
-        ++polls === 1 ? [200, { events: [], next: 0, done: false }] : [200, { events: [], next: 0, done: true, boards: state() }],
-      'GET /api/draft': () => [200, { draft, validation: { errors: [], context_chars: 10 } }],
-      'POST /api/draft': () => [200, { run_id: 'd1' }],
-      'GET /api/draft/d1/events': () => [200, { events: [], next: 0, done: true, draft, validation: { errors: [], context_chars: 10 } }],
-    });
-    const el = document.createElement('explorer-settings') as ExplorerSettings;
-    el.api = new Api(f.fn);
-    el.pollMs = 0;
-    el.confirmFn = () => true;
-    document.body.appendChild(el);
-    await settle(el);
-    await el.startDraft('meta/muse-spark-1.3', 'low');
-    await settle(el);
-    const name = el.querySelector('bs-review input.name') as HTMLInputElement;
-    name.value = 'mine';
-    name.dispatchEvent(new Event('input'));
-    (el.querySelectorAll('bs-review button.dismiss')[1] as HTMLButtonElement).click();
-    await settle(el);
-    (el.querySelector('button.to-boards') as HTMLButtonElement).click();
-    await settle(el, 20);
-    expect(el.querySelector('bs-boards')!.textContent).not.toContain('run.sh');
-    expect(el.querySelector('bs-boards button.to-export')).toBeNull(); // nothing to export with yet
-    (el.querySelector('button.draft-boards') as HTMLButtonElement).click();
-    await settle(el, 20);
-    (el.querySelector('bs-boards button.to-export') as HTMLButtonElement).click();
-    await settle(el, 20);
-    expect(el.querySelector('.steps li.current')!.textContent!.trim()).toBe('Review');
-    expect((el.querySelector('bs-review input.name') as HTMLInputElement).value).toBe('mine');
-    expect((el.querySelector('button.export') as HTMLButtonElement).disabled).toBe(false);
-    expect(document.activeElement?.id).toBe('export-h');
   });
 });

@@ -135,8 +135,8 @@ export class BsConnect extends LitElement {
     if (!c) return html`<p>Connecting…</p>`;
     const mode = this.effectiveMode;
     return html`
-      <section aria-labelledby="connect-h">
-        <h2 id="connect-h">Connect</h2>
+      <section class="glass" aria-labelledby="connect-h">
+        <h2 id="connect-h">Schemas</h2>
         <p>Database <strong>${c.name}</strong> on <strong>${c.host}</strong></p>
         <p>
           <button @click=${() => void this.testConnection()}>Test connection</button>
@@ -184,8 +184,9 @@ export class BsConnect extends LitElement {
                 </label>`,
               )}
             </fieldset>`}
-        <button class="primary" ?disabled=${this.busy || !this.canRun} @click=${this.run}>
-          ${this.busy ? 'Running report…' : 'Run report'}
+        <p class="muted">Next runs the report: SQL only, no model.</p>
+        <button class="primary next run-report" ?disabled=${this.busy || !this.canRun} @click=${this.run}>
+          ${this.busy ? 'Running the report…' : 'Next'}
         </button>
         <p>
           <button @click=${() => void this.toggleSchema()}>

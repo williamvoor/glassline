@@ -53,6 +53,8 @@ export interface SavedLevel {
   board_changed: boolean;
   board: {id: string; controls: {name: string; kind: string}[]} | null;
   tab: {id: string; kind: string; title: string};
+  /** The model that answered (null: none, database only); absent for Levels saved before E10. */
+  model?: string | null;
 }
 
 export const DATA_CHANGED = 'The data has changed since this answer; its wording may be out of date.';

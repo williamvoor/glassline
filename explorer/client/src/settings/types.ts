@@ -168,6 +168,18 @@ export interface BoardsState {
   set_problems: string[];
   preview: Record<string, BoardPreview>;
   usage: Draft['usage'] | null;
+  /** The model that drafted them; null for Boards kept from the current Workspace (E6, E9). */
+  model?: string | null;
+}
+
+/** What the bootstrap server holds (Workspaces SPEC E7), for resuming after a page reload. */
+export interface Session {
+  dsn_env: string | null;
+  report: Report | null;
+  regenerating: string | null;
+  draft: boolean;
+  boards: boolean;
+  run: { id: string; kind: 'draft' | 'boards' } | null;
 }
 
 /** Every problem that blocks export, set problems first. */

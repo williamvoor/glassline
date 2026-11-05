@@ -1,16 +1,18 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 
+import { confirmCard } from '../cards.js';
+import { modelChip } from '../model-chip.js';
 import { Api } from './api.js';
+import { runCard, usd } from './run-card.js';
 import type { BoardFile, BoardPreview, BoardsState, DraftEvent, Estimate } from './types.js';
 
-const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
 const fmt = new Intl.NumberFormat('en');
 
 /**
- * Step 4 (phase 3): draft the Boards, edit each as TOML, see its problems and its preview.
- * Fires `estimate` and `draft-boards` with {model, effort}, `boards-changed` with the state after
- * each re-validation, `back`, and `to-export` (Review's Export section, once there are Boards).
+ * Wizard step 4: draft the Boards (the button carries the cost ceiling), edit each as TOML, see its
+ * problems and its preview. Fires `estimate` and `draft-boards` with {model, effort}, and
+ * `boards-changed` with the state after each re-validation. Skip and Keep are the wizard's buttons.
  */
 @customElement('bs-boards')
 export class BsBoards extends LitElement {
@@ -27,6 +29,7 @@ export class BsBoards extends LitElement {
   @state() files: BoardFile[] = [];
   @state() tab = '';
   @state() error = '';
+  @state() asking = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private validateSeq = 0;
   private loadedFrom: BoardsState | null = null;
@@ -75,23 +78,6 @@ export class BsBoards extends LitElement {
     }
   }
 
-  private renderProgress() {
-    if (!this.events.length) return '';
-    const calls = this.events.filter((e) => e.type === 'call');
-    const cost = calls.reduce((s, e) => s + (e.type === 'call' ? e.usage.cost_usd : 0), 0);
-    return html`<ol class="progress" aria-live="polite">
-        ${this.events.map((e) =>
-          e.type === 'sql'
-            ? html`<li>run_sql: ${e.purpose}</li>`
-            : e.type === 'call'
-              ? html`<li class="muted">model call: ${fmt.format(e.usage.prompt_tokens)} prompt (${fmt.format(e.usage.cached_tokens)} cached),
-                  ${fmt.format(e.usage.completion_tokens)} completion, ${usd(e.usage.cost_usd)}</li>`
-              : html`<li class="warn">Boards rejected (${e.problems.length} problems); the model is fixing them</li>`,
-        )}
-      </ol>
-      <p class="totals">${calls.length} calls, ${usd(cost)} so far</p>`;
-  }
-
   private renderPreview(p: BoardPreview | undefined) {
     if (!p) return html`<p class="muted preview-none">No preview: fix the problems above first.</p>`;
     if (p.skipped) return html`<p class="muted preview-skipped">${p.skipped}</p>`;
@@ -121,26 +107,30 @@ export class BsBoards extends LitElement {
     const s = this.boards;
     const current = this.files.find((b) => b.name === this.tab);
     const problems = current ? (s?.problems[current.name] ?? []) : [];
-    return html`<section aria-labelledby="boards-h">
+    const estimate = this.estimate?.model === this.model ? this.estimate : null; // never a stale ceiling (S5)
+    const ceiling = estimate ? ` (at most ${usd(estimate.run_ceiling_usd)})` : '';
+    return html`<section class="glass" aria-labelledby="boards-h">
       <h2 id="boards-h">Boards</h2>
-      <p>The Explorer Board and up to a few Entity Boards, drafted from the reviewed files. Each is checked by the
-        agent's own startup check and previewed with one cold render. Export writes them with the Dataset, and the
-        Workspace then opens on its Explorer Board.</p>
-      <div class="row">
-        <button class="${s ? '' : 'primary '}draft-boards" ?disabled=${this.running} @click=${() => this.fire('draft-boards')}>
-          ${this.running ? 'Drafting Boards…' : s ? `Draft the Boards again with ${this.model}` : `Draft Boards with ${this.model}`}
-        </button>
-        ${s && !this.running
-          ? html`<button class="primary to-export" @click=${() => this.dispatchEvent(new CustomEvent('to-export'))}>Continue to Export</button>`
-          : ''}
-        <button class="back" @click=${() => this.dispatchEvent(new CustomEvent('back'))}>Back to Review</button>
-      </div>
-      ${this.estimate
-        ? html`<p class="estimate">Rough ceiling: ${usd(this.estimate.first_call_usd)} for the first call,
-            ${usd(this.estimate.run_ceiling_usd)} if all ${this.estimate.max_calls} calls are used
-            (~${fmt.format(this.estimate.input_tokens_est)} input tokens each).</p>`
-        : ''}
-      ${this.renderProgress()}
+      <p class="lede">The Explorer Board and up to a few Entity Boards, drafted from the reviewed files. Each is checked by the
+        agent's own startup check and previewed with one cold render. The Workspace opens on its Explorer Board.</p>
+      <div class="row">${modelChip(this.model)}</div>
+      ${estimate
+        ? html`<p class="estimate">At most ${usd(estimate.first_call_usd)} for the first call and
+            ${usd(estimate.run_ceiling_usd)} if all ${estimate.max_calls} calls are used
+            (~${fmt.format(estimate.input_tokens_est)} input tokens each). These are ceilings, so a run usually costs much less.</p>`
+        : html`<p class="estimate muted">Working out the cost ceiling…</p>`}
+      ${this.asking
+        ? confirmCard({
+            message: 'This replaces the Boards and your edits to them.',
+            confirm: `Draft the Boards again${ceiling}`,
+            onConfirm: () => { this.asking = false; this.fire('draft-boards'); },
+            onCancel: () => (this.asking = false),
+          })
+        : html`<div class="row"><button class="${s ? '' : 'primary '}draft-boards" ?disabled=${this.running || !estimate}
+            @click=${() => (s ? (this.asking = true) : this.fire('draft-boards'))}>
+            ${this.running ? 'Drafting Boards…' : `${s ? 'Draft the Boards again' : 'Draft Boards'}${ceiling}`}</button></div>`}
+      ${runCard({ model: this.running ? this.model : s?.model ?? this.model, events: this.events, running: this.running,
+        estimate: this.estimate, done: this.running || !s?.model ? null : s.usage?.totals ?? null, what: 'Drafting the Boards' })}
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : ''}
       ${s && s.set_problems.length
         ? html`<ul class="errors set-problems">${s.set_problems.map((p) => html`<li>${p}</li>`)}</ul>`

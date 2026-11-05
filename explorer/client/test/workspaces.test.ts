@@ -111,7 +111,6 @@ async function mount(api: FakeApi, hash = ''): Promise<{app: ExplorerApp; agent:
   app.workspaceMode = true;
   app.workspaceApi = api;
   app.connector = agent.connector;
-  app.confirmFn = () => true;
   document.body.appendChild(app);
   await settle(app);
   return {app, agent};
@@ -182,7 +181,7 @@ describe('C1: the picker, unavailable Workspaces, switching and the Conversation
     expect(window.location.hash).toBe('#/w/vic/c/ctx-vic');
   });
 
-  it('lists, opens and deletes saved Conversations, and deletes all after a confirmation', async () => {
+  it('lists, opens and deletes saved Conversations, and deletes all after a confirmation card (N11)', async () => {
     const api = new FakeApi();
     api.saved['aus'] = [{id: 'c1', title: 'Top suppliers?', updated_at: '2026-11-04T10:00:00Z', turns: 2},
                         {id: 'c2', title: 'Older', updated_at: '2026-11-03T10:00:00Z', turns: 1}];
@@ -192,13 +191,13 @@ describe('C1: the picker, unavailable Workspaces, switching and the Conversation
     await click(app, all(app, '.saved-list .delete-saved')[1]!);
     expect(api.calls).toContain('remove aus c2');
     expect(all(app, '.saved-list .open-saved').map(text)).toEqual(['Top suppliers?']);
-    let asked = '';
-    app.confirmFn = m => ((asked = m), false);
     await click(app, q(app, '.saved-list .delete-all'));
-    expect(asked).toContain('Delete all saved conversations in aus');
+    expect(text(q(app, '.saved-list .confirm-card'))).toContain('Delete all saved conversations in aus');
+    await click(app, q(app, '.saved-list .confirm-card .card-cancel'));
+    expect(q(app, '.saved-list .confirm-card')).toBeNull();
     expect(api.calls).not.toContain('removeAll aus');
-    app.confirmFn = () => true;
     await click(app, q(app, '.saved-list .delete-all'));
+    await click(app, q(app, '.saved-list .confirm-card .card-confirm'));
     expect(api.calls).toContain('removeAll aus');
     expect(text(q(app, '.saved-list'))).toContain('No saved conversations yet.');
   });
@@ -239,6 +238,16 @@ describe('C2: reopening a saved Conversation', () => {
     expect(canvas(app)).toContain('by year answer');
   });
 
+  it('shows the saved model chip on a reopened Turn, and none for a Level saved before (N15)', async () => {
+    const api = new FakeApi();
+    api.levels['1-1'] = {...api.levels['1-1']!, model: 'meta/muse-wonder-1.0'};
+    const {app} = await mount(api, '#/w/aus/c/c1');
+    expect(q(app, '.canvas .meta-saved .model-chip.model-wonder')!.textContent!.trim()).toBe('Muse Wonder');
+    await click(app, all(app, '.sidebar .log-entry').at(-1)!); // 2-1: saved before E10, no model key
+    expect(canvas(app)).toContain('by year answer');
+    expect(q(app, '.canvas .model-chip')).toBeNull();
+  });
+
   it('asks on in the saved Conversation', async () => {
     const api = new FakeApi();
     const {app, agent} = await mount(api, '#/w/aus/c/c1');
@@ -277,7 +286,7 @@ describe('C2: reopening a saved Conversation', () => {
 // A from-scratch start (2026-11-05): with no Workspace yet, the canvas said "Ask a question" and
 // the Ask box was live, though there was nothing to ask.
 describe('no Workspaces yet', () => {
-  it('points to Settings and keeps Ask disabled', async () => {
+  it('opens the New Workspace wizard and keeps Ask disabled (N1)', async () => {
     const api = new FakeApi();
     api.list_ = [];
     const {app} = await mount(api);
@@ -287,6 +296,7 @@ describe('no Workspaces yet', () => {
     expect((q(app, '.composer button') as HTMLButtonElement).disabled).toBe(true);
     (q(app, '.canvas .no-workspaces button.open-settings') as HTMLButtonElement).click();
     await settle(app);
-    expect(window.location.hash).toBe('#/settings');
+    expect(window.location.hash).toBe('#/settings/new');
+    expect((q(app, 'explorer-wizard') as HTMLElement).hidden).toBe(false);
   });
 });

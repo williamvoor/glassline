@@ -22,6 +22,10 @@
         --chart-1: #2e4a7d; --chart-2: #d97757; --chart-3: #5b8bd0; --chart-4: #6e9b76; --chart-5: #9a6fb0; --chart-6: #c9a35b;
         --sans: 'Public Sans Variable', system-ui, sans-serif;
         --mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+        /* Models on show (Workspaces SPEC phase 3, ADR 0044): one accent per model, apart from the charts'. */
+        --model-wonder: #6a4ce0; --model-wonder-soft: #efebfd; --model-spark: #0a6b60; --model-spark-soft: #e3f4f1;
+        --glass: color-mix(in srgb, var(--panel) 74%, transparent); --glass-line: color-mix(in srgb, var(--line-strong) 60%, transparent);
+        --glass-shadow: 0 1px 0 color-mix(in srgb, #ffffff 70%, transparent) inset, 0 12px 32px -18px color-mix(in srgb, var(--ink) 35%, transparent);
 
         /* A2UI basic catalog (its defaults are zero-specificity, so these win). */
         --a2ui-color-background: var(--canvas); --a2ui-color-on-background: var(--fg);
@@ -47,6 +51,8 @@
           --accent: #82abee; --on-accent: #0a0e15; --accent-soft: #1b2a41; --accent-line: #35507a;
           --error: #ff8a9a; --error-bg: #3a1a21; --warn-bg: #3a3019;
           --chart-1: #8aa8e0; --chart-2: #e8916f; --chart-3: #5d8fd6; --chart-4: #8fbf97; --chart-5: #bb98d0; --chart-6: #d9b872;
+          --model-wonder: #a898ff; --model-wonder-soft: #262044; --model-spark: #4fcfbe; --model-spark-soft: #12302d;
+          --glass-shadow: 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent) inset, 0 16px 40px -20px #000000;
         }
       }
 
@@ -142,12 +148,148 @@
       /* Settings (Workspaces SPEC phase 2): the bootstrap views, from the retired explorer/bootstrap/ui */
       explorer-app [hidden] { display: none !important; } /* Settings stays mounted while hidden */
       explorer-app .settings-toggle { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      explorer-app .settings-page { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 64px; background: var(--canvas); }
-      explorer-settings { display: block; max-width: 1200px; margin: 0 auto; --ok: #15803d; --warn: #b45309; --bad: var(--error); --muted-ink: var(--muted); }
-      explorer-settings .steps { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0 0 16px; padding: 0; }
-      explorer-settings .steps li { padding: 2px 10px; border-radius: 999px; color: var(--muted); }
-      explorer-settings .steps li.current { background: var(--accent); color: var(--on-accent); }
-      explorer-settings .steps li button { border: 0; background: none; color: inherit; padding: 0; cursor: pointer; }
+      /* Glassline glass (Workspaces SPEC phase 3): frosted panels over a soft wash of the brand and model accents. */
+      explorer-app .settings-page {
+        flex: 1; min-height: 0; overflow: auto; padding: 28px 24px 0; /* no bottom padding: it would lift the sticky footer */
+        background:
+          radial-gradient(60rem 30rem at 8% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+          radial-gradient(44rem 26rem at 96% 4%, color-mix(in srgb, var(--model-wonder) 14%, transparent), transparent 70%),
+          radial-gradient(40rem 24rem at 70% 110%, color-mix(in srgb, var(--model-spark) 12%, transparent), transparent 70%),
+          var(--canvas);
+      }
+      explorer-settings { display: block; max-width: 1080px; margin: 0 auto; padding-bottom: 32px; --ok: #15803d; --warn: #b45309; --bad: var(--error); --muted-ink: var(--muted); }
+      @media (prefers-color-scheme: dark) { explorer-settings { --ok: #6fd08f; --warn: #f0b25a; } }
+      explorer-settings .glass {
+        margin: 0 0 16px; padding: 22px 26px; border: 1px solid var(--glass-line); border-radius: 16px;
+        background: var(--glass); backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3);
+        box-shadow: var(--glass-shadow);
+      }
+      explorer-settings h1 { margin: 0 0 4px; font-size: 30px; line-height: 1.15; letter-spacing: -0.025em; }
+      explorer-settings h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.015em; }
+      explorer-settings .lede { margin: 0 0 14px; max-width: 68ch; color: var(--muted); }
+      explorer-settings .list-head, explorer-settings .wizard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+      explorer-settings .list-head p, explorer-settings .wizard-head p { margin: 0; }
+      explorer-settings .actions { white-space: nowrap; text-align: right; }
+
+      /* The step rail: numbered, because the steps are a sequence; each says what does the work. */
+      explorer-settings .wizard-steps ol {
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 0 0 20px; padding: 0; list-style: none; counter-reset: none;
+      }
+      explorer-settings .wizard-steps li { position: relative; min-width: 0; }
+      explorer-settings .wizard-steps li::before { /* the rail between steps */
+        content: ''; position: absolute; top: 17px; left: -50%; right: 50%; height: 2px; background: var(--line-strong);
+      }
+      explorer-settings .wizard-steps li:first-child::before { display: none; }
+      explorer-settings .wizard-steps li.done::before, explorer-settings .wizard-steps li.current::before { background: var(--accent); }
+      explorer-settings .step-link {
+        position: relative; z-index: 1; /* above the next step's rail, which starts at this circle's centre */
+        display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%;
+        padding: 0 4px; border: 0; background: none; color: var(--muted); font: inherit; text-align: center;
+      }
+      explorer-settings button.step-link:hover .step-name { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+      explorer-settings .step-link .num {
+        display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+        border: 2px solid var(--line-strong); background: var(--panel); font-weight: 700; font-variant-numeric: tabular-nums;
+        transition: background .2s, border-color .2s, color .2s, box-shadow .2s;
+      }
+      explorer-settings .done .num { border-color: var(--accent); color: var(--accent); }
+      explorer-settings .current .num {
+        border-color: var(--accent); background: var(--accent); color: var(--on-accent);
+        box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent);
+      }
+      explorer-settings .step-name { font-size: 14px; font-weight: 500; }
+      explorer-settings .current .step-name { color: var(--fg); font-weight: 700; }
+      explorer-settings .locked .num { border-style: dashed; }
+      explorer-settings .step-link .model-chip { font-size: 11px; }
+
+      /* Model chips: the same everywhere a model works (step rail, run cards, answer Turns). */
+      .model-chip {
+        display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 7px; border-radius: 999px;
+        font: 600 12px/1.5 var(--sans); white-space: nowrap; vertical-align: middle;
+        border: 1px solid var(--line-strong); background: var(--soft); color: var(--muted);
+      }
+      .model-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+      .model-chip.model-wonder { color: var(--model-wonder); background: var(--model-wonder-soft); border-color: color-mix(in srgb, var(--model-wonder) 35%, transparent); }
+      .model-chip.model-spark { color: var(--model-spark); background: var(--model-spark-soft); border-color: color-mix(in srgb, var(--model-spark) 35%, transparent); }
+      .model-chip.model-sql { padding: 2px 8px; font: 600 11px/1.5 var(--mono); letter-spacing: 0.02em; color: var(--muted); background: transparent; }
+      .model-chip.live .dot { animation: chip-pulse 1.4s ease-in-out infinite; }
+      @keyframes chip-pulse { 0%, 100% { box-shadow: 0 0 0 0 currentColor; } 50% { box-shadow: 0 0 0 5px transparent; opacity: .55; } }
+
+      /* The run card: the one loud thing — calls as bars (cached part lighter), spend filling towards the ceiling. */
+      explorer-settings .run-card {
+        margin: 16px 0 4px; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--glass-line);
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+      }
+      explorer-settings .run-card header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+      explorer-settings .run-card .run-what { flex: 1; font-weight: 600; }
+      explorer-settings .run-card .run-calls { color: var(--muted); font-variant-numeric: tabular-nums; }
+      explorer-settings .run-card .run-calls strong { color: var(--fg); font-size: 20px; }
+      explorer-settings .run-steps { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; overflow-x: hidden; }
+      explorer-settings .run-steps li { display: grid; grid-template-columns: minmax(0, 40%) minmax(0, 1fr); align-items: center; gap: 10px; font-size: 13px; animation: step-in .25s ease-out; }
+      explorer-settings .run-steps li.sql { grid-template-columns: auto minmax(0, 1fr); color: var(--muted); }
+      explorer-settings .run-steps li.rejected { display: block; color: var(--warn); }
+      explorer-settings .run-steps .bar {
+        display: flex; height: 10px; min-width: 6px; border-radius: 5px; overflow: hidden; animation: bar-grow .5s cubic-bezier(.2, .8, .2, 1);
+        transform-origin: left center;
+      }
+      explorer-settings .run-card:has(.model-wonder) { --run: var(--model-wonder); }
+      explorer-settings .run-card:has(.model-spark) { --run: var(--model-spark); }
+      explorer-settings .run-steps .bar .cached { background: color-mix(in srgb, var(--run, var(--accent)) 35%, transparent); }
+      explorer-settings .run-steps .bar .fresh { background: var(--run, var(--accent)); }
+      explorer-settings .run-steps .bar .out { background: color-mix(in srgb, var(--run, var(--accent)) 60%, var(--fg)); }
+      explorer-settings .run-steps .call-text { color: var(--muted); font-variant-numeric: tabular-nums; }
+      explorer-settings .meter { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+      explorer-settings .meter-fill { display: block; height: 100%; border-radius: 3px; background: var(--run, var(--accent)); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+      explorer-settings .meter-text { margin: 6px 0 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+      explorer-settings .meter-text strong { color: var(--fg); }
+      explorer-settings .run-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 14px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+      @keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+      @keyframes step-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+
+      /* A step change answers the click: the new step slides in from the direction of travel. */
+      explorer-settings .wizard-body > :not([hidden]) { animation: step-in .22s ease-out; }
+      explorer-settings .wizard-footer {
+        position: sticky; bottom: 12px; z-index: 2; display: flex; align-items: center; gap: 16px; margin-top: 8px; padding: 12px 16px;
+        border: 1px solid var(--glass-line); border-radius: 14px; background: var(--glass);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: var(--glass-shadow);
+      }
+      explorer-settings .wizard-footer .spacer, explorer-settings .wizard-footer .blockers { flex: 1; }
+      explorer-settings .wizard-footer .blockers { margin: 0; padding-left: 18px; color: var(--bad); font-size: 13px; }
+
+      /* Inline confirmation cards (no pop-ups). */
+      .confirm-card {
+        margin: 12px 0; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line-strong);
+        border-left: 4px solid var(--warn, #b45309); background: var(--warn-bg); color: var(--fg); animation: step-in .18s ease-out;
+      }
+      .confirm-card.danger { border-left-color: var(--error); background: var(--error-bg); }
+      .confirm-card p { margin: 0 0 10px; }
+      .confirm-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .confirm-card button { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--fg); font-weight: 600; }
+      .confirm-card.danger .card-confirm { background: var(--error); border-color: var(--error); color: var(--on-accent); }
+      .confirm-card.warn .card-confirm { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+      explorer-settings .done-card h2 { font-size: 26px; }
+      explorer-settings .done-card .warn-text { color: var(--warn); }
+      explorer-settings .name-field { display: flex; flex-direction: column; gap: 6px; max-width: 360px; font-weight: 600; }
+      explorer-settings .name-field input { padding: 9px 12px; font: 15px var(--mono); border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); color: var(--fg); }
+      explorer-settings .connections { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+      explorer-settings .connect-var { font-family: var(--mono); font-size: 13px; }
+      explorer-settings .connect-var[aria-checked=true] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+      explorer-settings .notice-wizard { padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); }
+      explorer-settings select { padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); color: var(--fg); font: inherit; }
+      explorer-settings label { display: inline-flex; align-items: center; gap: 6px; }
+      explorer-settings label.schema { display: flex; }
+      @media (max-width: 720px) {
+        explorer-settings .wizard-steps .step-name, explorer-settings .wizard-steps .model-chip { display: none; }
+        explorer-settings .glass { padding: 16px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        explorer-settings *, explorer-settings *::before, .model-chip .dot, .confirm-card {
+          animation: none !important; transition: none !important;
+        }
+      }
+      explorer-app .meta .model-chip { margin-right: 8px; }
+      explorer-app .meta-saved { margin-top: 16px; }
       explorer-settings table { border-collapse: collapse; width: 100%; margin: 12px 0; }
       explorer-settings caption { text-align: left; font-weight: 600; padding: 4px 0; }
       explorer-settings th, explorer-settings td { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid var(--line); }
@@ -164,15 +306,16 @@
       explorer-settings .summary { display: flex; flex-wrap: wrap; gap: 32px; } explorer-settings .summary dt { color: var(--muted); } explorer-settings .summary dd { margin: 0; font-size: 1.2rem; }
       explorer-settings .summary .over { color: var(--bad); }
       explorer-settings .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
-      explorer-settings button { padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      explorer-settings button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      explorer-settings button { padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); color: var(--fg); font-weight: 500; }
+      explorer-settings button:hover:not(:disabled) { border-color: var(--fg); }
+      explorer-settings button.primary { padding: 9px 20px; background: var(--accent); color: var(--on-accent); border: 1px solid var(--accent); font-weight: 650; }
+      explorer-settings button.primary:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
       explorer-settings button:disabled { opacity: .5; }
       /* Review's and Boards' file tabs: one row (their `tab` class also picks up the Explorer's tab look). */
       explorer-settings [role=tablist] { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 8px 0 0; }
       explorer-settings [role=tab][aria-selected=true] { font-weight: 700; border-bottom: 2px solid var(--accent); }
       explorer-settings .claim { margin: 12px 0; } explorer-settings .claim.dismissed { opacity: .6; }
       explorer-settings label.schema { display: block; }
-      explorer-settings .connections { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 
       explorer-app .empty { padding: 48px 0 24px; color: var(--muted); }
       explorer-app .empty h2 { margin: 0 0 6px; color: var(--fg); font-size: 28px; letter-spacing: -0.02em; }
@@ -251,7 +394,7 @@
       explorer-app .a2ui-text h4 { margin: 0; font-size: 16px; font-weight: 600; }
       explorer-app .a2ui-text.a2ui-text-caption { font: normal 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
       explorer-app .a2ui-text.a2ui-text-caption em { font-style: normal; } /* A2UI wraps captions in <em> */
-      explorer-app .a2ui-text h2 { margin: 2px 0; font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+      explorer-app .a2ui-text h2 { margin: 2px 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
       explorer-app a2ui-basic-button button:hover:not(:disabled) { border-color: var(--fg); }
 
       /* Chart tooltips (SPEC §22): vega-tooltip's element lives in body; the class beats its defaults */
