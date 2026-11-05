@@ -1392,8 +1392,13 @@ def _sparkline(trend_id: str, column: str) -> list[Any]:
         "data": {"values": values},
         "mark": {"type": "line"},
         "encoding": {
-            "x": {"field": _field(x), "type": "temporal" if trend.is_temporal(x) else "ordinal", "sort": None, "axis": None},
-            "y": {"field": _field(column), "type": "quantitative", "axis": None},
+            "x": {"field": _field(x), "type": "temporal" if trend.is_temporal(x) else "ordinal", "sort": None, "axis": None,
+                  "scale": {"padding": 0}},  # an ordinal point scale pads half a step each side
+            # Fit to the data (the user, 2026-11-05): from zero most trends look flat. No axis, so
+            # nothing reads as a value. `stack: None`: Vega-Lite stacks an area by default, which
+            # would put zero back in the domain once the client adds the area.
+            "y": {"field": _field(column), "type": "quantitative", "axis": None, "scale": {"zero": False},
+                  "stack": None},
         },
     }
     return [VegaChart(spec=spec, height=SPARKLINE_HEIGHT), _sql_details(trend)]

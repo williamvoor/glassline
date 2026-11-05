@@ -3000,7 +3000,7 @@ rerun check below catches that.
 
 ## 22. Amendment: visual polish for Boards and answers (2026-11-05)
 
-Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Step 4 built, refuter PASS-WITH-NOTES, six MINOR notes fixed. Step 5 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Amends §16 (look and feel) and §18 (Boards,
+Status: **approved** (2026-11-05), being built step by step: step 1 built, refuter PASS-WITH-NOTES after one fix round; step 2 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 3 built (CSS only; no refuter: the screenshots in P14 check it). Step 4 built, refuter PASS-WITH-NOTES, six MINOR notes fixed. Step 5 built, refuter PASS-WITH-NOTES, notes fixed or deferred. Step 6 built. P14 checked by screenshots (2026-11-05), with three fixes. Amends §16 (look and feel) and §18 (Boards,
 Controls). Decision: ADR 0043. The user chose the scope (2026-11-05): the five polish items, a
 Metric sparkline without a change figure, a `weight` argument on the Visual Macros, and the
 Controls as chips. ADR 0026 holds: the agent still sends structure, never colours, fonts or Vega
@@ -3041,6 +3041,8 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   - A multi-series line (with `color`) is unchanged. So is a line with any negative y value,
     because an area to zero would misread there. So is a line whose data isn't inline
     (`data.values`), because its values can't be checked, and one whose y isn't quantitative.
+  - A LineChart keeps its zero baseline, so its area reaches the axis. A Metric sparkline sets
+    `zero: false` and `stack: null`, so its area fills to its lowest point (P14).
 - **Hover fade** (`withHover`, a new pure function). A unit spec whose mark is `bar`, that has no
   `params` and no `opacity` encoding, gets the param
   `{name: "explorer_hover", select: {type: "point", on: "pointerover", clear: "pointerout"}}`.
@@ -3168,6 +3170,43 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   - border `--line-strong`
   - selected chip `--primary` background with `--on-primary` text
   - mono 12 px
+- Built (2026-11-05):
+  - The chip count is the options as sent, so a `choice` with 23 values plus "All" is 24 and
+    gets chips.
+  - Chips also get `4px 10px` padding. An unselected chip has no background of its own: on the
+    `--panel` card its `--line-strong` border marks it (after review: a `--panel` background
+    was invisible there).
+
+### P14 screenshot check (2026-11-05)
+
+The stub Board was screenshotted at 1440 and 390 px, light and dark, with a temporary `trend=` and
+`weight=2` in its layout (reverted after). Playwright 1.64 drove headless Chromium. Fixes:
+
+- **Sparkline width.** An ordinal point scale pads half a step on each side, so a 3-point line
+  covered two thirds of the card. The sparkline's x has `scale: {padding: 0}`.
+- **Sparkline fits its data** (the user's call). From zero, a total by year (1.1B to 1.65B) read
+  flat. The y has `scale: {zero: false}` and `stack: null`: Vega-Lite stacks an area by default,
+  which put zero back once `withArea` added the area (`client/test/vegachart.test.ts` proves it in
+  real Vega-Lite). There is no axis, so the shape doesn't read as a value. This replaces step
+  2's zero baseline.
+- **Rows of Cards stack on phones** (the user's call). At 390 px a `weight=2` trend left its Treemap neighbour
+  about 95 px wide. Below 640 px Surface Rows whose children are Cards are columns, and each
+  child is full width whatever its weight (A2UI sets the weight as an inline `flex`, hence `!important`). The Metrics
+  Row stacks too. Tested in `index-html.test.ts`.
+
+Checked and fine:
+
+- chips in both schemes;
+- tile seams in the card's colour;
+- the tile hover fade, restored on leave;
+- the Card title labels;
+- the KPI value;
+- the two SQL details on a trend Metric;
+- the share bars;
+- dark mode without Card shadows.
+
+Not checked: a share-bar replay on a Control change, and real touch hover (the 390 px run used
+touch emulation without tapping).
 
 ### Criteria → tests
 
@@ -3185,8 +3224,10 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
 | P10 | `boards.md` and `explorer.toml` carry the weight guidance; the template test still passes | `test_boards.py`, bootstrap tests |
 | P11 | Card, title, Metric value, share-bar, chip and reduced-motion rules exist and use tokens, in light and dark | `index-html.test.ts` |
 | P12 | The Treemap spec has no `stroke` colour, Other has `fillOpacity` 0.55, and tiles have a hover; fixture current | `test_macros.py` |
-| P13 | ChoicePicker gets `displayStyle: "chips"` up to `CHIPS_MAX` options and not above; strict validation passes | `test_boards.py`, `agent/tests/test_ui.py` |
+| P13 | ChoicePicker gets `displayStyle: "chips"` up to `CHIPS_MAX` options and not above; strict validation passes | `agent/tests/test_board_controls.py` |
 | P14 | Suites and build pass. Screenshots of the Explorer Board, light and dark, 1440 px and 390 px, checked by eye | `uv run pytest`, `npm test`, `npm run build`, screenshots |
+| P15 | The sparkline spans the card (x `padding: 0`) and fits its data (y `zero: false`, `stack: null`), still so after `withArea` in real Vega-Lite | `test_macros.py`, `client/test/vegachart.test.ts` |
+| P16 | Below 640 px, Rows of Cards stack and each child is full width whatever its weight; other Rows are unchanged | `index-html.test.ts` |
 
 ### Decisions
 
@@ -3195,6 +3236,13 @@ Vega spec (the Treemap) gets only the config keys that Vega reads.
   is a token. See ADR 0043.
 - **No change figure on the Metric.** The last period is often partial (the user, 2026-11-05),
   so a delta would mislead.
+- **A sparkline fits its data** (the user, 2026-11-05, from the P14 screenshots). With no axis, its
+  shape is what it shows. `zero`, `padding` and `stack` are encoding choices the Macro makes, like
+  a sort. Colours, fonts and Vega `config` still come only from the client (ADR 0026).
+- **Rows of Cards stack on phones** (the user, 2026-11-05). `weight` applies on wide screens only.
+  Rows of other components (Buttons, Text) keep their direction. The breakpoint is the viewport.
+- **Long chip labels aren't capped.** 24 long database labels wrap into tall chips in a narrow
+  Card. Deferred until a real Board shows it.
 - **No hover fade on lines.** A line has one item per series, so fading points looks broken.
   Lines get the area and the tooltip.
 - **Cards don't move on hover.** A lift under the pointer makes a bar harder to click.

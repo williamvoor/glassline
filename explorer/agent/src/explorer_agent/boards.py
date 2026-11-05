@@ -64,6 +64,7 @@ IMPLIED_TYPE = {"toggle": "bool", "number": "int", "date": "date"}
 SQL_TYPES = {"text": "text", "int": "bigint", "float": "double precision", "date": "date", "bool": "boolean"}
 ALL = "all"  # a choice's "All" in the data model
 FILTERABLE_OVER = 10  # a multi with more options than this gets the filter box
+CHIPS_MAX = 24  # a choice or multi with at most this many options, "All" included, shows chips (SPEC §22)
 CONTROLS_NOTE = "First {n} options shown"
 DEFAULTS_TEXT = "Controls reset"
 BOARD_COLD_TARGET_S = 1.5  # SPEC §18 speed targets: any Board, cold
@@ -860,6 +861,8 @@ def controls_components(board: Board, options: Mapping[str, Options]) -> list[di
                     "variant": "multipleSelection" if c.kind == "multi" else "mutuallyExclusive"}
             if len(o.values) > FILTERABLE_OVER:
                 comp["filterable"] = True
+            if len(opts) <= CHIPS_MAX:
+                comp["displayStyle"] = "chips"
         elif c.kind == "toggle":
             comp = {"id": cid, "component": "CheckBox", "label": c.label, "value": bind}
         elif c.kind == "number":
