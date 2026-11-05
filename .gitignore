@@ -18,6 +18,12 @@ glimmer-tune/archive/
 # Dataset bootstrap backups
 explorer/datasets/.*.bak-*/
 
+# Session summaries (working notes)
+docs/summary-*.md
+
+# Paper, slides and demo video material (not published)
+docs/paper/
+
 # Secrets
 .env
 
