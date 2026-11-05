@@ -1,0 +1,14 @@
+- Prefer `mart.suburb_price` for price and year questions; use `mart.suburb_trend` only when the exact published trend figures are asked for, and otherwise recompute changes from `mart.suburb_price`.
+- `mart.suburb_price` has one row per locality and year: there are no duplicate (locality, year) pairs.
+- The data covers 797 distinct localities.
+- Locality names are stored uppercase; match with the uppercase name or `UPPER(...)`/`ILIKE`, and do not assume title-case spelling.
+- Years with no published median have no row, never a zero; 60 of the possible locality-year combinations have no row.
+- Coverage is 787 rows in 2015, 797 rows in each year from 2020 to 2025, and 765 rows in 2026.
+- `is_prelim` is true only for 2026; prefer 2015-2025 for finished-year comparisons and say so when 2026 is shown.
+- 886 rows are flagged, including 398 of the 765 rows in 2026; treat flagged medians with caution because the flag legend is not published.
+- Join `mart.suburb_trend` to `mart.suburb_price` on `locality`; every locality in one table appears in the other.
+- In `mart.suburb_trend`, `change_24_25_pct` has no NULLs, `growth_15_25_pct` has 9 NULLs, and `growth_pa_pct` has 10 NULLs.
+- Treat published trend zeroes with caution: 2 localities have `growth_15_25_pct` = 0 despite having no 2015 median, and WOODSTOCK has `growth_pa_pct` = 0 while its `growth_15_25_pct` is NULL despite having a 2015 median.
+- Recomputing percentage changes from the yearly medians matches the published `change_24_25_pct` and `growth_15_25_pct` within 1 percentage point for every comparable locality.
+- `median_price` is in AUD and ranges from $53,500 to $6,630,000; do not average medians across years or suburbs as if they were individual sale prices.
+- Percentage columns hold percentage numbers (for example 3 means 3%), not fractions.

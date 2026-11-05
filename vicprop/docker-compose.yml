@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: vicprop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vicprop_loader
+      POSTGRES_PASSWORD: ${LOADER_PASSWORD:?set LOADER_PASSWORD in vicprop/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-vicprop}
+    ports:
+      - "${POSTGRES_PORT:-5435}:5432"
+    volumes:
+      # Postgres 18 images keep PGDATA under a versioned directory inside /var/lib/postgresql.
+      - vicprop_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vicprop_loader -d vicprop"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  vicprop_pgdata:

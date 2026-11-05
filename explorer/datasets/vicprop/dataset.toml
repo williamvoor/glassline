@@ -1,0 +1,20 @@
+name = "vicprop"
+description = "Yearly median house sale prices by Victorian suburb (locality), 2015 to 2026, with published 2015 to 2025 trend figures."
+allowed_schemas = ["mart"]
+glossary = "glossary.md"
+notes = "notes.md"
+
+
+# Shown as starting points in the client's empty state; never in the prompt.
+examples = [
+  "How have median house prices changed in each suburb since 2015?",
+  "Which suburbs had the strongest price growth from 2020 to 2025?",
+  "What is the median house price in Carlton in 2025?",
+]
+
+[currency]
+code = "AUD"
+symbol = "$"
+
+[comments]
+overlay = "comments.toml"

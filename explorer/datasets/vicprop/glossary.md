@@ -1,0 +1,7 @@
+- **locality**: Suburb or locality name, stored uppercase.
+- **median house price**: The published median house sale price for a locality in a calendar year, in AUD.
+- **preliminary median**: A 2026 median marked `is_prelim`, still subject to revision.
+- **flagged median**: A median marked `flagged` in the source with a ^ or * mark whose legend is not published.
+- **change 2024-25**: Published percentage change from the 2024 median to the 2025 median.
+- **growth 2015-25**: Published total percentage growth from the 2015 median to the 2025 median.
+- **growth per annum**: Published average annual percentage growth from 2015 to 2025.
