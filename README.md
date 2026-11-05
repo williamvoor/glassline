@@ -154,7 +154,25 @@ Run each row from its listed directory after installing that project's dependenc
 | `vicprop/` | `uv run pytest` | Docker; generated test workbooks and committed source workbook |
 | `glimmer-tune/` | `uv run pytest -n auto --dist loadgroup -m 'not slow'` (fast tier; full suite without `-m`) | Local scorer/data tests; no model calls |
 | `glimmer-tune/trainer/` | `uv run pytest` | Separate trainer environment; remote SDK stubbed |
-| `glimmer-tune/review/` | `npm test` and `npm run build` | Node/npm; build before serving the review UI |
+| `glimmer-tune/review/` | `npm run build` | Node/npm; rendering is tested by the Python eval suite |
+
+## Continuous integration
+
+[GitHub Actions CI](.github/workflows/ci.yml) runs on pushes, pull requests, and manual
+dispatch. Independent jobs test all seven Python projects, test and build the Explorer
+client (including transport against the stub agent), and build the Glimmer review UI
+before running the full eval suite with Chromium. Database tests use disposable
+Testcontainers Postgres 18 instances; `live_db` tests remain manual. The optional upstream
+clone is not checked out, so its reference-only comparison test is skipped.
+
+CI uses Python 3.13, Node 22, cached dependency downloads, `uv sync --locked`, and `npm ci`.
+It needs no repository secrets, loaded datasets, or model credentials. Dependency and browser
+installation downloads packages; tests use stubs and local services. New commits cancel
+older runs for the same event and ref. Historical spike projects are outside CI.
+
+Push the workflow to GitHub to start CI. If Actions is disabled for the repository, enable
+it under **Settings → Actions → General**. Required pull-request checks can then be selected
+in the repository's branch rules after the first run.
 
 ## Documentation and change workflow
 

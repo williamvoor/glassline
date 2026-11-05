@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LOCKED: 'true'
+  EXPLORER_ENV_FILE: /dev/null
+  BOOTSTRAP_ENV_FILE: /dev/null
+  LITELLM_LOCAL_MODEL_COST_MAP: 'True'
+
+jobs:
+  python:
+    name: Python (${{ matrix.project }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - explorer/agent
+          - explorer/bootstrap/server
+          - explorer/glimmer
+          - austender
+          - vicprop
+          - glimmer-tune/trainer
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.9.28'
+          python-version: '3.13'
+          enable-cache: true
+          cache-suffix: ${{ matrix.project }}
+          cache-dependency-glob: '**/uv.lock'
+      - run: uv sync --locked
+      # Testcontainers owns disposable Postgres 18 instances on the runner's Docker daemon.
+      # Explicitly exclude tests against the owner's loaded database.
+      - run: uv run --no-sync pytest -m 'not live_db'
+
+  client:
+    name: Explorer client
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: explorer/client
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.9.28'
+          python-version: '3.13'
+          enable-cache: true
+          cache-suffix: client
+          cache-dependency-glob: '**/uv.lock'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: explorer/client/package-lock.json
+      - name: Install stub agent for transport tests
+        run: uv sync --locked
+        working-directory: explorer/agent
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  glimmer:
+    name: Glimmer eval and review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: glimmer-tune
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.9.28'
+          python-version: '3.13'
+          enable-cache: true
+          cache-suffix: glimmer
+          cache-dependency-glob: '**/uv.lock'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: glimmer-tune/review/package-lock.json
+      - run: uv sync --locked
+      - run: npm ci
+        working-directory: glimmer-tune/review
+      - run: npm run build
+        working-directory: glimmer-tune/review
+      # Build the review page and install Chromium so render tests don't silently skip.
+      - run: uv run --no-sync playwright install --with-deps chromium
+      - run: uv run --no-sync pytest -n auto --dist loadgroup
