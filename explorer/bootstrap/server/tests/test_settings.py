@@ -235,7 +235,7 @@ async def test_s4_delete_removes_a_data_workspace_and_never_a_repo_datasets_file
 
 async def test_s4_a_repo_workspace_cannot_be_regenerated(tmp_path):
     app, data = _settings_app(tmp_path, {"AUS_DATABASE_URL": "postgresql://u:p@127.0.0.1:1/x"}, None)
-    write_entries(data, [{"name": "aus", "dataset_dir": "explorer/datasets/austender", "dsn_env": "AUS_DATABASE_URL"}])
+    write_entries(data, [{"name": "aus", "dataset_dir": "explorer/agent/tests/fixtures/austender", "dsn_env": "AUS_DATABASE_URL"}])
     async with _client(app) as c:
         r = await c.post("/api/workspaces/aus/regenerate", json={})
         assert r.status_code == 400 and "regen_dataset.sh" in r.json()["error"]

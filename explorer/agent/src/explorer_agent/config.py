@@ -285,8 +285,8 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         raise ConfigError(f"DATABASE_URL: {e}") from None
     dataset_dir_name = env.get("DATASET_DIR", "").strip()
     if not dataset_dir_name:
-        raise ConfigError("DATASET_DIR is required (the dataset directory, relative to explorer/)")
-    dataset_dir = explorer_root / dataset_dir_name
+        raise ConfigError("DATASET_DIR is required (the dataset directory: absolute, starting with ~, or relative to explorer/)")
+    dataset_dir = explorer_root / Path(dataset_dir_name).expanduser()  # an absolute right-hand side wins
     dataset = load_dataset(dataset_dir)
     if dataset.boards and fmt != "express":
         raise ConfigError(f"the dataset has Boards, whose layouts are Express, so FORMAT must be express (it is {fmt})")

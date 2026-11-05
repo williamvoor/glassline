@@ -29,8 +29,9 @@ long as numbers stay correct.
 | `agent/src/explorer_agent/testing/` | Stub model and stub server (tests and `run.sh` only) |
 | `client/` | Vite + Lit chat view: `@a2ui/lit`, vendored VegaChart, `DataGrid`, `SqlDetails` |
 | `catalog/explorer_custom_components.json` | Custom components merged into the one catalog (ADR 0002) |
-| `datasets/<name>/` | Everything dataset-specific: `dataset.toml`, `notes.md`, `glossary.md`, `scenarios.toml`, optional `comments.toml` |
-| `bootstrap/` | Dev tool that drafts a new `datasets/<name>/` (server + UI, own `SPEC.md`) |
+| `datasets/` | Git-ignored (old local root; the bootstrap CLI now exports to `~/.glassline`). `explorer/` ships no Dataset (ADR 0045). The owner's committed Datasets are in `../datasets/<name>/`: `dataset.toml`, `notes.md`, `glossary.md`, `scenarios.toml`, optional `comments.toml`, `boards/` |
+| `agent/tests/fixtures/austender/` | Frozen Dataset copy that tests load. Independent of `../datasets/austender` |
+| `bootstrap/` | Dev tool that drafts a new Dataset (`datasets/<name>/`, or a Workspace) (server + UI, own `SPEC.md`) |
 | `specs/<step>/SPEC.md` | Sub-specs per build step. Where one is silent, `SPEC.md` applies |
 | `spike/` | Phase 1 evidence (`FINDINGS.md`). Historical; don't build on its code |
 | `run.sh` | Starts an agent plus the client (`--real` for Muse Spark and the database) |
@@ -56,7 +57,7 @@ npm install && npm test && npm run build
 ## Hard rules
 
 - **Dataset-agnostic.** No AusTender names, tables, currency or wording in code, prompts or tests'
-  shared fixtures. Put them in `datasets/<name>/`. The test database comes from
+  shared fixtures. Put them in a Dataset (`../datasets/<name>/`); tests load the frozen `agent/tests/fixtures/austender/`. The test database comes from
   `austender.testing.build_test_db` (ADR 0010). That's the one allowed dependency on `../austender/`.
 - **Models.** Live calls use `meta/muse-spark-1.3` or Muse Wonder (`meta/muse-wonder-1.0`), no
   other models (ADR 0030, accepted 2026-11-04). Wonder may be the agent's `MODEL` when configured,

@@ -98,7 +98,7 @@ saved Conversations hold questions and model history.
 ```toml
 [[workspace]]
 name = "austender"                       # [a-z0-9][a-z0-9_-]*, unique; the URL segment
-dataset_dir = "explorer/datasets/austender"  # relative to the repo root, or absolute
+dataset_dir = "datasets/austender"  # relative to the repo root, or absolute
 dsn_env = "AUSTENDER_DATABASE_URL"       # a variable in the root .env, never the DSN itself
 model = "meta/muse-spark-1.3"            # optional overrides (G14):
 # reasoning_effort, sql_timeout_ms, sql_row_cap

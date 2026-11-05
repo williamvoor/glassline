@@ -200,7 +200,7 @@ steps, so they have extra points: use whichever fill the time, in any order. The
 
 # Part 2: asking questions in austender
 
-Once the austender Workspace is open. The questions come from `explorer/datasets/austender/`:
+Once the austender Workspace is open. The questions come from `datasets/austender/`:
 its examples, its Boards, and its reviewed test scenarios (`scenarios.toml`), so each has a
 checked reference answer. Type them as written: some wordings were tuned (see "Avoid" below).
 

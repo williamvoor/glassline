@@ -1687,7 +1687,7 @@ Phase 2 by about 11-08. Judge calibration (your 50 labels) by about 11-12. Gener
 - **Q1. Spark Open drafts the schema bank, and the user skims it.** Provenance is
   `model:<spark-open id>`. Code validates the bank's structure. The slice's intents come from the
   same pipeline, using the held-out domains, and the user reviews them (`reviewed: true`).
-  The explorer's dataset comments (`../explorer/datasets/*`) are never a source: the bootstrap
+  The explorer's dataset comments (`../datasets/*`) are never a source: the bootstrap
   writes them with Muse Wonder, a hosted Model API model.
 - **Q2. Glimmer base writes the slice's references, and the user picks and edits them.** For
   each slice intent: Glimmer base + 3 + grammar, best-of-8, through validator layers 1–3. The user

@@ -105,6 +105,21 @@ def test_missing_dataset_dir_is_a_config_error(tmp_path):
         load_settings(env_for(tmp_path, DATASET_DIR="datasets/nope"), tmp_path)
 
 
+def test_dataset_dir_accepts_an_absolute_path(tmp_path):
+    ds = write_dataset(tmp_path / "elsewhere")
+    other_root = tmp_path / "root"
+    other_root.mkdir()
+    assert load_settings(env_for(tmp_path, DATASET_DIR=str(ds)), other_root).dataset_dir == ds
+
+
+def test_dataset_dir_accepts_a_home_relative_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ds = write_dataset(tmp_path / "mine")
+    other_root = tmp_path / "root"
+    other_root.mkdir()
+    assert load_settings(env_for(tmp_path, DATASET_DIR="~/mine/datasets/demo"), other_root).dataset_dir == ds
+
+
 # Regression: an unset DATASET_DIR fell back to the AusTender dataset (code must be dataset-agnostic).
 @pytest.mark.parametrize("value", [None, "", "  "])
 def test_dataset_dir_is_required(tmp_path, value):
@@ -120,7 +135,7 @@ def test_settings_repr_hides_the_dsn(tmp_path):
 
 # D3
 def test_committed_dataset_loads():
-    s = load_settings({**BASE_ENV, "DATASET_DIR": "datasets/austender"}, EXPLORER_ROOT)
+    s = load_settings({**BASE_ENV, "DATASET_DIR": "agent/tests/fixtures/austender"}, EXPLORER_ROOT)
     assert s.dataset.name == "austender"
     assert s.dataset.allowed_schemas == ("mart",)
     assert (s.dataset.currency.code, s.dataset.currency.symbol) == ("AUD", "$")
@@ -141,7 +156,7 @@ def _drill_hints(notes: str) -> str:
 async def test_committed_drill_hints_name_real_tables_and_columns(ro_pool):
     from explorer_agent.schema import SchemaCatalog
 
-    s = load_settings({**BASE_ENV, "DATASET_DIR": "datasets/austender"}, EXPLORER_ROOT)
+    s = load_settings({**BASE_ENV, "DATASET_DIR": "agent/tests/fixtures/austender"}, EXPLORER_ROOT)
     hints = _drill_hints(s.dataset.notes)
     tables = {f"{t.schema}.{t.name}": {c.name for c in t.columns} for t in await SchemaCatalog(ro_pool, ["mart"]).objects()}
     names = re.findall(r"`([^`]+)`", hints)

@@ -22,7 +22,7 @@ connects these parts to `llm.py`, `prompt.py` and `python -m explorer_agent`.
 
 ## Files
 
-Dataset (`explorer/datasets/austender/`, new, committed):
+Dataset (`explorer/datasets/austender/`, new, committed; moved to `datasets/austender/` at the repo root by ADR 0045, with a frozen test copy in `agent/tests/fixtures/austender/`):
 - `dataset.toml`: exactly the parent §7 example.
 - `notes.md`: hand-written guidance for the model. It has a few short bullets and repeats nothing
   the `mart` comments already say. It covers:
@@ -177,7 +177,7 @@ Run with `cd explorer/agent && uv run pytest`.
 |---|---|---|
 | D1 | Defaults per parent §7; `REASONING_EFFORT=""` → `None`; bad `FORMAT`, missing `DATABASE_URL`, non-positive ints → `ConfigError` | `test_config.py` (parametrized) |
 | D2 | Missing `dataset.toml` / notes / glossary, empty or invalid `allowed_schemas` → `ConfigError` naming the file or key; no env value appears in any message | `test_config.py` |
-| D3 | The committed `datasets/austender` loads: name `austender`, schemas `("mart",)`, currency `AUD`/`$` | `test_config.py::test_committed_dataset_loads` |
+| D3 | The frozen `tests/fixtures/austender` copy loads: name `austender`, schemas `("mart",)`, currency `AUD`/`$` | `test_config.py::test_committed_dataset_loads` |
 | D4 | Guard accepts plain `SELECT`, `WITH`, CTE names, unqualified aggregate functions, schema-qualified `mart.*` | `test_guard.py` (parametrized) |
 | D5 | Guard rejects every case in parent §10 "SQL guard", each with a message that says what to fix | `test_guard.py` (parametrized) |
 | D6 | Runner on the seed: a valid query returns typed columns and JSON-safe rows; `row_cap=2` → 2 rows, `truncated` | `test_sql.py` (db) |

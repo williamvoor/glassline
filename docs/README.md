@@ -23,17 +23,13 @@ do not override current specifications.
 
 ## Authority and implementation status
 
-`explorer/SPEC.md` is approved and takes precedence over `explorer/BUILD_PROMPT.md`, the
-original brief. Later amendments explicitly supersede earlier sections: the initial chat
-scope is not the current Boards/Controls/tab design. `austender/SPEC.md` defines database
-behavior. VicProp's spec remains labelled draft. Glimmer's spec is a chronological record
-whose later amendments supersede its opening milestone draft.
+Explorer’s approved SPEC takes precedence over its original BUILD_PROMPT. Dated amendments
+supersede earlier sections. VicProp’s spec remains labelled draft; Glimmer’s spec is a
+chronological record whose latest sections apply.
 
-ADRs explain decisions and alternatives. Read their status before treating them as settled:
-for example, ADR 0020 is superseded by 0030; ADR 0025 and 0031 are proposals. “Accepted” or
-“approved” records a design decision, not necessarily completed implementation. Check build
-notes, code, and tests when that distinction matters. READMEs describe the implementation
-and operational workflow and should be updated when those change.
+Read ADR status before relying on it: 0020 is superseded by 0030, 0025 by 0034, and the
+0031/0042 serving integration was stopped. An accepted design does not prove implementation;
+check code and tests. READMEs describe current setup and operation.
 
 ## Architecture decision index
 
@@ -64,8 +60,13 @@ and operational workflow and should be updated when those change.
 - [0029 — Bound parameters for Control re-queries](adr/0029-controls-re-query-in-place-through-bound-parameters.md)
 - [0030 — Configured Wonder in the Explorer request path](adr/0030-muse-wonder-allowed-in-the-explorers-request-path.md)
 - [0032 — A second bootstrap loop drafts Boards](adr/0032-boards-are-drafted-in-a-second-bootstrap-loop.md)
+- [0039 — Workspaces share one agent process](adr/0039-workspaces-are-sub-apps-of-one-agent-process.md)
+- [0040 — Saved Conversations keep SQL, not rows](adr/0040-saved-conversations-keep-sql-not-rows.md)
+- [0041 — Bootstrap becomes Settings](adr/0041-bootstrap-becomes-the-explorers-settings.md)
+- [0044 — New Workspace wizard](adr/0044-new-workspace-is-a-wizard-with-inline-cards-and-model-chips.md)
+- [0045 — Datasets are deployment data](adr/0045-datasets-are-deployment-data-not-part-of-the-explorer.md)
 
-### A2UI evaluation, training, and proposed integration
+### A2UI evaluation, training, and stopped integration
 
 - [0003 — Answer-only SFT targets](adr/0003-answer-only-sft-targets.md)
 - [0004 — Family-based splits](adr/0004-splits-by-gallery-family.md)
@@ -75,8 +76,12 @@ and operational workflow and should be updated when those change.
 - [0014 — Brief plus Result schemas as Glimmer input](adr/0014-glimmer-input-is-a-brief-plus-result-schemas.md)
 - [0015 — Separate SFT trainer environment](adr/0015-our-own-sft-loop-in-a-separate-trainer-project.md)
 - [0021 — Name-blind slot scoring](adr/0021-name-blind-slot-score-uses-placeholders.md)
-- [0025 — Scoped Spark Open data work; proposed](adr/0025-muse-spark-open-only-for-glimmer-tune-data-work.md)
-- [0031 — Spark Brief / Glimmer Surface split; proposed](adr/0031-spark-briefs-glimmer-writes-the-surface-behind-a-setting.md)
+- [0025 — Original Spark Open boundary; superseded by 0034](adr/0025-muse-spark-open-only-for-glimmer-tune-data-work.md)
+- [0031 — Spark Brief / Glimmer Surface split; stopped](adr/0031-spark-briefs-glimmer-writes-the-surface-behind-a-setting.md)
+- [0033 — Distilled and filtered training data](adr/0033-glimmer-training-data-is-distilled-and-filtered.md)
+- [0034 — Spark Open may teach and judge](adr/0034-muse-spark-open-may-teach-and-judge-glimmer-training-data.md)
+- [0038 — Gallery dev plus a held-out Explorer slice](adr/0038-the-v2-swap-in-gate-is-gallery-dev-plus-a-held-out-explorer-slice.md)
+- [0042 — Two Glimmer serving setups; stopped](adr/0042-two-glimmer-setups-s225-alone-and-base-plus-3.md)
 
 ## Evidence and history
 
@@ -102,11 +107,7 @@ in reports. Link related documents rather than copying long contracts into sever
 When behavior changes, update the relevant README and spec together; mark superseded decisions
 and distinguish proposals from implemented features.
 
-There is no remote issue tracker. Create `issues/<N>.md` using the next free number, starting
-with `# <N>. <title>` and a status/opened/source line. Include Problem, Evidence, Options, and
-Unknown or Decision needed as applicable. Reference code symbols rather than line numbers.
-When fixed, record `fixed in <commit>` and the relevant amendment or ADR. See the root
-[AGENTS.md](../AGENTS.md#issues) for the exact format.
+Issues live in `issues/<N>.md`; follow the [root issue format](../AGENTS.md#issues).
 
 Do not put credentials, secret-bearing DSNs, full model histories, or raw private data into
 documentation. Use placeholders for operational examples and review generated artifacts

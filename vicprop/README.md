@@ -97,35 +97,30 @@ does not change an existing database password; coordinate role and settings chan
 ## How the explorer connects
 
 The explorer uses the read-only role `explorer_ro` (`SELECT` on schema `mart` only),
-configured in `../explorer/datasets/vicprop/dataset.toml`. The agent's only data
-dictionary is the `COMMENT ON` text on the `mart` tables and columns (see
-`migrations/0002_mart.sql`).
+with allowed schemas configured in `../datasets/vicprop/dataset.toml`. The Data dictionary
+combines database comments (`migrations/0002_mart.sql`) with the configured
+`../datasets/vicprop/comments.toml` overlay, whose descriptions take precedence.
 
 Set these values in the repository root `.env`, replacing the password placeholder with
 `vicprop/.env`'s `EXPLORER_RO_PASSWORD` (URL-encoded where necessary):
 
 ```dotenv
 DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
-DATASET_DIR=datasets/vicprop
+DATASET_DIR=../datasets/vicprop
 ```
 
 Configure `META_API_KEY` and the serving model as described in
 [Explorer's setup](../explorer/README.md#run-against-a-real-dataset). The loader login owns the
 schemas and performs writes; Explorer must use the separate `explorer_ro` login. Dataset
 notes, glossary, examples, optional overlays, and Boards live under
-[`../explorer/datasets/vicprop/`](../explorer/datasets/vicprop/).
+[`../datasets/vicprop/`](../datasets/vicprop/).
 
-## Layout
+## Source and implementation
 
-- `houses-by-suburb-2015-2025.xlsx` — the committed source workbook (manual download;
-  `land.vic.gov.au` blocks scripts with HTTP 403). Source: Victorian Government (land.vic.gov.au), licensed CC BY 3.0 AU (https://creativecommons.org/licenses/by/3.0/au/); credit is also in the root `NOTICE`.
-- `migrations/` — plain SQL, applied in order by our own runner (`src/vicprop/db.py`).
-- `src/vicprop/loader.py` — workbook parse plus `load` (refill `mart` in one transaction).
-- `src/vicprop/testing.py` — `build_test_db(dsn)` for the explorer's tests.
-
-Also see `src/vicprop/config.py` for environment/path handling, `cli.py` for commands, `db.py`
-for roles/migrations, and `docker-compose.yml` for the database and named volume. `ops` stores
-applied migrations. There is no `raw` or `core` schema in this project.
+The committed workbook is from the Victorian Government ([land.vic.gov.au](https://land.vic.gov.au)),
+licensed under [CC BY 3.0 AU](https://creativecommons.org/licenses/by/3.0/au/); see the root
+[NOTICE](../NOTICE). `loader.py` parses and loads it; `db.py` manages roles and checksum-verified
+SQL migrations. `ops` stores migration history.
 
 ## Tests and schema changes
 
@@ -144,9 +139,7 @@ available integration helper: it creates roles, migrates, and loads the committe
 into an empty database supplied by the caller. Explorer's current default test dependency
 is AusTender; the VicProp helper is not automatically selected by changing `DATASET_DIR`.
 
-Never edit an applied migration; add a new numbered file. Every mart table/column needs a
-`COMMENT ON` explaining its meaning to the agent. Tests enforce a 12,000-character total
-comment budget. Keep workbook parsing deterministic and preserve the missing-value rules.
+See [AGENTS.md](AGENTS.md) for migration, comment-budget and deterministic parsing rules.
 
 ## Troubleshooting
 

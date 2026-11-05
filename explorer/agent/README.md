@@ -9,26 +9,24 @@ paths, prerequisite versions, Dataset preparation, and a complete stub or real s
 
 ## Run
 
+Configure a database and root `.env` using the [Explorer setup](../README.md#run-against-a-real-dataset)
+or [Workspace setup](../bootstrap/README.md#setup-and-browser-workflow). Then, from `explorer/agent/`:
+
 ```bash
-uv sync
-cp ../.env.example ../../.env    # only if absent; otherwise edit the existing root .env
-uv run python -m explorer_agent  # prints "explorer: listening on http://127.0.0.1:10002"
+uv sync --locked
+uv run python -m explorer_agent
 ```
 
-Run this block from `explorer/agent/`. Before starting, configure `META_API_KEY`, the read-only
-`DATABASE_URL`, and matching `DATASET_DIR`, and prepare/load that Dataset's database. See the
-parent guide for the exact sequence; this command does not create a database.
+Single-Dataset startup checks the read-only login, Boards and prompt; invalid configuration
+exits 1. Workspace mode checks each Workspace separately and marks failures unavailable.
+Settings come from root `.env` (or `EXPLORER_ENV_FILE`), with exported variables taking precedence.
 
-Startup checks that the login is read-only, validates configured Boards, and builds the system prompt once. It then serves on
-`AGENT_HOST:AGENT_PORT`. Any configuration or database problem prints one `explorer: …` line and
-exits 1.
+Use `../run.sh --real` for the agent and client together, including Settings in Workspace mode.
+For a stub agent without a model or database:
 
-- `.env` is read from the repo root, or from the path in `EXPLORER_ENV_FILE`. It never
-  overrides variables already set. All settings are listed in `../.env.example`.
-- The client (`../client`) calls the agent directly (ADR 0007). For a UI without a model or
-  database, use the stub server: `uv run python -m explorer_agent.testing.stub_server --port 10002`.
-
-To run it with the client in one command, use `../run.sh --real`.
+```bash
+uv run python -m explorer_agent.testing.stub_server --port 10002
+```
 
 ### Example questions
 
@@ -63,7 +61,8 @@ uv run pytest -m live_db         # checks against the loaded dataset database, r
 UPDATE_SNAPSHOTS=1 uv run pytest tests/test_prompt.py   # after a deliberate system prompt change
 ```
 
-Tests never call a model or the network. The model is `testing/stub_model.py`, and the database
+Ordinary tests stub model calls and external APIs. `live_db` deliberately reads the configured
+database. The stub model is `testing/stub_model.py`, and the database
 is built by `austender.testing.build_test_db` (ADR 0010).
 
 ## Logs

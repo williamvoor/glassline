@@ -9,18 +9,14 @@ The implemented training target is the **generic A2UI v0.9 basic catalog**, rath
 Explorer's Result-backed Macros. This project does not ingest a database or write SQL for
 Explorer. Muse Glimmer is used only to generate A2UI.
 
-**Approach v2 (2026-11-04).** Runs 1 and 2 trained on template and skeleton data, and that
-plateaued on gallery dev. The restart distills candidates from a teacher and filters them
-through a layered validator ([brief](docs/distill_restart_prompt.md), SPEC "Approach v2").
-The template and synthetic generators are in `archive/` ([cleanup plan](docs/cleanup-plan.md));
-tag `pre-distill-v1` is the last commit before that.
+**Approach v2:** distill candidates from a teacher and filter them. Teacher measurements,
+intent generation, an Explorer dev slice, layered validation/rendering and judge-calibration
+tools are implemented. The distilled training set is still to be built. Runs 1 and 2’s
+template/synthetic generators are retired in `archive/`; see the [restart brief](docs/distill_restart_prompt.md).
 
-Read [CONTEXT.md](CONTEXT.md) for Seed, Family, Case, and Fingerprint;
-[AGENTS.md](AGENTS.md) for change rules; and [SPEC.md](SPEC.md) for the behavioral contract.
-The spec is a chronological record: later amendments supersede its opening milestone-2a
-draft. Its proposed run 3, Brief → Macro Surface track is not approved or implemented as the
-Explorer serving path. Current run-2 evidence and open decisions are in the
-[decision memo](docs/run2-decision-memo-20261104.md), not a promise of production deployment.
+Use [CONTEXT.md](CONTEXT.md) for vocabulary, [SPEC.md](SPEC.md) for the latest phase/status,
+and [AGENTS.md](AGENTS.md) for change rules. The proposed Explorer serving split was stopped;
+Explorer continues to generate Surfaces with its answer model.
 
 ## Architecture
 
@@ -58,12 +54,15 @@ the harness environment instead of importing its dependencies.
 | `a2ui_eval/checkpoints.py` | Dev/test prompt exports, checkpoint scoring, paired test comparison |
 | `a2ui_eval/grammar.py` | Catalog-derived Express grammar with Glimmer channel framing |
 | `a2ui_eval/review.py`, `review/` | Python review server and Vite + Lit UI |
-| `a2ui_eval/teacher.py`, `llm_call.py` | Spark Open runner (ADR 0025 baseline; Phase 1 teacher measurement, ADR 0034) |
+| `a2ui_eval/teacher.py`, `llm_call.py`, `phase1.py` | Teacher sampling and measurement |
+| `a2ui_eval/intents/` | Intent generation, checks and held-out Explorer slice |
+| `a2ui_eval/validate.py`, `render.py` | Layered candidate validation and browser rendering |
+| `a2ui_eval/judge.py`, `data/judge/` | Human labelling, judge calibration and agreement reports |
 | `catalogs/`, `seeds/gallery/` | Vendored catalogs and 43 verbatim upstream gallery Seeds |
 | `data/splits.yaml` | Family split assignments (and the run 2 Skeleton splits, history) |
 | `data/system_prompt.txt` | Frozen prompt used by training and inference |
 | `data/dev/`, `data/test/` | Frozen gallery Cases; the test split is held for final evaluation |
-| `data/fewshot3.jsonl` | The 3 frozen few-shot examples of base + 3 (the launch default) |
+| `data/fewshot3.jsonl` | The 3 frozen few-shot examples for base-model evaluation |
 | `data/intents_draft.jsonl` | History: how the dev/test intents were reviewed |
 | `archive/` | Retired template and synthetic generators, their data and tests; not imported |
 | `trainer/` | Independent Python project for prepare/train/sample |
@@ -142,8 +141,8 @@ cd ..
 uv run python -m a2ui_eval.review --port 8767
 ```
 
-Open **http://127.0.0.1:8767**. The chosen port avoids the bootstrap server's default 8765
-and wrapper's 8766. The review server's own default is 8765 if `--port` is omitted.
+Open **http://127.0.0.1:8767**. The explicit port avoids the bootstrap server’s default 8765;
+the review server also defaults to 8765 if `--port` is omitted.
 Default mode edits intent text and review flags in `data/intents_draft.jsonl`.
 
 To review rows from any cases file, use
@@ -153,35 +152,10 @@ alongside scores unless overridden. Build `review/dist` again after UI changes.
 
 ## Trainer and checkpoint scoring
 
-The trainer is separate because its Fireworks training SDK/cookbook environment differs from
-the compiler/scorer environment (ADR 0015). Do not install trainer dependencies into the
-Explorer agent or the main harness environment. Setup, commands, and paid-command
-boundaries are in the [trainer README](trainer/README.md).
-
-After exporting training rows and dev prompts, run from `glimmer-tune/trainer/`:
-
-```bash
-uv run python -m glimmer_trainer --help
-uv run python -m glimmer_trainer prepare
-uv run python -m glimmer_trainer train
-```
-
-`prepare` checks rendered data/token lengths and reports it without opening a remote training
-session. `train` without `--launch` also validates and reports, then exits without launching.
-Both expect `../exports/sft_mix.jsonl`, `../exports/sft_dev.jsonl`, and the frozen prompt by
-default; flags can select other files. The run 2 `sft_mix.jsonl` is retired (`archive/exports/`,
-ignored), so pass the v2 export explicitly. Tokenizer loading can require network access.
-
-Live `train --launch --run-id NAME` and `sample` require explicit authorization under this
-project's instructions. Sampling is billed; confirm the current service terms and cost
-before remote work. Commands do not automatically load the root `.env`; supply the relevant
-environment or use `uv run --env-file ../../.env …` from `trainer/`. Credentials must never
-appear in source, logs, or committed manifests.
-
-`sample` requires `--run`, `--ckpt`, `--cases`, and `--out`, supports an optional grammar and
-budget, and refuses to overwrite predictions. Use one worker when measuring latency so
-concurrent requests do not distort shared-pool queueing. Run directories contain manifests,
-checkpoint identities, predictions, and score artifacts; they are ignored by Git.
+The [trainer](trainer/README.md) uses a separate environment for the Fireworks SDK. Its guide
+covers prepare/train/sample, environment loading and paid-command requirements. Export train
+Cases and dev prompts first, and pass the train export with `--train`: the historical default
+`sft_mix.jsonl` is retired.
 
 Score existing predictions from `glimmer-tune/`, without another model call:
 
@@ -204,8 +178,9 @@ rendered review; results also report failure modes and uncertainty.
 - Spark Open may teach, write intents and judge (ADR 0034). An adapter trained on any of its
   output is a Muse Model License Derivative: a product using it must show "Built with Muse
   Spark Open".
-- Reasoning strength is `low` in training rows and normal inference. The spec names one
-  dev-only high-reasoning base-model experiment; do not silently mix its results.
+- Reasoning strength is `low` in training rows and normal inference. Exceptions are the
+  dev-only high-reasoning base-model experiment and Phase 1 teacher measurements at low/medium;
+  training rows remain low.
 - The prompt is frozen. Forcing a new prompt invalidates compatibility with existing adapters
   and requires a deliberate new run rather than an onboarding “fix”.
 - Keep Family splits and fingerprint guards intact. Select checkpoints on dev, then

@@ -15,7 +15,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 SERVER_DIR="$ROOT/explorer/bootstrap/server"
-DATASETS_DIR="$ROOT/explorer/datasets"
+DATASETS_DIR="$ROOT/datasets"
 STEPS=(report draft verify boards export)
 
 usage() {
@@ -30,7 +30,7 @@ Database
   --no-db-start         don't run `docker compose up -d --wait` (database already reachable)
 
 Dataset
-  --name NAME           dataset directory under explorer/datasets (default: <db-dir>)
+  --name NAME           dataset directory under datasets (default: <db-dir>)
   --schemas A,B         draft from these schemas instead of the existing dataset's allowed
                         schemas (required when the dataset directory doesn't exist yet)
   --target toml|sql     comments as a comments.toml overlay or comments.sql (default: toml)
@@ -158,11 +158,11 @@ if [[ -n "$SCHEMAS" ]]; then
 elif [[ -f "$DEST/dataset.toml" ]]; then
   SELECT_ARGS=(--dataset-dir "$DEST")
 else
-  die "explorer/datasets/$NAME doesn't exist yet: pass --schemas"
+  die "datasets/$NAME doesn't exist yet: pass --schemas"
 fi
 FORCE_ARGS=()
 [[ -d "$DEST" ]] && FORCE_ARGS=(--force)
-(( ${#KEEP_FILES[@]} == 0 )) || [[ -d "$DEST" ]] || die "--keep needs an existing explorer/datasets/$NAME"
+(( ${#KEEP_FILES[@]} == 0 )) || [[ -d "$DEST" ]] || die "--keep needs an existing datasets/$NAME"
 
 # --- work dir ---
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -212,15 +212,15 @@ echo "  comments  : $TARGET   Boards: $([[ $NO_BOARDS == 1 ]] && echo skipped ||
 echo "  steps     : ${STEPS[*]:$FROM_I:$((TO_I - FROM_I + 1))}"
 echo "  work dir  : $WORK_DIR"
 if want export && [[ -d "$DEST" ]]; then
-  echo "  export    : --force into explorer/datasets/$NAME (replaced files go to a .${NAME}.bak-* backup)"
+  echo "  export    : --force into datasets/$NAME (replaced files go to a .${NAME}.bak-* backup)"
   [[ $NO_BOARDS == 1 ]] || echo "              boards/ is replaced as a whole"
   (( ${#KEEP_FILES[@]} == 0 )) || echo "              then restored from the backup: ${KEEP_FILES[*]}"
   if [[ -f "$DEST/scenarios.toml" ]]; then
     echo "  note      : scenarios.toml stays, but Board scenarios name Controls and row text;"
     echo "              new Boards may break them. Rerun the scenarios after review."
   fi
-  if git -C "$ROOT" status --porcelain -- "explorer/datasets/$NAME" | grep -q .; then
-    echo "  warning   : explorer/datasets/$NAME has uncommitted changes (they'll only be in the backup)"
+  if git -C "$ROOT" status --porcelain -- "datasets/$NAME" | grep -q .; then
+    echo "  warning   : datasets/$NAME has uncommitted changes (they'll only be in the backup)"
   fi
 fi
 if (( ! YES && ! DRY_RUN )); then
@@ -304,12 +304,12 @@ fi
 
 if want export; then
   (( DRY_RUN )) || [[ -f "$DRAFT" ]] || die "no $DRAFT"
-  EXPORT_ARGS=(--draft "$DRAFT" --name "$NAME" --target "$TARGET" --timeout-ms "$TIMEOUT_MS")
+  EXPORT_ARGS=(--draft "$DRAFT" --name "$NAME" --target "$TARGET" --root "$DATASETS_DIR" --timeout-ms "$TIMEOUT_MS")
   if (( ! NO_BOARDS )); then
     (( DRY_RUN )) || [[ -f "$BOARDS" ]] || die "no $BOARDS (run the boards step, or pass --no-boards)"
     EXPORT_ARGS+=(--boards "$BOARDS")
   fi
-  say "Export to explorer/datasets/$NAME"
+  say "Export to datasets/$NAME"
   out="$WORK_DIR/export.out"
   if (( DRY_RUN )); then
     boot export "${EXPORT_ARGS[@]}" "${FORCE_ARGS[@]+"${FORCE_ARGS[@]}"}"
@@ -332,8 +332,8 @@ if want export; then
         echo "  note: the old dataset.toml may not point at the new comments file; check its comments setting"
       fi
     fi
-    say "Changes in explorer/datasets/$NAME"
-    git -C "$ROOT" status --short -- "explorer/datasets/$NAME"
+    say "Changes in datasets/$NAME"
+    git -C "$ROOT" status --short -- "datasets/$NAME"
     echo
     echo "Next: review the diff, then open it with: (cd explorer && ./run.sh --real)"
     [[ -f "$DEST/scenarios.toml" ]] && echo "      and rerun its scenarios before committing."

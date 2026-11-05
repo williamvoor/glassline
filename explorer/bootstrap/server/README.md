@@ -1,31 +1,25 @@
 # explorer-bootstrap
 
-A dev tool for adding a Postgres dataset to the explorer. Spec: [`../SPEC.md`](../SPEC.md).
-The **report** shows comment coverage, planner statistics, min/max and the size of the Dataset
-context; it calls no model. The **draft** step asks a model (Muse Wonder by default) to draft the
-dataset files, the missing comments and checkable claims, which you review and **export** to a
-new dataset directory. Nothing here writes to the database.
-
-See the [bootstrap guide](../README.md) for the complete architecture and Dataset-plus-Boards
-workflow. Board drafting/checking/preview/export is available through the Python library,
-CLI, and HTTP API; the browser UI currently exposes Dataset drafting and review only.
+CLI and HTTP API for [Dataset bootstrap](../README.md). The browser workflow is Explorer
+Settings, including Board drafting and export. This guide covers the CLI; all commands run
+from `explorer/bootstrap/server/`.
 
 ## Setup
 
 ```bash
-uv sync
+uv sync --locked
 ```
 
-Set `BOOTSTRAP_DATABASE_URL` in the repo root `.env` (see `explorer/.env.example`)
-or in the environment. Use a read-only login, such as AusTender's `explorer_ro`. The report
-makes every session read-only with a statement timeout anyway, but a read-only login is the
-safer default.
+Set `BOOTSTRAP_DATABASE_URL` to a read-only login in the root `.env` or environment.
+Model commands also require `META_API_KEY`. `BOOTSTRAP_ENV_FILE` selects another settings
+file; existing environment values win. See [the settings example](../../.env.example).
+`draft` and `boards` call the model immediately, without an interactive confirmation.
 
 ## Report
 
 ```bash
 # An existing dataset: its allowed schemas, and the exact context size
-uv run python -m explorer_bootstrap report --dataset-dir ../../datasets/austender
+uv run python -m explorer_bootstrap report --dataset-dir ../../../datasets/austender
 
 # A database with no dataset yet: the context size covers the schema section only
 uv run python -m explorer_bootstrap report --schemas public,stats --json report.json
@@ -53,33 +47,23 @@ Known limits: min/max runs one query per table, so one slow column marks all of 
 ranges "skipped", and one column the login can't read marks them "error". NaN and Infinity
 show as null. Min/max of high-precision `numeric` columns are JSON numbers and can lose digits.
 
-## The UI
-
-```bash
-cd ../ui && npm ci && npm run build && cd ../server
-uv run python -m explorer_bootstrap serve      # http://127.0.0.1:8765/
-```
-
-Connect (pick a server-side dataset, or schemas) → Report (coverage, statistics, a rough cost ceiling, "Draft with …" and
-its progress) → Review (edit the files and comments, re-run or dismiss claims, export). The
-server binds 127.0.0.1 only, keeps one draft in memory (a restart loses it; the CLI's
-`draft.json` is the durable route), and refuses requests with another `Host` or a non-JSON POST,
-so other web pages can't drive it.
-
 ## Draft, verify, export
 
 ```bash
 # 1. Draft: runs the report, then the model; checks every claim; writes draft.json
-uv run python -m explorer_bootstrap draft --schemas public --out draft.json [--model meta/muse-spark-1.3] [--effort low]
+uv run python -m explorer_bootstrap draft --schemas public --out draft.json
 
 # 2. Review draft.json by hand: edit files and comments, set "accepted": true on comment
 #    rewrites you want, fix a claim's sql/expect, or set "dismissed": true. Then recheck:
 uv run python -m explorer_bootstrap verify --draft draft.json
 
-# 3. Export to explorer/datasets/<name>/ with the comments as an overlay or as SQL
-uv run python -m explorer_bootstrap export --draft draft.json --name vicprop --target toml
-uv run python -m explorer_bootstrap export --draft draft.json --name vicprop --target sql
+# 3. Export with a comment overlay (default root: ~/.glassline, created if missing)
+uv run python -m explorer_bootstrap export --draft draft.json --name my_dataset --target toml
 ```
+
+Use `--root /absolute/path/to/datasets` to export elsewhere. Add `--model meta/muse-spark-1.3`
+or `--effort low` to a drafting command to override its defaults. Choose `--target sql` instead
+of `toml` to export comments for a database owner to apply.
 
 - The model sees the report and can run read-only `SELECT`s through the explorer's SQL guard,
   limited to the chosen schemas. It hands in the draft with a `submit_draft` tool call (ADR 0023).
@@ -102,38 +86,25 @@ uv run python -m explorer_bootstrap export --draft draft.json --name vicprop --t
   `src/explorer_bootstrap/prices.toml`. Reasoning tokens are assumed to be billed inside the
   completion tokens (the OpenAI convention; not confirmed for Meta).
 
-### Boards after Dataset review
+## Boards after Dataset review
 
-From `explorer/bootstrap/server/`, after reviewing `draft.json`:
+To include Boards, run these commands instead of the export above:
 
 ```bash
 uv run python -m explorer_bootstrap boards --draft draft.json --out boards.json
+# Review/edit boards.json before export; export rechecks the Boards.
 uv run python -m explorer_bootstrap export --draft draft.json --boards boards.json --name my_dataset --target toml
 ```
 
-The first command calls the model in a separate loop, validates TOML using the agent's Board
-parser/checks, and runs query/table previews. Review its output before export. Export rechecks
-the Boards against the Dataset and database. When `--force` replaces Boards, it replaces the
-set and backs up old files. See [SPEC phase 3](../SPEC.md#phase-3-boards-explorer-spec-18-slice-4)
-for the HTTP API and validation contract.
+The second model loop drafts an Explorer Board and up to `BOOTSTRAP_MAX_ENTITY_BOARDS`
+Entity Boards (default 3), guided by `../templates/`. Agent checks validate the Boards;
+model-free cold previews report query rows/timing and whether each Visual renders.
+`BOOTSTRAP_BOARD_PREVIEW_ROWS` (default 5) limits preview rows. Review the full rendering
+in Explorer after export.
 
-## Boards (phase 3)
-
-After the dataset draft, a second loop drafts `boards/*.toml` (the Explorer Board and up to
-`BOOTSTRAP_MAX_ENTITY_BOARDS` Entity Boards, default 3) from `../templates/`. Each Board is checked
-by the agent's own startup check and previewed with one cold render (per-query rows and ms, per
-Visual drawn / No rows / failed, against the 1.5 s target). No model runs in the preview.
-
-```bash
-uv run python -m explorer_bootstrap boards --draft draft.json --out boards.json [--model M] [--effort E]
-# edit boards.json by hand if needed, then (the Boards are re-checked first):
-uv run python -m explorer_bootstrap export --draft draft.json --boards boards.json --name vicprop --target toml
-```
-
-In the UI, Review has a "Boards" button. Export stays on Review and is blocked while a Board has
-problems. With `--force`, an existing `boards/` is replaced whole and the old one is kept in the
-backup. Open the exported Dataset with `./run.sh --real` to see the Boards before committing.
-`BOOTSTRAP_BOARD_PREVIEW_ROWS` (5) sets the rows shown per query.
+When exporting with both `--boards` and `--force`, the old Board set is backed up and replaced whole.
+Without `--boards`, existing Boards are left alone. See [SPEC phase 3](../SPEC.md#phase-3-boards-explorer-spec-18-slice-4)
+for validation and API details.
 
 To regenerate a whole Dataset and its Boards from one of the repo's databases, the repo root's
 `./regen_dataset.sh <db-dir>` runs report → draft → verify → boards → export with review pauses

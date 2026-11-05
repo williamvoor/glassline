@@ -18,11 +18,9 @@ behavioral contract. Later dated amendments supersede earlier sections. In parti
 updates the original chat architecture with Boards, Controls, Entity Boards, and investigation
 tabs. [BUILD_PROMPT.md](BUILD_PROMPT.md) is the original brief; the spec takes precedence.
 
-The working tree contains the question-answering path, Actions and Drill-downs, Board runtime,
-Controls, Entity Boards, and bootstrap Board drafting/checking through its Python library,
-CLI, and HTTP API. The bootstrap browser UI still follows Connect → Report → Review and does
-not yet expose the Boards step. Runtime model drafting of missing Entity Boards is a later
-slice. The Spark/Glimmer split in §19 and ADR 0031 is a draft, not an implemented serving mode.
+Questions, Boards, Controls, Drill-downs, Workspaces, saved Conversations, and the New Workspace
+wizard are implemented. Runtime drafting of missing Entity Boards remains a later slice.
+The Spark/Glimmer serving split was stopped; the configured answer model writes the Surface.
 
 ## Architecture and request paths
 
@@ -46,7 +44,7 @@ flowchart LR
 ### A typed question
 
 1. The browser sends the question with its A2A context and supported catalog ID. The server
-   creates or resumes an in-memory Conversation.
+   creates or resumes a Conversation, loading saved state in Workspace mode when needed.
 2. The model receives the A2UI rules/catalog, generic instructions, and Dataset context in a
    stable cached prefix, followed by conversation history. The Data dictionary comes from
    database comments with an optional Comment overlay.
@@ -75,32 +73,31 @@ caps, and an in-memory cache bound the work.
 - A Drill-down runs a query supplied ahead of time for that Visual, bound to the clicked row.
 - An Ask consults the model after confirmation; Follow-up buttons also take this path.
 
-Conversations, Results, tabs' server state, and caches are in memory. Restarting the agent
-loses them. This is a local development application without authentication or durable
-Conversation storage; deployment is outside the original v1 scope.
+## Runtime modes
+
+| Mode | Configuration | Conversations |
+|---|---|---|
+| Single Dataset | `DATABASE_URL` and `DATASET_DIR`; leave `EXPLORER_DATA_DIR` unset | In memory; lost on restart |
+| Workspaces | `EXPLORER_DATA_DIR`, an absolute path outside the repo, and named database logins | Saved per Workspace in SQLite; Results retain SQL, with rows fetched again when needed |
+
+Workspace mode ignores the top-level `DATABASE_URL` and `DATASET_DIR`. One agent serves all
+configured Workspaces. Settings supports adding and regenerating them through New Workspace:
+Database → Draft → Review → Boards → Export. See the [setup guide](bootstrap/README.md).
+The application is local and has no authentication.
 
 ## Code map
 
 | Path | Responsibility |
 |---|---|
-| `agent/src/explorer_agent/__main__.py` | Environment loading, database/Board checks, prompt construction, server startup, Board timing command |
-| `agent/src/explorer_agent/server.py`, `executor.py` | Agent card, A2A transport, Conversations, tab and action orchestration |
-| `agent/src/explorer_agent/llm.py` | LiteLLM tool loop, history, time/token accounting, and Repair limits |
-| `agent/src/explorer_agent/sql.py`, `schema.py`, `tools.py` | SQL safety and execution, schema introspection, tool dispatch |
-| `agent/src/explorer_agent/results.py` | Stored Results and JSON-safe values |
-| `agent/src/explorer_agent/ui.py`, `macros.py`, `catalog.py` | Express compilation, Macro expansion, Visual construction, merged catalog |
-| `agent/src/explorer_agent/boards.py` | Board parsing/checking, Controls, bound query execution, cache, rendering |
-| `agent/src/explorer_agent/actions.py`, `drill.py` | Action identity/state, Ask context, Drill queries and prefetch |
-| `agent/src/explorer_agent/prompt.py`, `prompts/` | Stable system prompt and generic instructions |
-| `agent/src/explorer_agent/testing/` | Canned model and stub A2A server |
-| `client/src/app.ts`, `tabs.ts`, `a2a.ts` | Application shell, investigation tabs, A2A wrapper |
-| `client/src/actions.ts`, `controls.ts` | Browser action and Control handling |
-| `client/src/catalog.ts`, `components/`, `vendor/vegachart/` | Lit catalog, DataGrid, SqlDetails, vendored VegaChart |
-| `catalog/` | Shared custom-component JSON schemas |
-| `datasets/<name>/` | Dataset descriptions, notes, glossary, optional overlays, scenarios, and Boards |
-| `bootstrap/` | Separate Dataset report/draft/review/export tool |
-| `specs/` | Detailed contracts for build steps and cross-cutting behavior |
-| `spike/` | Historical feasibility evidence; not application runtime code |
+| `agent/src/explorer_agent/` | A2A server, model tool loop, SQL safety, Macros, Boards, Workspace routing and saved Conversations |
+| `client/src/` | Lit shell, tabs, Actions, Controls and Settings |
+| `catalog/` | Shared custom-component schemas |
+| `../datasets/<name>/` | Owner’s deployment Dataset files and Boards |
+| `bootstrap/` | Dataset reporting, drafting, review and export |
+| `specs/` | Detailed behavioral contracts |
+| `spike/` | Historical feasibility evidence |
+
+The agent module map is in [SPEC §8](SPEC.md); contributor rules are in [AGENTS.md](AGENTS.md).
 
 ## Prerequisites
 
@@ -128,6 +125,9 @@ not answer arbitrary questions using a real Dataset.
 
 ## Run against a real Dataset
 
+These steps use single-Dataset mode. For saved Conversations and your own database, use
+[Workspace setup](bootstrap/README.md#setup-and-browser-workflow).
+
 1. Prepare a database using [VicProp's setup](../vicprop/README.md#setup-and-load) or
    [AusTender's setup](../austender/README.md#setup). VicProp loads a committed workbook and
    needs no external data fetch. AusTender requires a fetch followed by `rebuild` to populate
@@ -143,12 +143,13 @@ not answer arbitrary questions using a real Dataset.
    ```dotenv
    META_API_KEY=<your-meta-api-key>
    MODEL=meta/muse-spark-1.3
+   # EXPLORER_DATA_DIR=~/.glassline/workspaces   # comment it out: when set, the two lines below are ignored
    DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
-   DATASET_DIR=datasets/vicprop
+   DATASET_DIR=../datasets/vicprop
    FORMAT=express
    ```
 
-   For AusTender, use port `5434`, database `austender`, and `DATASET_DIR=datasets/austender`.
+   For AusTender, use port `5434`, database `austender`, and `DATASET_DIR=../datasets/austender`.
    The password is that database project's `EXPLORER_RO_PASSWORD`, not its loader password.
    URL-encode special characters in passwords used in a DSN.
 3. After installing dependencies as above, run:
@@ -163,15 +164,17 @@ a configured Explorer Board appears before the first question. Asking questions 
 configured model. Startup refuses write-capable database logins or invalid Dataset/Board
 configuration.
 
-For separate processes, run `uv run python -m explorer_agent` in `explorer/agent/` and
+For separate processes in **single-Dataset mode**, run `uv run python -m explorer_agent` in `explorer/agent/` and
 `npm run dev` in `explorer/client/`. The browser calls the agent directly; there is no client
-proxy for the Explorer agent.
+proxy for the Explorer agent. For Workspace mode, use `./run.sh --real`, which also starts
+Settings’ API and sets `VITE_WORKSPACES=1` and the matching browser URLs.
 
 ## Configuration
 
 The agent loads the root `.env`, or the file named by `EXPLORER_ENV_FILE`, without overriding
-existing environment variables. `DATASET_DIR` is resolved relative to `explorer/`, regardless
-of the process working directory. Dataset/Board/comment changes require an agent restart.
+existing environment variables. Relative `DATASET_DIR` paths resolve against `explorer/`;
+absolute paths and `~` are supported. Manually edited Dataset files need a restart or
+Workspace reload; Settings export reloads the agent automatically.
 
 | Settings | Role |
 |---|---|
@@ -183,7 +186,8 @@ of the process working directory. Dataset/Board/comment changes require an agent
 | `DRILL_*`, `MAX_DRILLS_PER_SURFACE` | Drill checking and prefetch limits |
 | `BOARD_*`, `MAX_BOARD_CACHE`, `MAX_BOARD_INSTANCES`, `MAX_CONTROL_OPTIONS` | Board concurrency, rows, caching, instances, and Control limits |
 | `AGENT_HOST`, `AGENT_PORT`, `CLIENT_ORIGIN`, `LOG_LEVEL` | Server binding, CORS, and logging |
-| `VITE_AGENT_URL` | Browser build/dev setting; defaults to `http://127.0.0.1:10002` |
+| `EXPLORER_DATA_DIR` | Enables Workspace mode; data directory must be outside the repo |
+| `VITE_AGENT_URL`, `VITE_WORKSPACES`, `VITE_BOOTSTRAP_URL` | Browser agent URL, Workspace mode (`1`), and Settings API URL; set together by `run.sh` |
 
 See [.env.example](.env.example) and [`config.py`](agent/src/explorer_agent/config.py) for
 individual defaults and validation. `run.sh` fixes the client origin/port at 5173 and passes
@@ -191,7 +195,9 @@ matching agent binding settings; choose its agent port with an exported `AGENT_P
 
 ## Add or maintain a Dataset
 
-Keep all Dataset-specific names and behavior in `datasets/<name>/`. `dataset.toml` selects
+Keep Dataset-specific names and behavior in `../datasets/<name>/` or a Workspace under
+`EXPLORER_DATA_DIR`. The bootstrap CLI exports to `~/.glassline` by default; use
+`--root` to export elsewhere (ADR 0045). `dataset.toml` selects
 allowed schemas, context files, currency formatting, and starter questions. Notes explain
 querying rules; the glossary explains domain language. Database `COMMENT ON` text supplies
 the Data dictionary, with `comments.toml` optionally replacing selected descriptions.
@@ -229,7 +235,8 @@ uv run pytest -m live_db
 uv run python -m explorer_agent boards
 ```
 
-The `boards` command validates Boards and times cold rendering of unkeyed Boards. Entity
+The `boards` command uses `DATABASE_URL` and `DATASET_DIR`, even when Workspace mode is
+configured. It validates Boards and times cold rendering of unkeyed Boards. Entity
 Boards are checked but not timed because they require a clicked entity key.
 
 After an intentional prompt change, regenerate prompt snapshots with
@@ -241,20 +248,11 @@ See [`specs/scenarios/SPEC.md`](specs/scenarios/SPEC.md) and
 [`specs/effort-check/SPEC.md`](specs/effort-check/SPEC.md) before using the scripts in
 `agent/scripts/`.
 
-## Safety and maintenance rules
+## Maintenance
 
-The SQL parser guard, read-only role, `READ ONLY` transaction, statement timeout, row cap,
-and schema allowlist work together. Preserve all of them. Database strings reach components
-as text through Macros; chart specifications are built in code. One merged catalog ID must
-match on agent and client, since unsupported components otherwise disappear.
-
-Prompt layers must remain byte-identical across requests/processes for the same configuration.
-Keep dates, request IDs, and other changing values out of the stable prefix. Logs record token
-counts/cache use, timings, SQL, and row counts, not secrets, full prompts, history, or row data.
-
-Keep `litellm==1.106.6`, its required `mcp` workaround, and the shared A2UI SDK pin intact.
-Do not modify the upstream `../a2ui/` clone or load runtime assets from it. Preserve the
-vendored VegaChart license and NOTICE. Read [AGENTS.md](AGENTS.md) before changes.
+Read [AGENTS.md](AGENTS.md) before changes. It covers SQL safety, prompt caching, catalog
+compatibility, dependency pins, secrets and vendored code. Logs record token counts, timings,
+SQL and row counts; see [agent logging](agent/README.md#logs).
 
 ## Troubleshooting
 
