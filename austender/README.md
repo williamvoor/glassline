@@ -7,18 +7,81 @@ Schemas: `raw` (releases as received), `core` (normalised), `mart` (what the exp
 (runs, checkpoints, rejected releases, applied migrations). `core` and `mart` are a pure function of
 `raw`: `rebuild` from the same raw gives identical tables.
 
+## Architecture and boundaries
+
+```mermaid
+flowchart LR
+    API[AusTender OCDS API] --> ING[api.py / ingest.py]
+    ING --> RAW[(raw.release)]
+    RAW --> N[normalise.py]
+    N --> CORE[(core)]
+    CORE --> M[mart.py]
+    M --> MART[(mart)]
+    MART --> RO[Explorer: explorer_ro]
+    ING --> OPS[(ops: runs, checkpoints, rejections)]
+```
+
+The loader writes the database; Explorer reads a curated `mart` schema. There is no model or
+UI in this package. Dataset notes and starter questions belong in
+[`../explorer/datasets/austender/`](../explorer/datasets/austender/), while the table/column
+descriptions are SQL comments in this project's migrations.
+
+`fetch-month` appends raw releases. It does not refresh the explorer-facing tables: run
+`rebuild` after ingestion. Rebuilding uses stored raw releases rather than calling the API.
+There is no automatic incremental update daemon. See [SPEC.md](SPEC.md) for source semantics
+and [AGENTS.md](AGENTS.md) for change rules.
+
+## Prerequisites
+
+Install Python 3.13, `uv`, and Docker with Compose v2. Keep Docker running for setup and
+database tests. Initial dependency/image installation needs network access. Live ingestion
+also needs access to the public AusTender API; tests stub that transport.
+
 ## Setup
 
 ```bash
 cd austender
 cp .env.example .env          # set LOADER_PASSWORD, EXPLORER_RO_PASSWORD, INGEST_USER_AGENT (never commit .env)
-docker compose up -d          # Postgres 18 on host port 5434, named volume austender_pgdata
+docker compose up -d --wait   # Postgres 18 on host port 5434, named volume austender_pgdata
 uv sync
 uv run austender migrate      # creates roles austender_loader and explorer_ro, applies migrations
 ```
 
+Run this block from the repository root; subsequent commands assume `austender/` as the
+working directory. Copy `.env.example` only for first-time setup. If `.env` already exists,
+edit it instead. This is `austender/.env`, separate from the root `.env` used by Explorer.
+
+At this point the schema exists but has no contract data. To load one month deliberately:
+
+```bash
+uv run austender fetch-month 2026-09
+uv run austender rebuild
+uv run austender stats
+```
+
+The fetch calls the live API. Expect `stats` to show raw releases, a completed checkpoint,
+and populated `core`/`mart` tables after rebuilding. This example is a bounded first load;
+the full historical backfill below is a separate operation. `docker compose stop` stops
+the local database while retaining its volume.
+
 `INGEST_USER_AGENT` is required for any command that calls the API (it fails fast if unset). Use something
 descriptive with a contact address, e.g. `glassline-austender/0.1 (research; you@example.org)`.
+
+## Configuration
+
+The CLI loads `austender/.env` without overriding existing environment variables.
+
+| Variable | Default / purpose |
+|---|---|
+| `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB` | `localhost`, `5434`, `austender` |
+| `LOADER_PASSWORD` | Password for `austender_loader`, also used to initialise Compose's database |
+| `EXPLORER_RO_PASSWORD` | Password assigned to `explorer_ro` by `migrate` |
+| `INGEST_USER_AGENT` | Required for API calls; descriptive application/contact string |
+| `INGEST_MIN_INTERVAL_MS` | `1000`; values below 1000 are raised to the required floor |
+
+Compose initialises its database credentials when the volume is first created. Changing a
+password in `.env` alone does not change an existing database role's password. Coordinate
+role changes with the database and the root Explorer DSN rather than deleting the volume.
 
 ## Commands
 
@@ -62,6 +125,10 @@ schema `public`. Its real write barrier is the missing privileges, so the explor
 postgresql://explorer_ro:<password>@localhost:5434/austender
 ```
 
+Put that value in `DATABASE_URL` in the repository root `.env`, with
+`DATASET_DIR=datasets/austender`. URL-encode special characters in the password. Then follow
+[Explorer's real-Dataset setup](../explorer/README.md#run-against-a-real-dataset).
+
 The agent's whole data dictionary is the `COMMENT ON` text of the `mart` tables and columns (about 6.8k
 characters); print it with:
 
@@ -99,6 +166,71 @@ read `mart`. Add the package as an editable path dev-dependency; it needs only `
   Withheld") without an ABN gets `withheld:<notice_id>`, so placeholders never merge into one supplier.
 - `rebuild` empties and refills `mart` with `DELETE` in one transaction, so the explorer keeps reading the
   previous data until it commits.
+
+## Mart tables
+
+| Table | Grain and intended use |
+|---|---|
+| `mart.contract` | One contract notice, including cancelled notices; notice-level details and amendment counts |
+| `mart.contract_supplier` | One non-cancelled contract × supplier; use `value_share` for attributed totals |
+| `mart.supplier` | Supplier identity and aggregate totals |
+| `mart.agency` | Agency identity and aggregate totals |
+| `mart.supplier_fy` | Supplier totals by financial year |
+| `mart.agency_fy` | Agency totals by financial year |
+| `mart.supplier_agency_fy` | Supplier × agency totals by financial year |
+
+Prefer the summary tables for matching aggregate questions. Do not sum `current_value` after
+joining a contract to multiple suppliers; sum the allocated `value_share`. Values are AUD as
+published, with no currency conversion. Financial year follows the original notice's Canberra
+publish date, not an amendment's republishing timestamp.
+
+## Code and data map
+
+| Path | Responsibility |
+|---|---|
+| `src/austender/api.py` | Pagination, serial requests, minimum spacing, retry/backoff |
+| `src/austender/ingest.py` | Canonical payload hashes, deduplication, raw storage, runs/checkpoints |
+| `src/austender/normalise.py` | Release parsing, notice/amendment snapshots, current values, identities |
+| `src/austender/mart.py` | Transactional rebuild and aggregates |
+| `src/austender/abn.py` | ABN validation and supplier/agency name normalisation |
+| `src/austender/db.py` | Connections, role grants, ordered checksum-verified migrations |
+| `src/austender/config.py`, `cli.py` | Environment settings and CLI |
+| `src/austender/testing.py` | Shared disposable-database builder |
+| `migrations/` | Schema, indexes, comments, and subsequent schema changes |
+| `tests/seed/` | Fictional source releases and hand-computed expected totals |
+| `backfill.sh`, `logs/` | Deliberate historical ingestion wrapper and ignored logs |
+
+## Testing and changes
+
+From `austender/`:
+
+```bash
+uv run pytest
+uv run pytest tests/test_api.py
+```
+
+Tests use `httpx.MockTransport` and injected sleeps for API behavior, and Testcontainers
+Postgres 18 for roles, migrations, normalisation, mart totals, and idempotence. They do not
+call the public API or a model. The disposable test database is separate from the Compose
+database; a local backfill is unnecessary for tests.
+
+Never edit an applied migration: the runner stores its SHA-256 and rejects changed files.
+Add a new numbered SQL migration. Every new mart table/column needs an accurate `COMMENT ON`
+because it becomes the model's Data dictionary. The comment budget is tested at 12,000
+characters. Hand-compute seed expectations; do not derive expected totals from the rebuild
+implementation under test. Preserve `build_test_db(dsn)` for Explorer's test dependency.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Authentication or connection failure | Healthy Compose container, port 5434, and loader password matching the existing role |
+| API command rejects configuration | Set `INGEST_USER_AGENT`; this is not needed for local rebuilds/tests |
+| Raw rows exist but Explorer sees no data | Run `rebuild`, then inspect `stats` |
+| Interrupted ingestion | Re-fetch the month, or use `backfill --resume`; stored identical releases deduplicate |
+| Rejected release count rises | Inspect `ops.rejected_release` as the loader; a known release ID changed payload and the stored original was retained |
+| Migration checksum mismatch | Restore the applied migration and add a new migration for the intended change |
+| Explorer rejects the login | Root `.env` must use `explorer_ro`, not `austender_loader` |
 
 ## Data licence and attribution
 

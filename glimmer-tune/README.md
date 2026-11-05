@@ -155,7 +155,8 @@ alongside scores unless overridden. Build `review/dist` again after UI changes.
 
 The trainer is separate because its Fireworks training SDK/cookbook environment differs from
 the compiler/scorer environment (ADR 0015). Do not install trainer dependencies into the
-Explorer agent or the main harness environment.
+Explorer agent or the main harness environment. Setup, commands, and paid-command
+boundaries are in the [trainer README](trainer/README.md).
 
 After exporting training rows and dev prompts, run from `glimmer-tune/trainer/`:
 

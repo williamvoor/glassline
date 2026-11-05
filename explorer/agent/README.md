@@ -4,15 +4,22 @@ The A2A agent behind the explorer: plain-English question → SQL through tools 
 A2UI Surface built from stored Results. `../SPEC.md` is the source of truth. Step specs are in
 `../specs/`.
 
+Start with the [Explorer README](../README.md) for the current architecture, Board/Control
+paths, prerequisite versions, Dataset preparation, and a complete stub or real startup.
+
 ## Run
 
 ```bash
 uv sync
-cp ../.env.example ../../.env    # repo root; set META_API_KEY and DATABASE_URL (the dataset's read-only login)
+cp ../.env.example ../../.env    # only if absent; otherwise edit the existing root .env
 uv run python -m explorer_agent  # prints "explorer: listening on http://127.0.0.1:10002"
 ```
 
-Startup checks that the login is read-only and builds the system prompt once. It then serves on
+Run this block from `explorer/agent/`. Before starting, configure `META_API_KEY`, the read-only
+`DATABASE_URL`, and matching `DATASET_DIR`, and prepare/load that Dataset's database. See the
+parent guide for the exact sequence; this command does not create a database.
+
+Startup checks that the login is read-only, validates configured Boards, and builds the system prompt once. It then serves on
 `AGENT_HOST:AGENT_PORT`. Any configuration or database problem prints one `explorer: …` line and
 exits 1.
 

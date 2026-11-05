@@ -6,6 +6,10 @@ context; it calls no model. The **draft** step asks a model (Muse Wonder by defa
 dataset files, the missing comments and checkable claims, which you review and **export** to a
 new dataset directory. Nothing here writes to the database.
 
+See the [bootstrap guide](../README.md) for the complete architecture and Dataset-plus-Boards
+workflow. Board drafting/checking/preview/export is available through the Python library,
+CLI, and HTTP API; the browser UI currently exposes Dataset drafting and review only.
+
 ## Setup
 
 ```bash
@@ -97,6 +101,46 @@ uv run python -m explorer_bootstrap export --draft draft.json --name vicprop --t
 - Cost per call and in total is printed and stored in `draft.json`; prices are in
   `src/explorer_bootstrap/prices.toml`. Reasoning tokens are assumed to be billed inside the
   completion tokens (the OpenAI convention; not confirmed for Meta).
+
+### Boards after Dataset review
+
+From `explorer/bootstrap/server/`, after reviewing `draft.json`:
+
+```bash
+uv run python -m explorer_bootstrap boards --draft draft.json --out boards.json
+uv run python -m explorer_bootstrap export --draft draft.json --boards boards.json --name my_dataset --target toml
+```
+
+The first command calls the model in a separate loop, validates TOML using the agent's Board
+parser/checks, and runs query/table previews. Review its output before export. Export rechecks
+the Boards against the Dataset and database. When `--force` replaces Boards, it replaces the
+set and backs up old files. See [SPEC phase 3](../SPEC.md#phase-3-boards-explorer-spec-18-slice-4)
+for the HTTP API and validation contract.
+
+## Boards (phase 3)
+
+After the dataset draft, a second loop drafts `boards/*.toml` (the Explorer Board and up to
+`BOOTSTRAP_MAX_ENTITY_BOARDS` Entity Boards, default 3) from `../templates/`. Each Board is checked
+by the agent's own startup check and previewed with one cold render (per-query rows and ms, per
+Visual drawn / No rows / failed, against the 1.5 s target). No model runs in the preview.
+
+```bash
+uv run python -m explorer_bootstrap boards --draft draft.json --out boards.json [--model M] [--effort E]
+# edit boards.json by hand if needed, then (the Boards are re-checked first):
+uv run python -m explorer_bootstrap export --draft draft.json --boards boards.json --name vicprop --target toml
+```
+
+In the UI, Review has a "Boards" button. Export stays on Review and is blocked while a Board has
+problems. With `--force`, an existing `boards/` is replaced whole and the old one is kept in the
+backup. Open the exported Dataset with `./run.sh --real` to see the Boards before committing.
+`BOOTSTRAP_BOARD_PREVIEW_ROWS` (5) sets the rows shown per query.
+
+To regenerate a whole Dataset and its Boards from one of the repo's databases, the repo root's
+`./regen_dataset.sh <db-dir>` runs report → draft → verify → boards → export with review pauses
+in between. It derives the read-only login from `<db-dir>/.env`, keeps work files outside the
+repo, and can resume a stopped run (`--work-dir`, `--from`). `--keep notes.md,glossary.md`
+restores reviewed files from the export backup, so only the Boards are new. `--help` lists the
+rest.
 
 ## Tests
 
