@@ -495,6 +495,205 @@ Conversations. It passed. These changes fix what it found.
   row whose only text column is its key is titled with the key's value, not `false · false`.
   Default `DataTable` columns still show boolean columns.
 
+## Phase 3: New Workspace wizard (amendment 2026-11-05, agreed with the user in a grilling)
+
+**Why.** The phase 2 steps share one step bar with the Workspace list, and only "Workspaces" in
+that bar can be clicked. Export sits inside Review, so the real order is Review → Boards → back to
+Review → Export. You can't step back except through one-off buttons. The terms **Draft**, **New
+Workspace** and **Regenerate** are in `CONTEXT.md`. "Bootstrap" stays the name of the server and
+the CLI only, and never appears in the UI.
+
+**No pop-ups.** The client uses no `window.confirm` and no modal dialogs. Each confirmation is an
+inline card in the flow. This covers every confirmation in the client, including the explorer's
+"Delete all saved conversations".
+
+### Settings (`#/settings`)
+
+- Settings is only the Workspace list, with Regenerate (data-directory Datasets), **Reload the
+  agent**, and Delete.
+- **Delete** opens a card inside that Workspace's row. The card names what is deleted, with
+  **Delete** / **Cancel**.
+- A **New Workspace** button opens the wizard. The explorer's "No Workspaces yet" screen opens the
+  wizard directly.
+
+### The wizard (`#/settings/new`)
+
+It has its own step bar: **1 Database → 2 Draft → 3 Review → 4 Boards → 5 Export**.
+
+1. **Database.** Pick an unused connection, test it, and choose its schemas. **Next** runs the
+   report. The report is SQL only, with no model call.
+2. **Draft.**
+   - The step shows the report, the model and the effort.
+   - Its button carries the ceiling: **Draft (at most $X)**, with the cost card (first call and run
+     ceiling, the "these are ceilings" wording) always visible above it. One click starts the run.
+     That satisfies S5 with no pop-up.
+   - Progress shows on this step. When the Draft is done, the wizard moves to Review by itself.
+3. **Review.** The step shows the files, comments and claims. Its **Next** saves pending edits (as
+   `leaveForBoards` does today) and is disabled while the files don't validate or claims block.
+   The blockers are listed on this step.
+4. **Boards.**
+   - **Draft Boards (at most $X)** works as step 2 does. The wizard stays here after the run,
+     because the preview is the review.
+   - **Skip Boards** goes to Export with no Boards.
+   - In a Regenerate the button is **Keep current Boards** instead. The kept Boards are checked
+     against the new Draft with the existing Board check, and their problems block Next like a
+     drafted Board's do. Export already keeps `boards/` when no new Boards are sent.
+   - Board problems are listed on this step and disable Next.
+5. **Export.**
+   - The step has the Workspace name field. In a Regenerate it shows instead "Regenerating
+     **\<name>** (replaced files are backed up)".
+   - The only blocker left at this step is an invalid name.
+   - Success shows a card: "**\<name>** is ready", with **Open \<name>** (switches the explorer to
+     it) and **Back to Workspaces**. If the agent didn't reload, the card says so and offers
+     **Reload the agent**.
+
+**Navigation.**
+- Visited steps in the step bar are clickable, and looking back costs nothing.
+- Some upstream changes discard later work: another connection, other schemas, a new Draft, or new
+  Boards over edited ones. Before any of them, a warning card on that step names what is lost (for
+  example, "This replaces the Draft and its Boards. Your edits are lost.") and asks for confirmation.
+- Review's "Re-run report" and "Boards" buttons are removed, as are Report's "Back to the draft"
+  and Boards' "Back to Review" and "Continue to Export". The step bar and Back/Next replace them.
+
+**Regenerate** opens the wizard at step 2. Step 1 is shown done and locked, and the report is
+already loaded.
+
+**Discard and resume.**
+- The wizard's **Discard Draft** (in place of Cancel) shows a warning card when a Draft exists,
+  because it cost money. Without a Draft it just returns to Settings.
+- Leaving for the explorer and coming back resumes at the same step, because the Settings element
+  stays mounted (D10).
+- After a browser reload, the wizard rebuilds itself from the server. It resumes at the furthest
+  step the server's state supports. The Review step's typed name and dismissed claims live only in
+  the client, so a browser reload loses them.
+- If the bootstrap server restarted, the wizard starts at step 1 with the note "The server
+  restarted, so the Draft is gone."
+
+**Server additions.**
+- `GET /api/session` answers `{dsn_env, report, regenerating, draft: bool, boards: bool}`, with no
+  DSN values. Every field is null or false when nothing is held.
+- `POST /api/discard` clears the report, Draft, Boards and the Regenerate target. It answers 409
+  while a run is in progress.
+
+### Models on show
+
+The user wants every model call to be visible, to show how each model is used.
+
+- **Identity.**
+  - Each allowed model has a display name (Muse Wonder, Muse Spark) and its own accent colour.
+    The colours are theme tokens for both themes.
+  - The mark is a coloured dot and the name, with no vendor logos. The raw model ID is in the
+    chip's tooltip.
+  - The same chip is used everywhere: the wizard, the run cards and the explorer's Turns. An
+    unknown model ID gets a neutral chip showing the ID.
+- **Wizard step bar.** Each step is tagged with what it uses: **SQL** for Database, Review and
+  Export, or the chosen model's chip for Draft and Boards.
+- **Live run card** (Draft and Boards), fed by the run's `call` events:
+  - the model chip pulses while the run is going;
+  - a call counter;
+  - a token bar per call, with the cached part shaded lighter;
+  - the running cost against the ceiling ("$0.08 of at most $1.90").
+- **Run summary.** When a run is done, its card collapses to one line kept on that step, for
+  example "Muse Wonder · 7 calls · 81k tokens, 62% cached · $0.11".
+- **Explorer Turns.**
+  - The Turn's status line shows the model chip in place of the raw ID. A Turn with no model
+    (Drill-down) shows an **SQL** chip.
+  - A saved Level keeps the model name it was answered with, so a reopened Turn shows the chip
+    too. Levels saved before this change show no chip.
+
+### Look
+
+- **Glassline glass.** Translucent frosted cards sit over a soft gradient backdrop, built from the
+  existing theme tokens (ADR 0043 keeps the look in the client), in both themes.
+- **Motion.** Steps slide and fade into each other, and the run cards animate. All motion is off
+  under `prefers-reduced-motion`.
+- **Build and check.** The work is built with the frontend-design skill and checked with
+  Playwright screenshots of each step in both themes before it is called done.
+
+**Removed.** Review's non-Workspace export branch (the "Comments go to" choice and the `force`
+checkbox) is dead code in Settings and goes.
+
+### Build decisions, phase 3 (2026-11-05, Claude, before building; ADR 0044)
+
+- **E1 Routes.**
+  - `#/settings` shows the list, and `#/settings/new` shows the wizard.
+  - `<explorer-settings>` has a `view` (`list` or `wizard`). It fires `settings-view`, and the app
+    writes the hash.
+  - The wizard element stays mounted (hidden) under the list, so its state survives the list and
+    the explorer.
+- **E2 Wizard element.** It is `<explorer-wizard>` (`client/src/settings/wizard.ts`), which holds
+  the flow state. Step 1 is the connection picker plus `bs-connect`.
+- **E3 Review.** `bs-review` loses its Export section (name, target, force, Export, Re-run report,
+  Boards). It fires `review-blockers` with its own blockers: validation and claims, as
+  `reviewBlockers()`. It exposes `leave()` (save pending edits, true when saved) and
+  `exportPayload()` (files, comments, dismissed). It stays mounted (hidden) from Review to Export.
+- **E4 Boards.** `bs-boards` loses "Back to Review" and "Continue to Export". Skip Boards and Keep
+  current Boards are the wizard's own buttons.
+- **E5 Report invalidates.** `POST /api/report` now clears the server's Draft and Boards. A new
+  report makes them stale. Only Settings calls that route.
+- **E6 Keep current Boards.** `regenerate` remembers the Workspace's `boards/*.toml`.
+  `POST /api/boards/keep` loads them into the Boards state, with the `why` "Kept from the current
+  Workspace.", and checks and previews them against the Draft, as a validate does. It answers 404
+  when there's no Draft or nothing to keep.
+- **E7 Session.** `GET /api/session` answers
+  `{dsn_env, report, regenerating, draft, boards, run}`:
+  - `draft` and `boards` are booleans;
+  - `run` is `{id, kind}` while a run is in progress, else null;
+  - `report` is the report itself, so the Draft step can be rebuilt.
+- **E8 Discard.** `POST /api/discard` clears the report, Draft, Boards and the Regenerate target.
+  It keeps the connection, and answers 409 during a run.
+- **E9 Models.** The Boards state also carries `model` (the run's model). A kept set has
+  `model: null`.
+- **E10 Saved model.** An answer Level's record keeps `model`, and a Drill-down's keeps `null`. The
+  Level response (B11) carries `model` only when the record has the key, so Levels saved earlier
+  show no chip. `STATE_VERSION` stays 1, because the key is optional.
+- **E11 Chips and cards.** These are template helpers, not elements:
+  - `modelChip(id)` in `client/src/model-chip.ts`;
+  - `confirmCard(...)` in `client/src/cards.ts`;
+  - `runCard(...)` in `client/src/settings/run-card.ts`.
+  The token colours are `--model-wonder` and `--model-spark`.
+- **E13 Regenerate over work in progress (refuter).** While a New Workspace is in progress (a
+  login, report or Draft held, or a run going), the list's Regenerate is disabled, with the hint
+  "Finish or discard the New Workspace first", and its button reads "Continue the New Workspace".
+  A Regenerate replaces the wizard's state only once the server has answered.
+- **E14 Ceilings are never stale (refuter).** A Draft button shows a ceiling only when the estimate
+  is for the model now selected. Only the newest estimate request's reply is kept.
+- **E15 Review edits recheck the Boards (the user, 2026-11-05).** Leaving Review saves its edits.
+  This happens through Next or through the step bar. Arriving on the Boards step with Boards held
+  then rechecks and re-previews them against the saved files (`POST /api/boards/validate` with the
+  current Board files). So the Boards step never shows checks from before an edit.
+- **E16 Left as they are (the user, 2026-11-05).**
+  - There is no "Remove Boards": held Boards are fixed or drafted again.
+  - The step bar may jump past Review's blockers. Export's server-side check (it re-validates the
+    files and claims) is the backstop.
+- **E12 Test files.** N16 (reduced motion) is in `client/test/index-html.test.ts`, because the rule
+  lives in `index.html`. N10's server half is in `bootstrap/server/tests/test_settings.py`.
+
+### Criteria → tests (phase 3)
+
+| # | Criterion | Test |
+|---|---|---|
+| N1 | Settings lists Workspaces only; New Workspace opens `#/settings/new`; "No Workspaces yet" opens the wizard | `client/test/settings.test.ts`, `app.test.ts` |
+| N2 | The step bar has the five steps; visited steps are clickable, unvisited ones aren't | `client/test/settings/wizard.test.ts` |
+| N3 | Database's Next runs the report and lands on Draft; no model call happens before a Draft button press | `wizard.test.ts` |
+| N4 | The Draft and Draft Boards buttons show the run ceiling; one click starts the run; a finished Draft moves to Review | `wizard.test.ts` |
+| N5 | Review's Next is disabled by validation errors and blocking claims, and saves pending edits before leaving | `wizard.test.ts` |
+| N6 | Boards: Skip Boards reaches Export with no Boards; in a Regenerate, Keep current Boards checks the kept Boards and their problems block Next | `wizard.test.ts`, `bootstrap/server/tests/test_settings.py` |
+| N7 | A change that discards later work shows a warning card first; Cancel on the card changes nothing | `wizard.test.ts` |
+| N8 | Regenerate opens at step 2 with step 1 locked; Export shows the fixed name | `wizard.test.ts` |
+| N9 | Export success shows Open \<name> (switches Workspace) and Back to Workspaces; a failed reload shows Reload the agent | `wizard.test.ts`, `app.test.ts` |
+| N10 | `GET /api/session` reflects the held state and never a DSN; `POST /api/discard` clears it and gives 409 during a run; after a server restart the wizard starts at step 1 with the note | `test_settings.py`, `wizard.test.ts` |
+| N11 | No `window.confirm`, `alert`, `prompt` or `<dialog>` anywhere in `client/src`; Delete Workspace and Delete all saved conversations use inline cards | `client/test/model-chip.test.ts`, `settings.test.ts`, `workspaces.test.ts` |
+| N12 | A model chip renders the display name and token colour for each allowed model, and a neutral chip with the raw ID for an unknown one | `client/test/model-chip.test.ts` |
+| N13 | The step bar tags Database, Review and Export as SQL, and Draft and Boards with the chosen model | `wizard.test.ts` |
+| N14 | The run card counts the `call` events, sums tokens and cost against the ceiling, and collapses to the summary line when the run is done | `wizard.test.ts` |
+| N15 | A Turn shows its model chip, or SQL for no model; a saved Level keeps the model, and a reopened Turn shows the same chip | `app.test.ts`, `agent/tests/test_saved.py` (db) |
+| N16 | Motion is off under `prefers-reduced-motion` | `client/test/index-html.test.ts` |
+| N17 | A new report clears the server's Draft and Boards (E5) | `test_settings.py` |
+| N19 | After Review edits, arriving on Boards (by Next or the step bar) saves the edits, then rechecks the held Boards; their new problems block Next (E15) | `wizard.test.ts` |
+| N18 | Regenerate is disabled while a New Workspace is in progress, and a ceiling for another model never shows (E13, E14) | `settings.test.ts`, `report.test.ts` |
+| M2 | Manual: create a Workspace and regenerate one end to end through the wizard against a real database (stub or real model), with screenshots of each step in both themes | manual |
+
 ## Test command
 
 ```bash

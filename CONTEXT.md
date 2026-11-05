@@ -14,6 +14,14 @@ _Avoid_: Database (for the whole bundle), source, domain
 One Dataset together with its saved Conversations: what the user switches between. A Workspace can be unavailable (its database can't be reached, or its login can write); its Conversations are kept but can't be opened until it is available again.
 _Avoid_: Project, database, connection, Dataset (for the pair)
 
+**Draft**:
+A proposed Dataset (and optionally its Boards) written by a model from a database's report, which the user reviews and edits before it becomes a Workspace. Nothing in a Draft is used to answer questions until it is exported.
+_Avoid_: Bootstrap (for the result), proposal, generated dataset
+
+**New Workspace**:
+The guided steps that turn a database login into a Workspace: Database, Draft, Review, Boards, Export. **Regenerate** runs the same steps for an existing Workspace, keeping its database and name.
+_Avoid_: Bootstrap, setup, onboarding
+
 **Data dictionary**:
 The descriptions of every table and column in the Allowed schemas, from the database's own comments, with any Comment overlay taking precedence. The agent's only description of the data.
 _Avoid_: Schema prompt, docs
