@@ -158,8 +158,8 @@ Run each row from its listed directory after installing that project's dependenc
 
 ## Continuous integration
 
-[GitHub Actions CI](.github/workflows/ci.yml) runs on pushes, pull requests, and manual
-dispatch. Independent jobs test all seven Python projects, test and build the Explorer
+[GitHub Actions CI](.github/workflows/ci.yml) runs only when a pull request is opened,
+reopened, or updated. Independent jobs test all seven Python projects, test and build the Explorer
 client (including transport against the stub agent), and build the Glimmer review UI
 before running the full eval suite with Chromium. Database tests use disposable
 Testcontainers Postgres 18 instances; `live_db` tests remain manual. The optional upstream
@@ -168,9 +168,9 @@ clone is not checked out, so its reference-only comparison test is skipped.
 CI uses Python 3.13, Node 22, cached dependency downloads, `uv sync --locked`, and `npm ci`.
 It needs no repository secrets, loaded datasets, or model credentials. Dependency and browser
 installation downloads packages; tests use stubs and local services. New commits cancel
-older runs for the same event and ref. Historical spike projects are outside CI.
+older runs for the same pull request. Historical spike projects are outside CI.
 
-Push the workflow to GitHub to start CI. If Actions is disabled for the repository, enable
+Open or update a pull request on GitHub to start CI. If Actions is disabled for the repository, enable
 it under **Settings → Actions → General**. Required pull-request checks can then be selected
 in the repository's branch rules after the first run.
 
