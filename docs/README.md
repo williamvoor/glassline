@@ -88,7 +88,6 @@ and operational workflow and should be updated when those change.
 | `summary-YYYYMMDD-N.md` | Session handoffs, completed work, findings, and next steps |
 | `followups-2026-11-02.md` | Follow-ups recorded at that point in development |
 | `bootstrap-build-prompt.md` | Original bootstrap brief, preceding the tool's detailed spec |
-| `Follow the Contract · SaC prototype.html` | Static interaction/design reference for Explorer; not runtime client code |
 | `../glimmer-tune/docs/` | Training/scorer reports, sample reviews, experiment decisions |
 
 Reports refer to specific datasets, prompts, model settings, and run times. Some raw run

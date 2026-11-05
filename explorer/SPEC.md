@@ -685,8 +685,7 @@ and a chat view that shows progress, failures and where to start.
 
 Status: **approved** (2026-11-03), after a design review (refuter, 2026-11-03). Amends §1
 (UI actions were out of scope), §2 (request flow), §4 (catalog), §5 (macros), §6 (surface IDs)
-and §9 (bound parameters). Idea taken from the "Follow the Contract" prototype
-(`../docs/Follow the Contract · SaC prototype.html`): the user explores by clicking the UI, not
+and §9 (bound parameters). Idea taken from the "Follow the Contract" prototype: the user explores by clicking the UI, not
 only by typing. Data still reaches the screen only through Macros over stored Results, and every
 Visual still shows its SQL (ADR 0001 holds). Terms (in `../CONTEXT.md`): **Level**, **Action**,
 **Drill query**, **Drill-down**, **Ask**, **Follow-up**, **Breadcrumb**; **Turn** is a typed
@@ -1065,7 +1064,7 @@ Decisions made while building, where the text above was silent or had to change:
 Status: **approved** (2026-11-03), built; refuter PASS after one fix round. The user settled three choices: one Turn on the Canvas at a
 time, Follow-ups stay inside the Surface, and both light and dark themes. The rest is decided
 below. Amends §8 (the chat view of §14) and the provisional Ask-only cue of §15. The look comes
-from the "Follow the Contract" prototype (`../docs/Follow the Contract · SaC prototype.html`):
+from the "Follow the Contract" prototype:
 a dark ink top bar, a white Sidebar, a light grey Canvas, white bordered Cards, Public Sans for
 text and JetBrains Mono for labels, figures and SQL. Decision: ADR 0026. New terms in
 `../CONTEXT.md`: **Sidebar**, **Canvas**.
