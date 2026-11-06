@@ -80,10 +80,18 @@ def write_entries(data_dir: Path, entries: list[dict[str, Any]]) -> None:
         raise
 
 
+CLI_DSN_VAR = "BOOTSTRAP_DATABASE_URL"  # the bootstrap CLI's login, never a Workspace's (D2)
+
+
+def declared_connections(env: Mapping[str, str]) -> list[str]:
+    """Names of the set `<NAME>_DATABASE_URL` variables a Workspace may use. Never a value."""
+    return sorted(k for k, v in env.items() if DSN_VAR.fullmatch(k) and k != CLI_DSN_VAR and v.strip())
+
+
 def unused_connections(env: Mapping[str, str], data_dir: Path) -> list[str]:
     """Names of declared `*_DATABASE_URL` variables no Workspace uses (S1). Never a value."""
     used = {e.get("dsn_env") for e in read_entries(data_dir)}
-    return sorted(k for k, v in env.items() if DSN_VAR.fullmatch(k) and v.strip() and k not in used)
+    return [k for k in declared_connections(env) if k not in used]
 
 
 def kind_of(entry: Mapping[str, Any], data_dir: Path, repo_root: Path) -> str:

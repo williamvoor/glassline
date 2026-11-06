@@ -93,7 +93,7 @@ export class Api {
   }
   // Settings mode (D2–D5)
   connections() {
-    return this.call<{ connections: string[]; current: string | null }>('/api/connections');
+    return this.call<{ connections: string[]; current: string | null; declared: boolean }>('/api/connections');
   }
   connect(dsnEnv: string) {
     return this.call<Connection & { dsn_env: string }>('/api/connect', { dsn_env: dsnEnv });

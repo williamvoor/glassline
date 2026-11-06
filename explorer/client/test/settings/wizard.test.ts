@@ -116,6 +116,16 @@ describe('N3, N4: Database, then a Draft that only a Draft button starts', () =>
     expect(f.calls.find((c) => c.path === 'POST /api/draft')!.body).toEqual({ model: 'meta/muse-wonder-1.0', effort: 'low' });
     expect(current(el)).toBe('Review'); // a finished Draft moves on by itself
   });
+
+  it('with no login offered, says whether none is declared or every one is in use', async () => {
+    const none = await mountWizard(routes({ 'GET /api/connections': () => [200, { connections: [], current: null, declared: false }] }));
+    const noneText = none.el.querySelector('section.database p.muted')!.textContent!.replace(/\s+/g, ' ');
+    expect(noneText).toContain('No <NAME>_DATABASE_URL variable is set');
+    expect(noneText).not.toContain('already has a Workspace');
+    document.body.innerHTML = '';
+    const used = await mountWizard(routes({ 'GET /api/connections': () => [200, { connections: [], current: null, declared: true }] }));
+    expect(used.el.querySelector('section.database p.muted')!.textContent).toContain('already has a Workspace');
+  });
 });
 
 describe('N14: the run card', () => {

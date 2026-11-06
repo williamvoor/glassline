@@ -49,6 +49,8 @@ export class ExplorerWizard extends LitElement {
   @state() step: WizardStep = 'database';
   @state() reached = 0; // the furthest step index the flow's state supports
   @state() available: string[] = [];
+  /** Whether any `<NAME>_DATABASE_URL` is set: an empty list then means all are in use. */
+  @state() declared = true;
   @state() connection: (Connection & {dsn_env: string}) | null = null;
   @state() regenerating = '';
   @state() report: Report | null = null;
@@ -177,7 +179,11 @@ export class ExplorerWizard extends LitElement {
         this.reached = WIZARD_STEPS.findIndex(x => x.key === this.step);
         if (s.run) void this.follow(s.run.id, s.run.kind);
       }
-      if (!this.connection && !this.regenerating) this.available = (await this.api.connections()).connections;
+      if (!this.connection && !this.regenerating) {
+        const c = await this.api.connections();
+        this.available = c.connections;
+        this.declared = c.declared;
+      }
     });
   }
 
@@ -464,16 +470,17 @@ export class ExplorerWizard extends LitElement {
     if (this.regenerating) return nothing;
     return html`<section class="glass database" aria-labelledby="db-h">
         <h2 id="db-h">Choose a database</h2>
-        <p class="lede">Pick the read-only login for the new Workspace. Logins are variables in the repo's <code>.env</code>;
-          only their names are shown.</p>
         ${this.available.length || this.connection
           ? html`<div class="connections" role="radiogroup" aria-label="Logins">
               ${[...new Set([...(this.connection ? [this.connection.dsn_env] : []), ...this.available])].map(name => html`
                 <button type="button" role="radio" class="connect-var" aria-checked=${this.connection?.dsn_env === name ? 'true' : 'false'}
                   ?disabled=${this.busy} @click=${() => this.chooseConnection(name)}>${name}</button>`)}
             </div>`
-          : html`<p class="muted">Every <code>*_DATABASE_URL</code> variable in <code>.env</code> already has a Workspace.
-              Add a new variable with a read-only login, then restart the explorer.</p>`}
+          : this.declared
+            ? html`<p class="muted">Every <code>*_DATABASE_URL</code> variable in <code>.env</code> already has a Workspace.
+                Add a new variable with a read-only login, then restart the explorer.</p>`
+            : html`<p class="muted">No <code>&lt;NAME&gt;_DATABASE_URL</code> variable is set in <code>.env</code>.
+                Add one with a read-only login, then restart the explorer.</p>`}
       </section>
       ${this.connection
         ? html`<bs-connect .connection=${this.connection} .api=${this.api} .datasets=${[]} ?busy=${this.busy}

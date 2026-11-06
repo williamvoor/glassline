@@ -66,8 +66,15 @@ def test_s1_lists_only_declared_unused_names_never_a_value(tmp_path):
     write_entries(data, [{"name": "aus", "dataset_dir": "/x", "dsn_env": "AUS_DATABASE_URL"}])
     env = {"AUS_DATABASE_URL": "postgresql://a:secret@h/d", "VIC_DATABASE_URL": "postgresql://v:secret@h/d",
            "EMPTY_DATABASE_URL": " ", "DATABASE_URL": "postgresql://x", "OTHER": "postgresql://y",
-           "lower_DATABASE_URL": "postgresql://z"}
-    assert unused_connections(env, data) == ["VIC_DATABASE_URL"]
+           "lower_DATABASE_URL": "postgresql://z", "BOOTSTRAP_DATABASE_URL": "postgresql://cli"}
+    assert unused_connections(env, data) == ["VIC_DATABASE_URL"]  # BOOTSTRAP_ is the CLI's login (D2)
+
+
+async def test_s1_the_connections_route_says_whether_any_login_is_declared(tmp_path):
+    """None declared and all in use are different fixes, so Settings must tell them apart."""
+    app, _ = _settings_app(tmp_path, {"BOOTSTRAP_DATABASE_URL": "postgresql://cli", "DATABASE_URL": "postgresql://x"}, None)
+    async with _client(app) as c:
+        assert (await c.get("/api/connections")).json() == {"connections": [], "current": None, "declared": False}
 
 
 async def test_s1_the_connections_route_names_variables_only(tmp_path):
@@ -75,7 +82,7 @@ async def test_s1_the_connections_route_names_variables_only(tmp_path):
     app, _ = _settings_app(tmp_path, env, None)
     async with _client(app) as c:
         r = await c.get("/api/connections")
-        assert r.json() == {"connections": ["VIC_DATABASE_URL"], "current": None}
+        assert r.json() == {"connections": ["VIC_DATABASE_URL"], "current": None, "declared": True}
         assert "hunter2" not in r.text
         assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 409  # no login yet
         assert (await c.post("/api/connect", json={"dsn_env": "NOT_DECLARED_DATABASE_URL"})).status_code == 400
