@@ -13,7 +13,7 @@ import {connect, type AgentConnection, type AgentInfo, type AskEvent, type UiAct
 import {createProcessor} from './catalog.js';
 import {boardRow} from './actions.js';
 import {renderSafeMarkdown} from './markdown.js';
-import {BoardControls, type ControlDecl, type WireValues} from './controls.js';
+import {BoardControls, type WireValues} from './controls.js';
 import {addInPlace, closeTab, logOrder, openTab, selectTab, type InPlaceEntry, type TabState} from './tabs.js';
 import {
   BOARD_CHANGED, DATA_CHANGED, httpApi, parseRoute, pickWorkspace, routeHash,
@@ -21,6 +21,7 @@ import {
 } from './workspaces.js';
 import './settings/settings.js';
 import type {SettingsView} from './settings/settings.js';
+import {BoardMetadataSchema, InPlaceSchema, LogSchema, ModelSchema, TabSchema} from './metadata.js';
 import {confirmCard} from './cards.js';
 import {modelChip} from './model-chip.js';
 
@@ -98,14 +99,13 @@ export function initials(name: string): string {
 /** `explorerModel` from a final message: a name, null (no model), or undefined (not sent). */
 function modelOf(metadata: Record<string, unknown> | undefined): string | null | undefined {
   if (!metadata || !(MODEL_KEY in metadata)) return undefined;
-  const model = metadata[MODEL_KEY];
-  return typeof model === 'string' ? model : null;
+  return ModelSchema.parse(metadata[MODEL_KEY]) ?? null;
 }
 
 /** The tab ID, title and log entry a reply brings (SPEC §18), each only when well formed. */
 function tabOf(metadata: Record<string, unknown> | undefined): Partial<Pick<Tab, 'id' | 'title' | 'log' | 'kind'>> {
-  const tab = metadata?.[TAB_KEY] as {id?: unknown; title?: unknown; kind?: unknown} | undefined;
-  const log = metadata?.[LOG_KEY] as {tag?: unknown; text?: unknown} | undefined;
+  const tab = TabSchema.parse(metadata?.[TAB_KEY]);
+  const log = LogSchema.parse(metadata?.[LOG_KEY]);
   return {
     ...(typeof tab?.id === 'string' ? {id: tab.id} : {}),
     ...(typeof tab?.title === 'string' ? {title: tab.title} : {}),
@@ -563,8 +563,10 @@ export class ExplorerApp extends LitElement {
    * server's one data-model write never echoes back as a change. */
   private attachControls(tabKey: string, surfaceId: string, metadata: Record<string, unknown> | undefined,
                          processor: MessageProcessor<ComponentApi>) {
-    const board = metadata?.[BOARD_KEY] as {id?: unknown; controls?: unknown} | undefined;
-    const controls = Array.isArray(board?.controls) ? (board.controls as ControlDecl[]) : [];
+    const parsed = BoardMetadataSchema.safeParse(metadata?.[BOARD_KEY]);
+    if (!parsed.success) return;
+    const board = parsed.data;
+    const controls = board.controls;
     const dataModel = processor.model.surfacesMap.get(surfaceId)?.dataModel;
     if (typeof board?.id !== 'string' || !controls.length || !dataModel) return;
     const ctrl: BoardControls = new BoardControls({
@@ -597,10 +599,10 @@ export class ExplorerApp extends LitElement {
           answered = true;
           continue;
         }
-        const inPlace = metadata[IN_PLACE_KEY] as {seq?: unknown} | undefined;
-        if (metadata[ACTION_FAILED_KEY] || typeof inPlace?.seq !== 'number') continue;
+        const inPlace = InPlaceSchema.safeParse(metadata[IN_PLACE_KEY]);
+        if (metadata[ACTION_FAILED_KEY] || !inPlace.success) continue;
         answered = true;
-        if (!ctrl.applied(inPlace.seq)) continue; // an older reply than what is shown
+        if (!ctrl.applied(inPlace.data.seq)) continue; // an older reply than what is shown
         if (event.a2ui.length) processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
         const log = tabOf(metadata).log;
         if (log) this.logInPlace(tabKey, log);

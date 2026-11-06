@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from psycopg import sql as psql
+
 from explorer_agent.boards import (
     BOARD_COLD_TARGET_S,
     BOARD_FILE_RULES,
@@ -40,6 +43,7 @@ from explorer_bootstrap.draft import Completion, EventFn, estimate_for, tool_loo
 from explorer_bootstrap.draft_schema import RUN_SQL_TOOL, _obj, _STR
 from explorer_bootstrap.drafts import draft_dataset, schema_section
 from explorer_bootstrap.settings import DraftSettings
+from explorer_bootstrap.json_shape import shape_problems as json_problems
 
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "boards.md"
 TEMPLATES_DIR = Path(__file__).resolve().parents[3] / "templates"  # explorer/bootstrap/templates
@@ -64,6 +68,7 @@ SUBMIT_BOARDS_TOOL = {
     },
 }
 TOOLS = [RUN_SQL_TOOL, SUBMIT_BOARDS_TOOL]
+_BOARDS_VALIDATOR = Draft202012Validator(SUBMIT_BOARDS_TOOL["function"]["parameters"])
 
 
 def _clean(text: str) -> str:
@@ -106,18 +111,15 @@ def boards_runner(pool: Any, dataset: Dataset, timeout_ms: int, row_cap: int) ->
 
 def shape_problems(args: Any) -> list[str]:
     """`submit_boards` arguments against the schema (ADR 0023: we check them ourselves)."""
-    if not isinstance(args, dict) or set(args) != {"boards"}:
-        return ["arguments must be an object with exactly one key, boards"]
+    problems = json_problems(_BOARDS_VALIDATOR, args)
+    if problems:
+        return problems
     boards = args["boards"]
-    if not isinstance(boards, list) or not boards:
+    if not boards:
         return ["boards must be a non-empty list"]
     problems = []
     for i, b in enumerate(boards):
-        if not isinstance(b, dict) or set(b) != {"name", "toml", "why"}:
-            problems.append(f"boards[{i}] must have exactly name, toml and why")
-        elif not all(isinstance(b[k], str) for k in ("name", "toml", "why")):
-            problems.append(f"boards[{i}]: name, toml and why must be strings")
-        elif not b["why"].strip() or "\n" in b["why"].strip():
+        if not b["why"].strip() or "\n" in b["why"].strip():
             problems.append(f"boards[{i}]: why must be one line")
     return problems
 
@@ -249,10 +251,6 @@ def estimate_boards(draft: dict[str, Any], settings: DraftSettings) -> dict[str,
 # --- preview (no model) --------------------------------------------------------------------------
 
 
-def _ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
 async def sample_key(board: Board, report: dict[str, Any], dataset: Dataset, runner: Any) -> dict[str, Any] | None:
     """A key value for previewing an Entity Board: the first non-NULL value of a `key_columns`
     column in the first reported allowed object (report order) that has one."""
@@ -264,8 +262,8 @@ async def sample_key(board: Board, report: dict[str, Any], dataset: Dataset, run
         for column in board.key_columns:
             if column not in columns:
                 continue
-            sql = (f"SELECT {_ident(column)} AS key FROM {_ident(o['schema'])}.{_ident(o['name'])} "
-                   f"WHERE {_ident(column)} IS NOT NULL LIMIT 1")
+            sql = psql.SQL("SELECT {column} AS key FROM {table} WHERE {column} IS NOT NULL LIMIT 1").format(
+                column=psql.Identifier(column), table=psql.Identifier(o["schema"], o["name"])).as_string()
             outcome = await runner.run(sql)
             if isinstance(outcome, SqlFail) or not outcome.rows:
                 continue

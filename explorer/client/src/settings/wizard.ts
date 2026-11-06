@@ -183,7 +183,7 @@ export class ExplorerWizard extends LitElement {
       if (!this.connection && !this.regenerating) {
         const c = await this.api.connections();
         this.available = c.connections;
-        this.declared = c.declared;
+        this.declared = c.declared ?? false;
       }
     });
   }

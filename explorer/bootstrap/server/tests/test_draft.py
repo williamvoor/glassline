@@ -81,7 +81,7 @@ async def test_invalid_then_valid(bs_report, runner, settings):
     args, _ = await run_draft(bs_report, runner, settings, completion=model, on_event=events.append)
     assert args == valid_args()
     replies = [json.loads(m["content"]) for m in _tool_messages(model.calls[1])]
-    assert "problems" in replies[0]["error"] and any("bs.nope" in p for p in replies[0]["error"]["problems"])
+    assert "problems" in replies[0]["error"] and any("comments[6].object" in p for p in replies[0]["error"]["problems"])
     assert replies[1]["error"]["message"].startswith("ignored")  # run_sql next to a submit is not run
     second = json.loads(_tool_messages(model.calls[2])[-1]["content"])
     assert any("not valid JSON" in p for p in second["error"]["problems"])

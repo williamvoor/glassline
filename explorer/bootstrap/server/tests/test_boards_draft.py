@@ -136,10 +136,10 @@ def test_submit_boards_schema_follows_adr_0023():
 @pytest.mark.parametrize(
     ("args", "problem"),
     [
-        ({}, "exactly one key, boards"),
+        ({}, "'boards' is a required property"),
         ({"boards": []}, "non-empty list"),
-        ({"boards": [{"name": "explorer", "toml": ""}]}, "exactly name, toml and why"),
-        ({"boards": [{"name": "explorer", "toml": 1, "why": "x"}]}, "must be strings"),
+        ({"boards": [{"name": "explorer", "toml": ""}]}, "'why' is a required property"),
+        ({"boards": [{"name": "explorer", "toml": 1, "why": "x"}]}, "boards[0].toml: must be string"),
         ({"boards": [{"name": "explorer", "toml": "", "why": "two\nlines"}]}, "why must be one line"),
     ],
 )

@@ -10,6 +10,7 @@ dependencies = [
     "a2ui-agent-sdk",
     "a2ui-core",
     "litellm==1.106.6",
+    "httpx-sse==0.4.3",
     "mcp>=2.3.0",
     "pglast==8.7",
     "psycopg-pool==3.3.3",

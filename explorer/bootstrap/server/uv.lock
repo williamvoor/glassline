@@ -626,6 +626,7 @@ dependencies = [
     { name = "a2ui-a2a" },
     { name = "a2ui-agent-sdk" },
     { name = "a2ui-core" },
+    { name = "httpx-sse" },
     { name = "litellm" },
     { name = "mcp" },
     { name = "pglast" },
@@ -641,6 +642,7 @@ requires-dist = [
     { name = "a2ui-a2a", git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_a2a&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" },
     { name = "a2ui-agent-sdk", git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_agent&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" },
     { name = "a2ui-core", git = "https://github.com/a2ui-project/a2ui?subdirectory=python%2Fa2ui_core&rev=825beac2813a6d0ccef3b6fb4124ad6c3c8419f0" },
+    { name = "httpx-sse", specifier = "==0.4.3" },
     { name = "litellm", specifier = "==1.106.6" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "pglast", specifier = "==8.7" },
@@ -665,6 +667,8 @@ source = { editable = "." }
 dependencies = [
     { name = "explorer-agent" },
     { name = "httpx" },
+    { name = "jsonschema" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "python-dotenv" },
     { name = "starlette" },
     { name = "uvicorn" },
@@ -683,6 +687,8 @@ dev = [
 requires-dist = [
     { name = "explorer-agent", editable = "../../agent" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "jsonschema", specifier = "==4.26.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "starlette", specifier = "==1.10.0" },
     { name = "uvicorn", specifier = "==0.54.0" },

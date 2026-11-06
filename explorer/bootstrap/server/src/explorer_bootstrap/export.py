@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from psycopg import sql as psql
+
 from explorer_agent.boards import QUERY_NAME
 
 from explorer_bootstrap.claims import export_blockers
@@ -60,15 +62,6 @@ def render_comments_toml(draft: dict[str, Any]) -> str:
     return "\n\n".join(blocks) + "\n" if blocks else ""
 
 
-def quote_ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
-def quote_literal(text: str) -> str:
-    # standard_conforming_strings is on by default since PostgreSQL 9.1: backslashes are literal.
-    return "'" + text.replace("'", "''") + "'"
-
-
 def render_comments_sql(draft: dict[str, Any]) -> str:
     report = draft["report"]
     kinds = {f"{o['schema']}.{o['name']}": o["kind"] for o in report["objects"]}
@@ -76,12 +69,14 @@ def render_comments_sql(draft: dict[str, Any]) -> str:
     lines = ["BEGIN;"]
     for name, entry in sorted(accepted_overlay(draft).entries.items()):
         schema, table = name.split(".", 1)
-        target = f"{quote_ident(schema)}.{quote_ident(table)}"
         if entry.comment is not None:
-            lines.append(f"COMMENT ON {_COMMENT_ON[kinds[name]]} {target} IS {quote_literal(entry.comment)};")
+            lines.append(psql.SQL("COMMENT ON {} {} IS {};").format(
+                psql.SQL(_COMMENT_ON[kinds[name]]), psql.Identifier(schema, table),
+                psql.Literal(entry.comment)).as_string())
         for col in order[name]:
             if col in entry.columns:
-                lines.append(f"COMMENT ON COLUMN {target}.{quote_ident(col)} IS {quote_literal(entry.columns[col])};")
+                lines.append(psql.SQL("COMMENT ON COLUMN {} IS {};").format(
+                    psql.Identifier(schema, table, col), psql.Literal(entry.columns[col])).as_string())
     lines.append("COMMIT;")
     return "\n".join(lines) + "\n"
 
