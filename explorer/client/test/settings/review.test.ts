@@ -100,7 +100,7 @@ describe('bs-review (U2)', () => {
     expect([...el.querySelectorAll('li.claim .badge')].map((b) => b.textContent)).toEqual(['verified', 'failed', 'needs review']);
   });
 
-  it('ignores a validation reply that arrives after a newer one', async () => {
+  it('serializes saves and only shows validation for the newest edit', async () => {
     let resolveFirst: (v: Response) => void = () => {};
     let n = 0;
     const fetchFn = (_input: string, _init?: RequestInit) => {
@@ -111,9 +111,11 @@ describe('bs-review (U2)', () => {
     const el = mount<BsReview>('bs-review', { api: new Api(fetchFn), draft: makeDraft([claim('verified')]), validation: OK, validateDelay: 0 });
     await settle(el);
     const first = el.validate();
-    await el.validate();
+    await settle(el);
+    const second = el.validate();
+    expect(n).toBe(1); // the next save cannot overtake the running write
     resolveFirst(new Response(JSON.stringify(OK), { status: 200 }));
-    await first;
+    await Promise.all([first, second]);
     await settle(el);
     expect(el.querySelector('.errors')!.textContent).toContain('newer: invalid');
   });

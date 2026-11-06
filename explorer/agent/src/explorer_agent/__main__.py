@@ -123,9 +123,10 @@ async def _boards_check(settings: Settings, target_s: float = BOARD_COLD_TARGET_
                 print(f"skip {board.name}: an Entity Board renders per row; not timed")
                 continue
             start = time.perf_counter()
-            outcomes = await renderer.outcomes(board, fresh=True)
+            options, state, bound = await renderer.defaults(board, fresh=True)
+            outcomes = await renderer.outcomes(board, bound, fresh=True)
             results, failed_states = instance_results(outcomes, iter(f"r{i}" for i in range(1, 10_000)).__next__)
-            ui = build_board(board, results, failed_states, pipeline, "turn-0-1-check")
+            ui = build_board(board, results, failed_states, pipeline, "turn-0-1-check", options=options, state=state)
             seconds = time.perf_counter() - start
             failed = list(failed_states)
             undrawn = sum(1 for m in ui.messages for c in (m.get("updateComponents") or {}).get("components", [])

@@ -32,6 +32,8 @@ export class BsBoards extends LitElement {
   @state() asking = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private validateSeq = 0;
+  private saving: Promise<boolean> = Promise.resolve(true);
+  private savingFiles: BoardFile[] | undefined;
   private loadedFrom: BoardsState | null = null;
 
   protected override createRenderRoot() {
@@ -59,23 +61,54 @@ export class BsBoards extends LitElement {
 
   private edit(name: string, toml: string) {
     this.files = this.files.map((b) => (b.name === name ? { ...b, toml } : b));
+    ++this.validateSeq;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.validate(), this.validateDelay);
   }
 
   /** Re-check and re-preview (which also stores the edits on the server). */
-  async validate() {
+  validate(): Promise<boolean> {
+    clearTimeout(this.timer);
+    if (this.savingFiles === this.files) return this.saving;
+    const files = this.files;
+    this.savingFiles = files;
     const seq = ++this.validateSeq;
-    try {
-      const state = await this.api.validateBoards(this.files);
-      if (seq !== this.validateSeq) return; // a reply to older edits
-      this.error = '';
-      this.loadedFrom = state; // the text on screen is already the newest
-      this.boards = state;
-      this.dispatchEvent(new CustomEvent('boards-changed', { detail: state }));
-    } catch (e) {
-      if (seq === this.validateSeq) this.error = e instanceof Error ? e.message : String(e);
-    }
+    // Serial writes also order server persistence; ignoring old replies alone cannot do that.
+    this.saving = this.saving.then(async () => {
+      if (!this.isConnected || seq !== this.validateSeq) return false;
+      try {
+        const state = await this.api.validateBoards(files);
+        if (seq === this.validateSeq && this.isConnected) {
+          this.error = '';
+          this.loadedFrom = state;
+          this.boards = state;
+          this.dispatchEvent(new CustomEvent('boards-changed', { detail: state }));
+        }
+        return true;
+      } catch (e) {
+        if (seq === this.validateSeq && this.isConnected) this.error = e instanceof Error ? e.message : String(e);
+        return false;
+      } finally {
+        if (this.savingFiles === files) this.savingFiles = undefined;
+      }
+    });
+    return this.saving;
+  }
+
+  /** Save the latest edit, including one made while an older save was running. */
+  async leave(): Promise<boolean> {
+    let files: BoardFile[];
+    do {
+      files = this.files;
+      if (!(await this.validate())) return false;
+    } while (files !== this.files);
+    return true;
+  }
+
+  override disconnectedCallback() {
+    clearTimeout(this.timer);
+    ++this.validateSeq;
+    super.disconnectedCallback();
   }
 
   private renderPreview(p: BoardPreview | undefined) {

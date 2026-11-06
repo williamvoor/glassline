@@ -12,6 +12,7 @@ import './connect.js';
 import './report.js';
 import './review.js';
 import './boards.js';
+import type {BsBoards} from './boards.js';
 import type {ReportSelection} from './connect.js';
 import {suggestedName, type BsReview} from './review.js';
 import {MODELS, boardProblems} from './types.js';
@@ -349,6 +350,11 @@ export class ExplorerWizard extends LitElement {
   /** Moves by Back, Next or the step bar (E15): leaving Review saves its edits first (stay, with the
    * error shown, if that fails), and arriving on Boards rechecks the held Boards against them. */
   async goTo(step: WizardStep) {
+    if (this.step === 'boards' && step !== 'boards') {
+      const editor = this.querySelector<BsBoards>('bs-boards');
+      if (editor && !(await editor.leave())) return;
+      if (step === 'export' && boardProblems(this.boards).length) return;
+    }
     if (this.step === 'review' && step !== 'review') {
       const review = this.reviewEl;
       if (review && !(await review.leave())) return;
@@ -574,7 +580,7 @@ export class ExplorerWizard extends LitElement {
       blockers = boardProblems(this.boards).length ? ['A Board has problems: fix them above, or draft the Boards again.'] : [];
       next = this.boards
         ? html`<button type="button" class="primary next" ?disabled=${blockers.length > 0 || this.boardsRunning}
-            @click=${() => this.go('export')}>Next</button>`
+            @click=${() => void this.goTo('export')}>Next</button>`
         : this.regenerating
           ? html`<button type="button" class="keep-boards" ?disabled=${this.busy || this.boardsRunning}
               @click=${() => void this.keepBoards()}>Keep current Boards</button>`

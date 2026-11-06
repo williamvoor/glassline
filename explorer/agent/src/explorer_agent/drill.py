@@ -23,6 +23,7 @@ from pglast.parser import ParseError, scan
 from psycopg import sql as psql
 
 from explorer_agent.results import NUMERIC_TYPES, TEMPORAL_TYPES
+from explorer_agent.sql_text import COMMENT_TOKENS, normalise, wrap
 
 log = logging.getLogger(__name__)
 
@@ -41,28 +42,6 @@ class DrillSqlError(ValueError):
 class Rewritten:
     sql: str  # the `$n` form: what the guard checks and what runs
     names: tuple[str, ...]  # placeholder names in `$n` order ($1 = names[0])
-
-
-COMMENT_TOKENS = ("SQL_COMMENT", "C_COMMENT")
-
-
-def normalise(sql: str) -> str:
-    """No trailing `;` (also one before a trailing comment), so the statement can be wrapped; a
-    wrapper puts it on its own lines, so a trailing `--` comment stays inside."""
-    body = sql.strip()
-    try:
-        tokens = [t for t in scan(body) if t.name not in COMMENT_TOKENS]
-    except ParseError:
-        return body.rstrip(";").rstrip()  # the guard reports the syntax error
-    while tokens and tokens[-1].name == "ASCII_59":
-        last = tokens.pop()
-        body = body[: last.start] + body[last.end + 1 :]
-    return body.strip()
-
-
-def wrap(sql: str, alias: str, suffix: str = "") -> str:
-    """`SELECT * FROM (<sql>) AS <alias>`, newlines keeping a trailing `--` comment inside."""
-    return f"SELECT * FROM (\n{normalise(sql)}\n) AS {alias}{suffix}"
 
 
 def _tokens(sql: str) -> list[Any]:

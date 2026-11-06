@@ -183,8 +183,10 @@ async def test_many_queries_on_one_connection(ro_pool):
         "WITH a AS (SELECT agency_name, contract_count FROM mart.agency) SELECT * FROM a WHERE contract_count < 0",
         "SELECT agency_name, contract_count FROM mart.agency WHERE false;",
         "SELECT agency_name, contract_count FROM mart.agency WHERE false -- none",
+        "SELECT agency_name, contract_count FROM mart.agency WHERE false; -- none",
+        "SELECT agency_name, contract_count FROM mart.agency WHERE false; /* none */",
     ],
-    ids=["plain", "with", "semicolon", "trailing_comment"],
+    ids=["plain", "with", "semicolon", "trailing_comment", "semicolon_line_comment", "semicolon_block_comment"],
 )
 async def test_empty_result_is_a_result(ro_pool, sql):
     out = await runner(ro_pool).run(sql)
