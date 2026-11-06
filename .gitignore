@@ -55,3 +55,12 @@ austender/logs/
 glimmer-tune/data/explorer_dev/shots/
 # Judge labelling screenshots (copied by `python -m a2ui_eval.judge pool`)
 glimmer-tune/data/judge/shots/
+
+# Deploy (deploy/README.md): database dumps and the Caddy login are local to the VM
+deploy/dumps/
+deploy/basic_auth.caddy
+.env-*
+deploy/connections.env
+
+# IDE settings
+.idea/

@@ -1,0 +1,57 @@
+# Caddy gets and renews the Let's Encrypt certificate for PUBLIC_HOST by itself (HTTP-01 on port 80,
+# TLS-ALPN on 443), and redirects http to https. Certificates persist in the caddy_data volume.
+{
+	email {$ACME_EMAIL}
+	# The agent and the bootstrap server share Caddy's network namespace: no admin API for them.
+	admin off
+	# UDP 443 is neither published nor open in the security group, so don't advertise HTTP/3.
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	# One shared login for the whole site. The browser then sends it with the client's same-origin
+	# requests to /agent/*. The file is mounted from deploy/basic_auth.caddy (README). The hostname
+	# is public (Certificate Transparency logs), so this stays on. MAX_TURNS_PER_DAY in the agent is
+	# the second guard on model spend.
+	import /etc/caddy/basic_auth.caddy
+
+	# Caddy, the agent and the bootstrap server share one network namespace (compose `net`), so
+	# both upstreams are on 127.0.0.1. Both check the Host header against localhost:<port> (their
+	# DNS-rebinding guard), so it is rewritten to that; the login above already stood in front.
+	# handle_path strips the prefix. flush_interval -1 streams SSE without buffering.
+
+	# The agent (Workspace mode): /agent/workspaces, /agent/w/<name>/… (cards, A2A, Conversations).
+	# AGENT_PUBLIC_URL must be https://<host>/agent/.
+	redir /agent /agent/ 308
+	handle_path /agent/* {
+		reverse_proxy 127.0.0.1:10002 {
+			header_up Host localhost:10002
+			flush_interval -1
+		}
+	}
+
+	# Settings: the bootstrap server's /api/… (New Workspace, Regenerate, Delete, draft events).
+	handle_path /bootstrap/* {
+		reverse_proxy 127.0.0.1:8765 {
+			header_up Host localhost:8765
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
