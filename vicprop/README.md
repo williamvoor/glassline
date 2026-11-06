@@ -105,12 +105,22 @@ Set these values in the repository root `.env`, replacing the password placehold
 `vicprop/.env`'s `EXPLORER_RO_PASSWORD` (URL-encoded where necessary):
 
 ```dotenv
-DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
-DATASET_DIR=../datasets/vicprop
+EXPLORER_DATA_DIR=~/.glassline/workspaces
+VICPROP_DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
+```
+
+Then either create the Workspace in Settings (New Workspace), or list the committed Dataset in
+`$EXPLORER_DATA_DIR/workspaces.toml`:
+
+```toml
+[[workspace]]
+name = "vicprop"
+dataset_dir = "datasets/vicprop"
+dsn_env = "VICPROP_DATABASE_URL"
 ```
 
 Configure `META_API_KEY` and the serving model as described in
-[Explorer's setup](../explorer/README.md#run-against-a-real-dataset). The loader login owns the
+[Explorer's setup](../explorer/README.md#run). The loader login owns the
 schemas and performs writes; Explorer must use the separate `explorer_ro` login. Dataset
 notes, glossary, examples, optional overlays, and Boards live under
 [`../datasets/vicprop/`](../datasets/vicprop/).
@@ -137,7 +147,7 @@ Postgres 18 containers and verify the committed workbook, missing/preliminary va
 and idempotent loading. Tests make no external API or model calls. `build_test_db(dsn)` is an
 available integration helper: it creates roles, migrates, and loads the committed workbook
 into an empty database supplied by the caller. Explorer's current default test dependency
-is AusTender; the VicProp helper is not automatically selected by changing `DATASET_DIR`.
+is AusTender; the VicProp helper is not selected by adding a VicProp Workspace.
 
 See [AGENTS.md](AGENTS.md) for migration, comment-budget and deterministic parsing rules.
 
@@ -148,6 +158,6 @@ See [AGENTS.md](AGENTS.md) for migration, comment-budget and deterministic parsi
 | Connection/authentication failure | Compose health, port 5435, and credentials matching the existing database roles |
 | Workbook not found | `VICPROP_XLSX` resolves relative to this project; check the override or use an absolute path |
 | Fewer observations for a locality | Missing medians are absent rows, not zeros; preliminary 2026 also has missing values |
-| Explorer shows the wrong Dataset | Update both root `DATABASE_URL` and `DATASET_DIR`, then restart the agent |
+| Explorer shows the wrong Dataset | Check the Workspace's `dataset_dir` and `dsn_env` in `$EXPLORER_DATA_DIR/workspaces.toml`, then reload (Settings) or restart |
 | Migration checksum mismatch | Restore the applied file and express changes in a new migration |
 | Database tests fail before assertions | Docker must be running and able to start Testcontainers |

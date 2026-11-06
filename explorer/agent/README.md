@@ -17,16 +17,12 @@ uv sync --locked
 uv run python -m explorer_agent
 ```
 
-Single-Dataset startup checks the read-only login, Boards and prompt; invalid configuration
-exits 1. Workspace mode checks each Workspace separately and marks failures unavailable.
+Startup requires `EXPLORER_DATA_DIR` (one mode, ADR 0048) and checks each Workspace's read-only
+login, Boards and prompt separately, marking failures unavailable with their reason.
 Settings come from root `.env` (or `EXPLORER_ENV_FILE`), with exported variables taking precedence.
 
-Use `../run.sh --real` for the agent and client together, including Settings in Workspace mode.
-For a stub agent without a model or database:
-
-```bash
-uv run python -m explorer_agent.testing.stub_server --port 10002
-```
+Use `../run.sh` for the agent, Settings and the client together. The stub server
+(`explorer_agent.testing.stub_server`) is for tests only: the client interop test starts it.
 
 ### Example questions
 

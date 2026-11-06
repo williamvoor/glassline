@@ -7,6 +7,7 @@ import type {AgentConnection, AskEvent} from '../src/a2a.js';
 import '../src/app.js';
 import {ACTION_FAILED_KEY, LEVEL_KEY, LOG_KEY, NO_BOARDS_KEY, OPEN_BOARD, TAB_KEY, type ExplorerApp} from '../src/app.js';
 import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
+import {oneWorkspace} from './one-workspace.js';
 
 const PLAIN = ['h1', 'h2', 'h3', 'h4', 'h5', 'caption'];
 const SID = 'turn-1-1-x';
@@ -47,8 +48,13 @@ afterEach(() => {
 
 it('renders h1–h5, caption and Tabs titles as plain text, and body Text as markdown', async () => {
   const app = document.createElement('explorer-app') as ExplorerApp;
+  app.workspaceApi = oneWorkspace();
   app.connector = async () => connection;
   document.body.appendChild(app);
+  for (let i = 0; i < 12; i++) { // the Workspace opens first (ADR 0048)
+    await new Promise(r => setTimeout(r, 5));
+    await app.updateComplete;
+  }
   await app.ask('q');
   for (let i = 0; i < 12; i++) {
     await new Promise(r => setTimeout(r, 5));

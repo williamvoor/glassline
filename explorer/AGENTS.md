@@ -26,7 +26,7 @@ long as numbers stay correct.
 | `agent/src/explorer_agent/sql.py` | SQL guard (`pglast`) and read-only execution |
 | `agent/src/explorer_agent/macros.py` | Macros, value formats, labels |
 | `agent/src/explorer_agent/prompt.py`, `prompts/instructions.md` | System prompt assembly |
-| `agent/src/explorer_agent/testing/` | Stub model and stub server (tests and `run.sh` only) |
+| `agent/src/explorer_agent/testing/` | Stub model and stub server (tests only; the stub serves one fake Workspace) |
 | `client/` | Vite + Lit chat view: `@a2ui/lit`, vendored VegaChart, `DataGrid`, `SqlDetails` |
 | `catalog/explorer_custom_components.json` | Custom components merged into the one catalog (ADR 0002) |
 | `datasets/` | Git-ignored (old local root; the bootstrap CLI now exports to `~/.glassline`). `explorer/` ships no Dataset (ADR 0045). The owner's committed Datasets are in `../datasets/<name>/`: `dataset.toml`, `notes.md`, `glossary.md`, `scenarios.toml`, optional `comments.toml`, `boards/` |
@@ -34,7 +34,7 @@ long as numbers stay correct.
 | `bootstrap/` | Dev tool that drafts a new Dataset (`datasets/<name>/`, or a Workspace) (server + UI, own `SPEC.md`) |
 | `specs/<step>/SPEC.md` | Sub-specs per build step. Where one is silent, `SPEC.md` applies |
 | `spike/` | Phase 1 evidence (`FINDINGS.md`). Historical; don't build on its code |
-| `run.sh` | Starts an agent plus the client (`--real` for Muse Spark and the database) |
+| `run.sh` | Starts the agent, the bootstrap server (Settings) and the client. One mode (ADR 0048) |
 
 ## Commands
 
@@ -42,7 +42,7 @@ long as numbers stay correct.
 # agent/
 uv sync
 uv run pytest                      # all but live_db; needs Docker (Testcontainers Postgres 18)
-uv run pytest -m live_db           # by hand, against the loaded dataset database
+LIVE_WORKSPACE=<name> uv run pytest -m live_db   # by hand, against that Workspace's database
 UPDATE_SNAPSHOTS=1 uv run pytest tests/test_prompt.py   # only after a deliberate prompt change
 UPDATE_FIXTURES=1 uv run pytest tests/test_ui.py        # regenerates client/test/fixtures/slice_transport.json
 
@@ -50,12 +50,16 @@ UPDATE_FIXTURES=1 uv run pytest tests/test_ui.py        # regenerates client/tes
 npm install && npm test && npm run build
 
 # bootstrap/server/: see its README (its browser UI is the client's Settings)
-./run.sh            # stub agent + client on http://127.0.0.1:5173
-./run.sh --real     # real agent; settings from ../.env
+./run.sh            # agent + Settings + client on http://127.0.0.1:5173; needs EXPLORER_DATA_DIR in ../.env
 ```
 
 ## Hard rules
 
+- **One mode (ADR 0048).** The explorer is always the full stack: the agent serving Workspaces
+  from `EXPLORER_DATA_DIR`, the bootstrap server behind Settings, and a client that always shows
+  the picker and Settings. Don't add a build flag, env var or launcher option that runs a smaller
+  app (no single-Dataset mode, no `VITE_WORKSPACES`, no stub mode in `run.sh`). Deploys build the
+  same app. The stub server is a test fixture only.
 - **Dataset-agnostic.** No AusTender names, tables, currency or wording in code, prompts or tests'
   shared fixtures. Put them in a Dataset (`../datasets/<name>/`); tests load the frozen `agent/tests/fixtures/austender/`. The test database comes from
   `austender.testing.build_test_db` (ADR 0010). That's the one allowed dependency on `../austender/`.

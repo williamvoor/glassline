@@ -1,9 +1,11 @@
 """Checks against the loaded dataset database. Not run by default: `uv run pytest -m live_db`.
 
-Reads the repo root's `.env` (DATABASE_URL, DATASET_DIR), like `__main__`. Local database only: no model, no network.
+Reads the repo root's `.env`, like `__main__`, and checks the Workspace named by `LIVE_WORKSPACE`
+(in `EXPLORER_DATA_DIR`). Local database only: no model, no network.
 """
 
 import logging
+import os
 import statistics
 from pathlib import Path
 
@@ -11,7 +13,7 @@ import pytest
 from dotenv import dotenv_values
 
 from explorer_agent.__main__ import ENV_FILE
-from explorer_agent.config import load_settings
+from explorer_agent.config import named_workspace_settings
 from explorer_agent.schema import SchemaCatalog, render_schema_section
 from explorer_agent.sql import SqlOk, SqlRunner, open_pool
 
@@ -30,8 +32,12 @@ SCHEMA_SECTION_LIMIT = 12_000
 async def live():
     env_file = ENV_FILE
     if not env_file.is_file():
-        pytest.fail(f"live_db checks need {env_file} with DATABASE_URL (see .env.example)")
-    settings = load_settings({k: v for k, v in dotenv_values(env_file).items() if v is not None}, EXPLORER_ROOT)
+        pytest.fail(f"live_db checks need {env_file} with EXPLORER_DATA_DIR (see .env.example)")
+    env = {**{k: v for k, v in dotenv_values(env_file).items() if v is not None}, **os.environ}
+    name = env.get("LIVE_WORKSPACE", "").strip()
+    if not name:
+        pytest.fail("live_db checks need LIVE_WORKSPACE, the name of a Workspace in EXPLORER_DATA_DIR")
+    settings = named_workspace_settings(env, name, EXPLORER_ROOT.parent, EXPLORER_ROOT)
     pool = open_pool(settings.database_url)
     await pool.open(wait=True)
     try:

@@ -125,9 +125,10 @@ schema `public`. Its real write barrier is the missing privileges, so the explor
 postgresql://explorer_ro:<password>@localhost:5434/austender
 ```
 
-Put that value in `DATABASE_URL` in the repository root `.env`, with
-`DATASET_DIR=../datasets/austender` (single-Dataset mode; relative paths start at `explorer/`). URL-encode special characters in the password. Then follow
-[Explorer's real-Dataset setup](../explorer/README.md#run-against-a-real-dataset).
+Put that value in `AUSTENDER_DATABASE_URL` in the repository root `.env` and list a Workspace
+with `dataset_dir = "datasets/austender"` and `dsn_env = "AUSTENDER_DATABASE_URL"` in
+`$EXPLORER_DATA_DIR/workspaces.toml`. URL-encode special characters in the password. Then follow
+[Explorer's setup](../explorer/README.md#run).
 
 The Data dictionary comes from `mart` table/column comments, with any Dataset Comment overlay
 taking precedence. To inspect the database comments:

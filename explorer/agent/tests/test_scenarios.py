@@ -918,7 +918,15 @@ async def test_boards_failed_open_records_only_the_open(tmp_path, monkeypatch):
 
 def test_boards_runs_must_be_positive():
     with pytest.raises(SystemExit):
-        sc.main(["boards", "--runs", "0"])
+        sc.main(["boards", "--workspace", "aus", "--runs", "0"])
+
+
+# ADR 0048: the scenario tools name a Workspace; there is no DATASET_DIR to fall back on.
+@pytest.mark.parametrize("cmd", ["run", "boards"])
+def test_scenario_tools_require_a_workspace(cmd, capsys):
+    with pytest.raises(SystemExit):
+        sc.main([cmd])
+    assert "--workspace" in capsys.readouterr().err
 
 
 def test_boards_explorer_cold_is_its_own_measure():
@@ -1124,7 +1132,10 @@ def fake_main_run(monkeypatch, tmp_path, scenarios_text):
     async def fake_run(chosen, runs, level, out_dir, runner, allowed, **kw):
         called.update(chosen=chosen, **kw)
     monkeypatch.setattr(sc, "load_dotenv", lambda *a, **k: None)
-    monkeypatch.setattr(sc, "load_settings", lambda *a: settings)
+    def fake_settings(env, name, *roots):
+        called.setdefault("workspace", name)
+        return settings
+    monkeypatch.setattr(sc, "named_workspace_settings", fake_settings)
     monkeypatch.setattr(sc, "open_pool", lambda url: Pool())
     monkeypatch.setattr(sc, "run", fake_run)
     monkeypatch.setattr(sc, "repo_commit", lambda paths: {"sha": "s", "dirty": False, "paths": paths})
@@ -1133,7 +1144,8 @@ def fake_main_run(monkeypatch, tmp_path, scenarios_text):
 
 def test_main_run_passes_model_commit_and_keyless_boards(tmp_path, monkeypatch):
     called = fake_main_run(monkeypatch, tmp_path, BOARD_FILE)
-    sc.main(["run", "--include-unreviewed"])
+    sc.main(["run", "--workspace", "aus", "--include-unreviewed"])
+    assert called["workspace"] == "aus"
     assert called["model"] == "meta/configured"
     assert called["commit"]["paths"] == [ec.AGENT_DIR, tmp_path]
     assert [s.id for s in called["chosen"]] == ["a", "b", "c", "t"]
@@ -1142,8 +1154,8 @@ def test_main_run_passes_model_commit_and_keyless_boards(tmp_path, monkeypatch):
 def test_board_scenario_rejected_before_the_agent_starts(tmp_path, monkeypatch):
     called = fake_main_run(monkeypatch, tmp_path, BOARD_FILE.replace('board = "explorer"\ncontrols', 'board = "agency"\ncontrols'))
     with pytest.raises(SystemExit, match="no Board without a key named 'agency'"):  # agency has a key
-        sc.main(["run", "--include-unreviewed"])
-    assert called == {}  # `run` (references, then the agent) never started
+        sc.main(["run", "--workspace", "aus", "--include-unreviewed"])
+    assert called == {"workspace": "aus"}  # `run` (references, then the agent) never started
 
 
 def test_repo_commit_sees_modified_and_untracked_files(tmp_path):

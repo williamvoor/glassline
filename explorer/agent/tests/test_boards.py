@@ -698,10 +698,10 @@ def test_boards_need_the_express_format(tmp_path):
         'name = "t"\ndescription = "d"\nallowed_schemas = ["fixture"]\nnotes = "notes.md"\nglossary = "glossary.md"\n'
         '[currency]\ncode = "AUD"\nsymbol = "$"\n', encoding="utf-8")
     write(tmp_path, GOOD)
-    env = {"DATABASE_URL": "postgresql://u:p@localhost:5432/db", "DATASET_DIR": str(tmp_path)}
-    assert load_settings(env, tmp_path).dataset.boards
+    dsn = "postgresql://u:p@localhost:5432/db"
+    assert load_settings({}, tmp_path, dsn).dataset.boards
     with pytest.raises(ConfigError, match="FORMAT must be express"):
-        load_settings({**env, "FORMAT": "direct_json"}, tmp_path)
+        load_settings({"FORMAT": "direct_json"}, tmp_path, dsn)
 
 
 # --- bootstrap phase 3: the set rules in memory (T2), the rules text and on_query (T3) ----------

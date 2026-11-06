@@ -126,4 +126,4 @@ fi
 # --- run -------------------------------------------------------------------------------------
 export EXPLORER_DATA_DIR="$DATA_DIR"
 echo "--> starting the explorer (agent, bootstrap server, client); Ctrl-C stops it"
-exec "$ROOT/explorer/run.sh" --real
+exec "$ROOT/explorer/run.sh"

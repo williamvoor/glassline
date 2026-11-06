@@ -1,8 +1,8 @@
 """End-to-end scenarios, scored automatically (explorer/specs/scenarios/SPEC.md, ADR 0018).
 
-    uv run python scripts/scenarios.py run [--file F] [--ids a,b] [--runs 1] [--level minimal] [--include-unreviewed]
+    uv run python scripts/scenarios.py run --workspace NAME [--file F] [--ids a,b] [--runs 1] [--level minimal] [--include-unreviewed]
     uv run python scripts/scenarios.py report RUNS.jsonl
-    uv run python scripts/scenarios.py boards [--runs 5] [--out DIR]
+    uv run python scripts/scenarios.py boards --workspace NAME [--runs 5] [--out DIR]
     uv run python scripts/scenarios.py compare A.jsonl B.jsonl [--out DIR]
 
 `run` checks every reference query, starts the real agent, asks each scenario's turns in one
@@ -33,7 +33,7 @@ import httpx
 from dotenv import load_dotenv
 
 import effort_check as ec
-from explorer_agent.config import load_settings
+from explorer_agent.config import named_workspace_settings
 from explorer_agent.macros import _DATE
 from explorer_agent.sql import GuardError, SqlFail, SqlOk, SqlRunner, guard, open_pool
 
@@ -1448,7 +1448,7 @@ def write_compare(a: Path, b: Path, out_dir: Path | None = None) -> Path:
 
 async def _main_run(args: argparse.Namespace) -> None:
     load_dotenv(ec.ENV_FILE, override=False)
-    settings = load_settings(os.environ, EXPLORER_ROOT)
+    settings = named_workspace_settings(os.environ, args.workspace, EXPLORER_ROOT.parent, EXPLORER_ROOT)
     path = args.file or settings.dataset_dir / "scenarios.toml"
     keyless = {b.name for b in settings.dataset.boards.values() if not b.key}
     chosen = select(load(path, keyless), [i.strip() for i in args.ids.split(",") if i.strip()] if args.ids else None,
@@ -1469,7 +1469,7 @@ async def _main_run(args: argparse.Namespace) -> None:
 
 async def _main_boards(args: argparse.Namespace) -> None:
     load_dotenv(ec.ENV_FILE, override=False)
-    settings = load_settings(os.environ, EXPLORER_ROOT)
+    settings = named_workspace_settings(os.environ, args.workspace, EXPLORER_ROOT.parent, EXPLORER_ROOT)
     titles = board_titles(settings.dataset.name, settings.dataset.boards)
     await run_boards(titles, args.runs, args.out or DEFAULT_OUT_ROOT / settings.dataset.name)
 
@@ -1485,6 +1485,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="ask the scenarios against the real agent and score them")
+    r.add_argument("--workspace", required=True, help="a Workspace in EXPLORER_DATA_DIR")
     r.add_argument("--file", type=Path)
     r.add_argument("--ids")
     r.add_argument("--runs", type=int, default=1)
@@ -1492,6 +1493,7 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--include-unreviewed", action="store_true")
     r.add_argument("--out", type=Path)
     b = sub.add_parser("boards", help="time the Dataset's Boards against the speed targets (no model)")
+    b.add_argument("--workspace", required=True, help="a Workspace in EXPLORER_DATA_DIR")
     b.add_argument("--runs", type=_positive, default=5)
     b.add_argument("--out", type=Path)
     p = sub.add_parser("report", help="rewrite the report from a runs file")

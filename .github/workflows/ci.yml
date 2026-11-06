@@ -72,7 +72,7 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: explorer/client/package-lock.json
-      - name: Install stub agent for transport tests
+      - name: Install the test-only stub agent for transport tests
         run: uv sync --locked
         working-directory: explorer/agent
       - run: npm ci

@@ -248,8 +248,7 @@ committed `explorer/.env.example` with placeholders.
 | `FORMAT` | `express` | `express` or `direct_json` |
 | `REASONING_EFFORT` | `minimal` | Passed as `reasoning_effort` only when set; empty = not sent (other providers may reject it) |
 | `META_API_KEY` | (none) | Read by LiteLLM; other providers use their own variables |
-| `DATABASE_URL` | (required) | The dataset's read-only login |
-| `DATASET_DIR` | (required) | Dataset directory (no default, so the code names no dataset). Relative paths start at `explorer/`; absolute and `~` paths also work (§23). Ignored in Workspace mode |
+| `EXPLORER_DATA_DIR` | (required) | The Workspaces directory, outside the repo. Each Workspace's Dataset directory and login (`dsn_env`) come from `workspaces.toml` there. `DATABASE_URL` and `DATASET_DIR` were removed with single-Dataset mode (ADR 0048, 2026-11-06) |
 | `PROMPT_CACHE_KEY` | `explorer-<dataset>` | Fixed per dataset |
 | `SQL_TIMEOUT_MS` | `15000` | `statement_timeout` per query |
 | `SQL_ROW_CAP` | `5000` | Rows fetched and stored per query |
@@ -665,7 +664,9 @@ and a chat view that shows progress, failures and where to start.
   the same question in place. If the agent card can't be fetched, a banner names the agent URL
   and offers Retry. The composer is a textarea: Enter sends, Shift+Enter is a new line; Ask is
   disabled while a turn runs.
-- **Launcher.** `./run.sh --real` starts `python -m explorer_agent` (settings from the repo
+- **Launcher.** *(Replaced 2026-11-06 by ADR 0048: `./run.sh` takes no flag and always starts
+  the agent, the bootstrap server and the client; the stub mode is gone. See
+  `specs/workspaces/SPEC.md`, "One mode".)* `./run.sh --real` starts `python -m explorer_agent` (settings from the repo
   root's `.env`) and the client; it sets `AGENT_HOST`, `AGENT_PORT` and `CLIENT_ORIGIN` itself so
   agent and client agree, waits up to 60 s for the agent card, and refuses to start when the
   agent port is already serving. Ctrl-C stops both.

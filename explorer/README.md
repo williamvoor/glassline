@@ -73,15 +73,14 @@ caps, and an in-memory cache bound the work.
 - A Drill-down runs a query supplied ahead of time for that Visual, bound to the clicked row.
 - An Ask consults the model after confirmation; Follow-up buttons also take this path.
 
-## Runtime modes
+## One mode: Workspaces with Settings
 
-| Mode | Configuration | Conversations |
-|---|---|---|
-| Single Dataset | `DATABASE_URL` and `DATASET_DIR`; leave `EXPLORER_DATA_DIR` unset | In memory; lost on restart |
-| Workspaces | `EXPLORER_DATA_DIR`, an absolute path outside the repo, and named database logins | Saved per Workspace in SQLite; Results retain SQL, with rows fetched again when needed |
-
-Workspace mode ignores the top-level `DATABASE_URL` and `DATASET_DIR`. One agent serves all
-configured Workspaces. Settings supports adding and regenerating them through New Workspace:
+The explorer has one mode (ADR 0048): the agent serves the Workspaces listed in
+`$EXPLORER_DATA_DIR/workspaces.toml`, the bootstrap server backs Settings, and the client always
+shows the Workspace picker and Settings. `EXPLORER_DATA_DIR` is required, an absolute path outside
+the repo. Each Workspace names its Dataset directory and the variable holding its read-only login.
+Conversations are saved per Workspace in SQLite; Results retain SQL, with rows fetched again when
+needed. Settings adds and regenerates Workspaces through New Workspace:
 Database → Draft → Review → Boards → Export. See the [setup guide](bootstrap/README.md).
 The application is local and has no authentication.
 
@@ -107,87 +106,70 @@ installation needs network access; the A2UI Python packages come from a pinned G
 
 Commands below start from the repository root unless a working directory is stated.
 
-## Run the stub application
-
-```bash
-cd explorer/agent
-uv sync --locked
-cd ../client
-npm ci
-cd ..
-./run.sh
-```
-
-Open **http://127.0.0.1:5173**. The stub agent listens at **http://127.0.0.1:10002** and returns
-canned tool calls and Express using fixture Results. No model key or database is needed.
-Ctrl-C stops the client and agent. This mode exercises the transport/rendering path; it does
-not answer arbitrary questions using a real Dataset.
-
-## Run against a real Dataset
-
-These steps use single-Dataset mode. For saved Conversations and your own database, use
-[Workspace setup](bootstrap/README.md#setup-and-browser-workflow).
+## Run
 
 1. Prepare a database using [VicProp's setup](../vicprop/README.md#setup-and-load) or
-   [AusTender's setup](../austender/README.md#setup). VicProp loads a committed workbook and
-   needs no external data fetch. AusTender requires a fetch followed by `rebuild` to populate
-   its mart. Wait until the database is healthy and migrations/loading are complete.
-2. If there is no root `.env`, copy the example from the repository root:
+   [AusTender's setup](../austender/README.md#setup), or bring your own with a read-only login.
+   Wait until the database is healthy and loaded.
+2. If there is no root `.env`, copy the example from the repository root, then fill it in:
 
    ```bash
    cp explorer/.env.example .env
    ```
 
-   If it exists, edit it instead. For VicProp, set the following, substituting your credentials:
-
    ```dotenv
    META_API_KEY=<your-meta-api-key>
    MODEL=meta/muse-spark-1.3
-   # EXPLORER_DATA_DIR=~/.glassline/workspaces   # comment it out: when set, the two lines below are ignored
-   DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
-   DATASET_DIR=../datasets/vicprop
-   FORMAT=express
+   EXPLORER_DATA_DIR=~/.glassline/workspaces
+   VICPROP_DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
    ```
 
-   For AusTender, use port `5434`, database `austender`, and `DATASET_DIR=../datasets/austender`.
    The password is that database project's `EXPLORER_RO_PASSWORD`, not its loader password.
    URL-encode special characters in passwords used in a DSN.
-3. After installing dependencies as above, run:
+3. Install and start everything:
 
    ```bash
-   cd explorer
-   ./run.sh --real
+   cd explorer/agent && uv sync --locked
+   cd ../client && npm ci
+   cd .. && ./run.sh
    ```
 
-Open **http://127.0.0.1:5173**. The app shows the selected Dataset and its configured examples;
-a configured Explorer Board appears before the first question. Asking questions calls the
-configured model. Startup refuses write-capable database logins or invalid Dataset/Board
-configuration.
+Open **http://127.0.0.1:5173**. With no Workspaces yet, the app offers New Workspace: pick the
+`*_DATABASE_URL` login, let the model draft the Dataset and Boards, review, and export. To serve
+a committed Dataset such as `../datasets/vicprop` instead, list it in
+`$EXPLORER_DATA_DIR/workspaces.toml`:
 
-For separate processes in **single-Dataset mode**, run `uv run python -m explorer_agent` in `explorer/agent/` and
-`npm run dev` in `explorer/client/`. The browser calls the agent directly; there is no client
-proxy for the Explorer agent. For Workspace mode, use `./run.sh --real`, which also starts
-Settings’ API and sets `VITE_WORKSPACES=1` and the matching browser URLs.
+```toml
+[[workspace]]
+name = "vicprop"
+dataset_dir = "datasets/vicprop"   # relative to the repo root, or absolute
+dsn_env = "VICPROP_DATABASE_URL"
+```
+
+`run.sh` starts the agent, the bootstrap server (Settings) and the client, and stops all three on
+Ctrl-C. A Workspace whose login can write, or whose Dataset or Boards are invalid, is listed as
+unavailable with its reason.
 
 ## Configuration
 
 The agent loads the root `.env`, or the file named by `EXPLORER_ENV_FILE`, without overriding
-existing environment variables. Relative `DATASET_DIR` paths resolve against `explorer/`;
-absolute paths and `~` are supported. Manually edited Dataset files need a restart or
+existing environment variables. A Workspace's relative `dataset_dir` resolves against the repo
+root; absolute paths and `~` are supported. Manually edited Dataset files need a restart or
 Workspace reload; Settings export reloads the agent automatically.
 
 | Settings | Role |
 |---|---|
 | `MODEL`, `META_API_KEY`, `REASONING_EFFORT` | Serving model, credentials, and reasoning setting; Spark is the default, Wonder is permitted by ADR 0030 |
-| `DATABASE_URL`, `DATASET_DIR`, `FORMAT` | Read-only database, Dataset directory, output format; Boards require `express` |
+| `FORMAT` | Output format; Boards require `express` |
 | `SQL_TIMEOUT_MS`, `SQL_ROW_CAP`, `ROWS_TO_MODEL`, `TABLE_ROW_CAP` | Query duration, stored rows, model preview, displayed table rows |
 | `MAX_TOOL_ITERATIONS`, `MAX_UI_RETRIES`, `TURN_TIMEOUT_S` | Model/Repair and Turn limits |
 | `PROMPT_CACHE_KEY`, `HISTORY_MODE` | Cache namespace and compact/full history |
 | `DRILL_*`, `MAX_DRILLS_PER_SURFACE` | Drill checking and prefetch limits |
 | `BOARD_*`, `MAX_BOARD_CACHE`, `MAX_BOARD_INSTANCES`, `MAX_CONTROL_OPTIONS` | Board concurrency, rows, caching, instances, and Control limits |
 | `AGENT_HOST`, `AGENT_PORT`, `CLIENT_ORIGIN`, `LOG_LEVEL` | Server binding, CORS, and logging |
-| `EXPLORER_DATA_DIR` | Enables Workspace mode; data directory must be outside the repo |
-| `VITE_AGENT_URL`, `VITE_WORKSPACES`, `VITE_BOOTSTRAP_URL` | Browser agent URL, Workspace mode (`1`), and Settings API URL; set together by `run.sh` |
+| `EXPLORER_DATA_DIR` | Required. The Workspaces and saved Conversations; must be outside the repo |
+| `<NAME>_DATABASE_URL` | A read-only login a Workspace names as its `dsn_env`; Settings offers each one |
+| `VITE_AGENT_URL`, `VITE_BOOTSTRAP_URL` | Browser agent URL and Settings API URL; set together by `run.sh` |
 
 See [.env.example](.env.example) and [`config.py`](agent/src/explorer_agent/config.py) for
 individual defaults and validation. `run.sh` fixes the client origin/port at 5173 and passes
@@ -223,7 +205,7 @@ npm run build
 ```
 
 The default agent suite excludes `live_db` and includes Docker-backed tests. The client
-interop test starts a stub agent, so `uv` must be on PATH. Database tests use a disposable
+interop test starts the test-only stub agent (one fake Workspace), so `uv` must be on PATH. Database tests use a disposable
 Postgres 18 built from `austender.testing.build_test_db`; production code has no dependency
 on AusTender tables. No ordinary test calls a real model or external API.
 
@@ -231,12 +213,11 @@ The following checks deliberately read your configured real database, without a 
 
 ```bash
 # explorer/agent/
-uv run pytest -m live_db
-uv run python -m explorer_agent boards
+LIVE_WORKSPACE=<name> uv run pytest -m live_db
+uv run python -m explorer_agent boards <name>
 ```
 
-The `boards` command uses `DATABASE_URL` and `DATASET_DIR`, even when Workspace mode is
-configured. It validates Boards and times cold rendering of unkeyed Boards. Entity
+Both name a Workspace in `EXPLORER_DATA_DIR`. The `boards` command validates Boards and times cold rendering of unkeyed Boards. Entity
 Boards are checked but not timed because they require a clicked entity key.
 
 After an intentional prompt change, regenerate prompt snapshots with

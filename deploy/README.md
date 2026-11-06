@@ -1,6 +1,6 @@
 # Deploy: one VM
 
-The explorer on a single Ubuntu VM with Docker Compose, the same as `explorer/run.sh --real` in
+The explorer on a single Ubuntu VM with Docker Compose, the same as `explorer/run.sh` in
 Workspace mode: the Workspace picker, saved Conversations, and Settings (New Workspace, Regenerate,
 Delete). Containers:
 

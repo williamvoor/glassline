@@ -101,8 +101,6 @@ class Settings:
     # Behind a proxy (specs/deployment): the URL the browser reaches the agent at, for the card.
     agent_public_url: str | None = None
     # A public deploy (specs/deployment): model runs per UTC day across all users; 0 = no cap.
-    max_turns_per_day: int = 0
-    turn_limit_contact: str | None = None  # appended to the limit message, e.g. whom to ask for a reset
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
         return f"Settings(model={self.model!r}, format={self.format!r}, dataset={self.dataset.name!r})"
@@ -295,24 +293,22 @@ def load_overlay(path: Path, allowed_schemas: tuple[str, ...]) -> CommentOverlay
     return CommentOverlay(path=path, entries=entries)
 
 
-def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
+def load_settings(env: Mapping[str, str], dataset_dir: Path, database_url: str) -> Settings:
+    """One Workspace's Settings: its Dataset directory and read-only login, the rest from `env`
+    (ADR 0048: there is no single-Dataset mode, so neither comes from the environment)."""
     fmt = env.get("FORMAT", "").strip() or "express"
     if fmt not in FORMATS:
         raise ConfigError(f"FORMAT must be one of {', '.join(FORMATS)}")
     history_mode = env.get("HISTORY_MODE", "").strip() or "compact"
     if history_mode not in HISTORY_MODES:
         raise ConfigError(f"HISTORY_MODE must be one of {', '.join(HISTORY_MODES)}")
-    database_url = env.get("DATABASE_URL", "").strip()
+    database_url = database_url.strip()
     if not database_url:
-        raise ConfigError("DATABASE_URL is required (the dataset's read-only login)")
+        raise ConfigError("the dataset's read-only login is required")
     try:
         check_dsn(database_url)
     except ValueError as e:
-        raise ConfigError(f"DATABASE_URL: {e}") from None
-    dataset_dir_name = env.get("DATASET_DIR", "").strip()
-    if not dataset_dir_name:
-        raise ConfigError("DATASET_DIR is required (the dataset directory: absolute, starting with ~, or relative to explorer/)")
-    dataset_dir = explorer_root / Path(dataset_dir_name).expanduser()  # an absolute right-hand side wins
+        raise ConfigError(f"login: {e}") from None
     dataset = load_dataset(dataset_dir)
     if dataset.boards and fmt != "express":
         raise ConfigError(f"the dataset has Boards, whose layouts are Express, so FORMAT must be express (it is {fmt})")
@@ -354,8 +350,6 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         max_board_instances=_positive_int(env, "MAX_BOARD_INSTANCES"),
         board_prefetch_rows=_non_negative_int(env, "BOARD_PREFETCH_ROWS"),
         agent_public_url=_public_url(env),
-        max_turns_per_day=_non_negative_int(env, "MAX_TURNS_PER_DAY"),
-        turn_limit_contact=env.get("TURN_LIMIT_CONTACT", "").strip() or None,
     )
 
 
@@ -498,12 +492,36 @@ def workspace_settings(env: Mapping[str, str], entry: WorkspaceEntry, explorer_r
     except ValueError:
         raise WorkspaceUnavailable(f"`{entry.dsn_env}` is malformed") from None
     base = env.get("PROMPT_CACHE_KEY", "").strip()
-    local = {**env, **entry.overrides, "DATABASE_URL": dsn, "DATASET_DIR": str(entry.dataset_dir),
+    local = {**env, **entry.overrides,
              "PROMPT_CACHE_KEY": f"{base}-{entry.name}" if base else f"explorer-{entry.name}"}
     try:
-        return load_settings(local, explorer_root)
+        return load_settings(local, entry.dataset_dir, dsn)
     except ConfigError as e:
         raise WorkspaceUnavailable(f"dataset invalid: {e}") from None
+
+
+def required_data_dir(env: Mapping[str, str], repo_root: Path) -> Path:
+    """`EXPLORER_DATA_DIR`, which the explorer can't run without (ADR 0048)."""
+    raw = env.get("EXPLORER_DATA_DIR", "").strip()
+    if not raw:
+        raise ConfigError("EXPLORER_DATA_DIR is required (the Workspaces directory, outside the repo; see .env.example)")
+    return data_dir(raw, repo_root)
+
+
+def named_workspace_settings(env: Mapping[str, str], name: str, repo_root: Path, explorer_root: Path) -> Settings:
+    """The Settings of the Workspace called `name` in `EXPLORER_DATA_DIR`, for the dev tools
+    (`boards`, `scripts/scenarios.py`). Raises ConfigError naming it when it's missing or unusable."""
+    path = required_data_dir(env, repo_root) / WORKSPACES_FILE
+    for item in load_workspace_list(path, repo_root):
+        if item.name != name:
+            continue
+        if item.entry is None:
+            raise ConfigError(f"Workspace {name!r}: {item.error}")
+        try:
+            return workspace_settings(env, item.entry, explorer_root)
+        except WorkspaceUnavailable as e:
+            raise ConfigError(f"Workspace {name!r}: {e}") from None
+    raise ConfigError(f"no Workspace named {name!r} in {path}")
 
 
 @dataclass(frozen=True)

@@ -133,8 +133,6 @@ export class ExplorerApp extends LitElement {
   private ticker?: ReturnType<typeof setInterval>;
 
   agentUrl = import.meta.env.VITE_AGENT_URL ?? 'http://127.0.0.1:10002';
-  /** Workspace mode (specs/workspaces/SPEC.md): run.sh builds the client with VITE_WORKSPACES=1. */
-  workspaceMode = import.meta.env.VITE_WORKSPACES === '1';
   /** Replaceable in tests. */
   workspaceApi: WorkspaceApi = httpApi(this.agentUrl);
   /** Replaceable in tests. */
@@ -165,13 +163,9 @@ export class ExplorerApp extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    if (this.workspaceMode) {
-      window.addEventListener('hashchange', this.onHash);
-      void this.startWorkspaces();
-      return;
-    }
-    void this.connectionOnce().catch(() => {}); // load the card early for the header and examples
-    this.openBoard();
+    // One mode (ADR 0048): the app always lists Workspaces and offers Settings.
+    window.addEventListener('hashchange', this.onHash);
+    void this.startWorkspaces();
   }
 
   override disconnectedCallback() {
@@ -184,7 +178,6 @@ export class ExplorerApp extends LitElement {
 
   /** The closed tabs and the selected one, sent as `explorerView` (B12). */
   private viewState(): ViewState | undefined {
-    if (!this.workspaceMode) return undefined;
     const closed = this.tabs.filter(t => t.closed && t.id).map(t => t.id!);
     const selected = this.viewing();
     return {closed, ...(selected ? {selected} : {})};
@@ -204,7 +197,7 @@ export class ExplorerApp extends LitElement {
 
   /** Workspace mode with a loaded list that offers nothing to open: Settings is the next step. */
   private get noWorkspace(): boolean {
-    return this.workspaceMode && this.workspacesLoaded && !this.workspace;
+    return this.workspacesLoaded && !this.workspace;
   }
 
   /** Opens what the hash names: a Workspace, or a saved Conversation in it. */
@@ -287,7 +280,7 @@ export class ExplorerApp extends LitElement {
   }
 
   private setRoute(conversation?: string) {
-    if (!this.workspaceMode || !this.workspace || this.settingsOpen) return;
+    if (!this.workspace || this.settingsOpen) return;
     const hash = routeHash({workspace: this.workspace.name, conversation});
     this.routeWritten = hash;
     if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
@@ -821,7 +814,6 @@ export class ExplorerApp extends LitElement {
   // rendering -----------------------------------------------------------------------------------
 
   private renderPicker() {
-    if (!this.workspaceMode) return nothing;
     return html`<div class="workspaces" role="group" aria-label="Workspaces">
       ${this.workspaces.map(w => w.status === 'available'
         ? html`<button type="button" class=${w.name === this.workspace?.name ? 'workspace selected' : 'workspace'}
@@ -835,7 +827,7 @@ export class ExplorerApp extends LitElement {
   }
 
   private renderSaved() {
-    if (!this.workspaceMode || !this.workspace) return nothing;
+    if (!this.workspace) return nothing;
     return html`<button type="button" class="saved-toggle label" aria-expanded=${this.listOpen ? 'true' : 'false'}
         @click=${() => void this.toggleList()}>Conversations</button>
       ${this.listOpen
@@ -870,11 +862,9 @@ export class ExplorerApp extends LitElement {
         ${this.info?.description ? html`<span class="dataset">${this.info.description}</span>` : nothing}
       </div>
       ${this.renderPicker()}
-      ${this.workspaceMode
-        ? html`<button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
-            aria-pressed=${this.settingsOpen ? 'true' : 'false'}
-            @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>Settings</button>`
-        : nothing}
+      <button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
+        aria-pressed=${this.settingsOpen ? 'true' : 'false'}
+        @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>Settings</button>
       <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
         New conversation
       </button>
@@ -885,7 +875,8 @@ export class ExplorerApp extends LitElement {
     if (!this.connectError) return nothing;
     return html`<div class="banner" role="alert">
       Cannot reach the agent at <code>${this.agentUrl}</code> (${this.connectError}).
-      <button type="button" @click=${() => void this.connectionOnce().catch(() => {})}>Retry</button>
+      <button type="button" @click=${() => (this.workspacesLoaded ? void this.connectionOnce().catch(() => {})
+                                                                 : void this.startWorkspaces())}>Retry</button>
     </div>`;
   }
 
