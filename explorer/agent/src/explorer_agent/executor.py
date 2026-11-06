@@ -44,6 +44,7 @@ from explorer_agent.actions import (
     restore_result,
     row_pair,
 )
+from explorer_agent.budget import TurnBudget
 from explorer_agent.boards import (
     EXPLORER,
     BoardInstance,
@@ -447,8 +448,9 @@ def action_of(message: Any) -> Any:
 class ExplorerExecutor(AgentExecutor):
     def __init__(self, answerer: Answerer, conversations: Conversations, card: AgentCard,
                  drills: DrillDowns | None = None, model: str | None = None, boards: BoardViews | None = None,
-                 saved: SavedViews | None = None):
+                 saved: SavedViews | None = None, budget: TurnBudget | None = None):
         self._answerer = answerer
+        self._budget = budget
         self._boards = boards
         self._model = model
         self._conversations = conversations
@@ -618,6 +620,9 @@ class ExplorerExecutor(AgentExecutor):
 
     async def _model_run(self, conv, start, viewing, status, send, text_message, updater, *, action: bool,
                          tab: Tab, kind: str = "answer") -> None:
+        if self._budget is not None and not self._budget.take():
+            await updater.complete(text_message(self._budget.message, {ACTION_FAILED_KEY: True} if action else None))
+            return
         conv.model_runs_waiting += 1
         try:
             async with conv.lock:  # overlapping messages on one context run one after the other

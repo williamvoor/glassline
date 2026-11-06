@@ -312,6 +312,31 @@ async def test_w4_two_workspaces_mount_with_their_own_card_pool_and_cache_key(pg
         await registry.close()
 
 
+# MAX_TURNS_PER_DAY (specs/deployment) caps the whole process: one budget shared by every Workspace.
+@pytest.mark.db
+async def test_one_daily_cap_is_shared_by_all_workspaces(pg, data):
+    # From the environment, through the same builder Workspace mode starts with (refuter: the
+    # env-to-cap wiring had no test).
+    from explorer_agent.__main__ import workspace_builder
+    from explorer_agent.budget import TURN_LIMIT_PROSE
+    from explorer_agent.config import process_settings
+
+    models = {"a": ScriptedCompletion([text("From a.")]), "b": ScriptedCompletion([text("From b.")])}
+    write_list(data, entry("a") + entry("b", "B_DATABASE_URL"))
+    env = {"A_DATABASE_URL": pg.ro_dsn, "B_DATABASE_URL": pg.ro_dsn, "MAX_TURNS_PER_DAY": "1",
+           "TURN_LIMIT_CONTACT": "Ask the owner."}
+    build = workspace_builder(process_settings(env), completion=lambda name: models[name], connect_timeout_s=2)
+    registry = Registry(data, REPO, EXPLORER_ROOT, env, build, BASE)
+    await registry.start()
+    try:
+        async with client(registry) as c:
+            assert final_parts(await ask(c, "/w/a", "q1"))[0]["text"] == "From a."
+            assert final_parts(await ask(c, "/w/b", "q2"))[0]["text"] == f"{TURN_LIMIT_PROSE} Ask the owner."
+        assert models["b"].calls == []
+    finally:
+        await registry.close()
+
+
 @pytest.mark.db
 async def test_w5_a_writing_login_an_unset_variable_or_an_unreachable_database_is_unavailable(pg, data):
     write_list(data, entry("good") + entry("writes", "W_DATABASE_URL") + entry("unset", "U_DATABASE_URL")
@@ -353,17 +378,23 @@ async def test_w5_an_allowed_schema_with_no_visible_tables_is_not_called_a_writi
         await registry.close()
 
 
+# Behind a proxy (deploy/), AGENT_PUBLIC_URL is where the browser reaches the agent: the listing and
+# each Workspace card name it, so the client's A2A posts go through the proxy.
 @pytest.mark.db
-def test_workspace_mode_starts_from_the_command_line(pg, tmp_path):
+@pytest.mark.parametrize("public_url", [None, "https://explorer.example/agent/"])
+def test_workspace_mode_starts_from_the_command_line(pg, tmp_path, public_url):
     data = tmp_path / "data"
     data.mkdir()
     write_list(data, entry("aus"))
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY")}
+    env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY", "AGENT_PUBLIC_URL")}
     env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "EXPLORER_DATA_DIR": str(data), "AGENT_PORT": str(port),
                 "A_DATABASE_URL": pg.ro_dsn, "DATASET_DIR": "agent/tests/fixtures/austender"})
+    if public_url:
+        env["AGENT_PUBLIC_URL"] = public_url
+    base = public_url.rstrip("/") if public_url else f"http://127.0.0.1:{port}"
     proc = subprocess.Popen([sys.executable, "-m", "explorer_agent"], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
     try:
@@ -374,9 +405,9 @@ def test_workspace_mode_starts_from_the_command_line(pg, tmp_path):
             if not line and proc.poll() is not None:
                 pytest.fail(f"agent exited: {proc.stderr.read()}")
         listed = httpx.get(f"http://127.0.0.1:{port}/workspaces", timeout=10).json()
-        assert [(w["name"], w["status"]) for w in listed] == [("aus", AVAILABLE)]
+        assert [(w["name"], w["status"], w["url"]) for w in listed] == [("aus", AVAILABLE, f"{base}/w/aus")]
         card = httpx.get(f"http://127.0.0.1:{port}/w/aus/.well-known/agent-card.json", timeout=10).json()
-        assert card["url"] == f"http://127.0.0.1:{port}/w/aus"
+        assert card["url"] == f"{base}/w/aus"
         assert httpx.get(f"http://127.0.0.1:{port}/.well-known/agent-card.json", timeout=10).status_code == 404
     finally:
         proc.terminate()

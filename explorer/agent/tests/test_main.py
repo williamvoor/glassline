@@ -47,15 +47,19 @@ def test_unreachable_database_fails_cleanly():
     assert_one_line_failure(done, "cannot connect to the database", secret="s3cret")
 
 
-# M2
+# M2. With AGENT_PUBLIC_URL (behind a proxy, specs/deployment) the card names that URL, because the
+# browser's A2A client posts to the card's `url`; it still listens on AGENT_HOST:AGENT_PORT.
 @pytest.mark.db
-def test_starts(pg):
+@pytest.mark.parametrize("public_url", [None, "https://explorer.example/agent/"])
+def test_starts(pg, public_url):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL",)}
+    env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "AGENT_PUBLIC_URL")}
     env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "DATABASE_URL": pg.ro_dsn, "AGENT_PORT": str(port),
                 "DATASET_DIR": "agent/tests/fixtures/austender"})
+    if public_url:
+        env["AGENT_PUBLIC_URL"] = public_url
     proc = subprocess.Popen([sys.executable, "-m", "explorer_agent"], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
     try:
@@ -68,6 +72,7 @@ def test_starts(pg):
         assert line.strip() == f"explorer: listening on http://127.0.0.1:{port}"
         card = httpx.get(f"http://127.0.0.1:{port}/.well-known/agent-card.json", timeout=10).json()
         assert card["name"] == "Explorer"
+        assert card["url"] == (public_url or f"http://127.0.0.1:{port}")
     finally:
         proc.terminate()
         proc.wait(timeout=10)
