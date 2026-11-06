@@ -135,14 +135,16 @@ def test_agent_public_url_defaults_to_unset(tmp_path):
     assert load_settings(env_for(tmp_path, AGENT_PUBLIC_URL="  "), tmp_path).agent_public_url is None
 
 
-@pytest.mark.parametrize("value", ["https://34.207.118.134.sslip.io/agent/", "http://localhost:8080/"])
+@pytest.mark.parametrize("value", ["https://34.207.118.134.sslip.io/agent/", "http://localhost:8080/",
+                                   "http://[::1]:8080/agent/"])
 def test_agent_public_url_is_read(tmp_path, value):
     write_dataset(tmp_path)
     assert load_settings(env_for(tmp_path, AGENT_PUBLIC_URL=f" {value} "), tmp_path).agent_public_url == value
 
 
 @pytest.mark.parametrize("value", ["example.com/agent/", "ftp://example.com/", "https://", "https://h/a?x=1",
-                                   "https://h/a#f"])
+                                   "https://h/a#f", "https://[::1", "https://host:not-a-port/",
+                                   "https://host:99999/", "https://host:-1/", "https://:443/"])
 def test_bad_agent_public_url_is_a_config_error(tmp_path, value):
     write_dataset(tmp_path)
     with pytest.raises(ConfigError, match="AGENT_PUBLIC_URL"):
