@@ -22,7 +22,7 @@ if [ -z "${EXPLORER_DATA_DIR:-}" ] && [ ! -f "$ENV_FILE" ]; then
   echo "no settings: copy explorer/.env.example to the repo root as .env and fill it in (EXPLORER_DATA_DIR is required)" >&2
   exit 1
 fi
-if [ -z "${EXPLORER_DATA_DIR:-}" ] && ! grep -Eq '^[[:space:]]*(export[[:space:]]+)?EXPLORER_DATA_DIR=[\"'"'"']?[^\"'"'"'[:space:]]' "$ENV_FILE"; then
+if [ -z "${EXPLORER_DATA_DIR:-}" ] && ! grep -Eq '^[[:space:]]*(export[[:space:]]+)?EXPLORER_DATA_DIR[[:space:]]*=[[:space:]]*[\"'"'"']?[^\"'"'"'[:space:]]' "$ENV_FILE"; then
   echo "EXPLORER_DATA_DIR is required (the Workspaces directory, outside the repo; see explorer/.env.example)" >&2
   exit 1
 fi
