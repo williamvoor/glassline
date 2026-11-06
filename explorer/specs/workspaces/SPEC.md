@@ -406,7 +406,9 @@ above, it is a deliberate amendment, listed here.
   `EXPLORER_DATA_DIR` (the CLI and the old `serve`), which is unchanged.
 - **D2 Connections.** `GET /api/connections` lists the names of `*_DATABASE_URL` variables (from
   the process environment plus the root `.env`) that no Workspace's `dsn_env` uses. It never lists
-  a value. `POST /api/connect {dsn_env}` opens that login.
+  a value. `BOOTSTRAP_DATABASE_URL` is the CLI's login and is never listed. The answer's `declared`
+  says whether any such variable is set, so an empty list can say "none set" apart from "all in
+  use" (amended 2026-11-06). `POST /api/connect {dsn_env}` opens that login.
   - It runs the agent's read-only check over every schema the login can see. A login that can
     write, a superuser or a login with CREATEROLE is refused with 403 (S2).
   - Starting a draft runs the same check again, over the report's schemas.

@@ -51,6 +51,7 @@ from explorer_bootstrap.registry import (
     kind_of,
     read_entries,
     reload_agent,
+    declared_connections,
     unused_connections,
     workspace_dir,
     write_entries,
@@ -632,7 +633,8 @@ def build_app(
             names = unused_connections(env, data_dir)
         except RegistryError as e:
             return _err(str(e), e.status)
-        return JSONResponse({"connections": names, "current": conn.dsn_env})
+        return JSONResponse({"connections": names, "current": conn.dsn_env,
+                             "declared": bool(declared_connections(env))})
 
     async def connect(request: Request) -> JSONResponse:
         assert data_dir is not None
