@@ -59,17 +59,17 @@ afterEach(() => {
 describe('explorer-app', () => {
   it('shows the dataset description and example questions before the first question', async () => {
     const app = await mount(fakeAgent(() => answer('x')).connector);
-    expect(q(app, 'header')!.textContent).toContain('Demo contracts');
+    expect(q(app, '.sidebar .workspaces .dataset')!.textContent).toContain('Demo contracts'); // SPEC §24: under the picker
     expect(q(app, '.canvas .examples')).not.toBeNull();
     expect(texts(app, '.examples button')).toEqual(['Top suppliers?', 'Spend by year?']);
   });
 
-  it('shows the Glassline mark and name in the header', async () => {
+  it('shows the Glassline mark and name at the top of the Sidebar', async () => {
     const app = await mount(fakeAgent(() => answer('x')).connector);
-    const mark = q(app, 'header .brand img') as HTMLImageElement;
+    const mark = q(app, '.sidebar .brand img') as HTMLImageElement;
     expect(mark.getAttribute('src')).toBe('/glassline-mark.png');
     expect(mark.getAttribute('alt')).toBe(''); // decorative: the name beside it is the text
-    expect(q(app, 'header h1')!.textContent!.trim()).toBe('Glassline');
+    expect(q(app, '.sidebar .brand h1')!.textContent!.trim()).toBe('Glassline');
   });
 
   it('asks an example question when it is clicked, and hides the examples', async () => {
@@ -218,6 +218,10 @@ describe('explorer-app Explorer Board', () => {
     expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer', 'Top suppliers?']);
     expect(q(app, '.canvas .tab-view .question')!.textContent).toContain('Top suppliers?');
     expect(q(app, '.canvas .examples')).toBeNull();
+    expect(q(app, '.canvas .tab-view')!.classList.contains('board')).toBe(false); // SPEC §24: Board styling is for Boards only
+    (q(app, '.tab-strip .tab-select') as HTMLButtonElement).click();
+    await settle(app);
+    expect(q(app, '.canvas .tab-view')!.classList.contains('board')).toBe(true);
   });
 
   it('a question asked before the Board arrives shows its tab at once, then sends in the Board\'s conversation', async () => {
@@ -240,7 +244,7 @@ describe('explorer-app Explorer Board', () => {
     const agent = boardAgent(() => ({kind: 'final', contextId: 'ctx-x', prose: 'none', a2ui: [],
       metadata: {[ACTION_FAILED_KEY]: true, [NO_BOARDS_KEY]: true}}));
     const app = await mount(agent.connector);
-    expect(q(app, '.canvas .tab-strip')).toBeNull(); // no Explorer tab
+    expect(q(app, '.tab-strip')).toBeNull(); // no Explorer tab
     expect(texts(app, '.examples button')).toEqual(['Top suppliers?']);
     (q(app, '.examples button') as HTMLButtonElement).click();
     await settle(app);

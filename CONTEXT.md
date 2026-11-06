@@ -60,11 +60,15 @@ The generated UI of one Level.
 _Avoid_: Panel, widget, card
 
 **Sidebar**:
-The client's left column: the investigation log of Log entries and the composer.
+The client's dark left column: the brand, the Workspace picker, saved Conversations, the investigation log of Log entries, and the composer.
 _Avoid_: Nav, history
 
+**Canvas header**:
+The bar above the Canvas: the tab strip, Settings and New conversation.
+_Avoid_: Top bar, toolbar
+
 **Canvas**:
-The client's main area: the tab strip and the selected Tab.
+The client's main area, below the Canvas header: the selected Tab.
 _Avoid_: Main view, page
 
 **Tab**:
