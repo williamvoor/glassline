@@ -170,9 +170,16 @@ def _public_url(env: Mapping[str, str]) -> str | None:
     raw = env.get("AGENT_PUBLIC_URL", "").strip()
     if not raw:
         return None
-    parts = urlsplit(raw)
-    if parts.scheme not in ("http", "https") or not parts.netloc or parts.query or parts.fragment:
-        raise ConfigError("AGENT_PUBLIC_URL must be an absolute http(s) URL without query or fragment")
+    error = "AGENT_PUBLIC_URL must be an absolute http(s) URL with a valid host and port, without query or fragment"
+    try:
+        parts = urlsplit(raw)
+        # urlsplit defers port validation until this property is accessed.
+        _ = parts.port
+        hostname = parts.hostname
+    except ValueError:
+        raise ConfigError(error) from None
+    if parts.scheme not in ("http", "https") or not hostname or parts.query or parts.fragment:
+        raise ConfigError(error)
     return raw
 
 
