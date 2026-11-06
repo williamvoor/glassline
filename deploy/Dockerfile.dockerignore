@@ -1,0 +1,27 @@
+# Build context is the repo root; send only what deploy/Dockerfile copies.
+**
+!austender/pyproject.toml
+!austender/README.md
+!austender/src/**
+!explorer/agent/pyproject.toml
+!explorer/agent/uv.lock
+!explorer/agent/README.md
+!explorer/agent/src/**
+!explorer/catalog/**
+!explorer/bootstrap/server/pyproject.toml
+!explorer/bootstrap/server/uv.lock
+!explorer/bootstrap/server/README.md
+!explorer/bootstrap/server/src/**
+!explorer/bootstrap/templates/**
+!explorer/client/**
+!datasets/austender/**
+!deploy/Caddyfile
+!deploy/ensure_roles.py
+!deploy/workspaces.toml
+!deploy/start-agent.sh
+**/__pycache__
+**/.venv
+explorer/client/node_modules
+explorer/client/dist
+explorer/client/test
+**/.env
