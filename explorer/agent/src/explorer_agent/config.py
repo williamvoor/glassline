@@ -11,6 +11,7 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from explorer_agent.boards import Board, BoardError, load_boards
 from explorer_agent.sql import check_dsn
@@ -97,6 +98,11 @@ class Settings:
     max_control_options: int = 100
     max_board_instances: int = 10
     board_prefetch_rows: int = 1
+    # Behind a proxy (specs/deployment): the URL the browser reaches the agent at, for the card.
+    agent_public_url: str | None = None
+    # A public deploy (specs/deployment): model runs per UTC day across all users; 0 = no cap.
+    max_turns_per_day: int = 0
+    turn_limit_contact: str | None = None  # appended to the limit message, e.g. whom to ask for a reset
 
     def __repr__(self) -> str:  # keep the DSN (it holds a password) out of logs and tracebacks
         return f"Settings(model={self.model!r}, format={self.format!r}, dataset={self.dataset.name!r})"
@@ -104,6 +110,7 @@ class Settings:
 
 _INTS = {
     "SQL_TIMEOUT_MS": 15000,
+    "MAX_TURNS_PER_DAY": 0,
     "SQL_ROW_CAP": 5000,
     "ROWS_TO_MODEL": 20,
     "TABLE_ROW_CAP": 200,
@@ -155,6 +162,18 @@ def _non_negative_int(env: Mapping[str, str], key: str) -> int:
     if value < 0:
         raise ConfigError(f"{key} must be a whole number, 0 or more")
     return value
+
+
+def _public_url(env: Mapping[str, str]) -> str | None:
+    """AGENT_PUBLIC_URL: an absolute http(s) URL without query or fragment, or None when unset.
+    The browser's A2A client posts to the card's `url`, so this is where a proxy exposes the agent."""
+    raw = env.get("AGENT_PUBLIC_URL", "").strip()
+    if not raw:
+        return None
+    parts = urlsplit(raw)
+    if parts.scheme not in ("http", "https") or not parts.netloc or parts.query or parts.fragment:
+        raise ConfigError("AGENT_PUBLIC_URL must be an absolute http(s) URL without query or fragment")
+    return raw
 
 
 def _read_text(path: Path, what: str) -> str:
@@ -327,6 +346,9 @@ def load_settings(env: Mapping[str, str], explorer_root: Path) -> Settings:
         max_control_options=_positive_int(env, "MAX_CONTROL_OPTIONS"),
         max_board_instances=_positive_int(env, "MAX_BOARD_INSTANCES"),
         board_prefetch_rows=_non_negative_int(env, "BOARD_PREFETCH_ROWS"),
+        agent_public_url=_public_url(env),
+        max_turns_per_day=_non_negative_int(env, "MAX_TURNS_PER_DAY"),
+        turn_limit_contact=env.get("TURN_LIMIT_CONTACT", "").strip() or None,
     )
 
 
@@ -485,6 +507,9 @@ class ProcessSettings:
     agent_port: int
     client_origin: str
     log_level: str
+    agent_public_url: str | None = None
+    max_turns_per_day: int = 0  # one budget for the process, shared by every Workspace
+    turn_limit_contact: str | None = None
 
 
 def process_settings(env: Mapping[str, str]) -> ProcessSettings:
@@ -493,4 +518,7 @@ def process_settings(env: Mapping[str, str]) -> ProcessSettings:
         agent_port=_positive_int(env, "AGENT_PORT"),
         client_origin=env.get("CLIENT_ORIGIN", "").strip() or "http://127.0.0.1:5173",
         log_level=env.get("LOG_LEVEL", "").strip() or "INFO",
+        agent_public_url=_public_url(env),
+        max_turns_per_day=_non_negative_int(env, "MAX_TURNS_PER_DAY"),
+        turn_limit_contact=env.get("TURN_LIMIT_CONTACT", "").strip() or None,
     )

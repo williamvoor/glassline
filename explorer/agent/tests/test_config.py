@@ -128,6 +128,47 @@ def test_dataset_dir_is_required(tmp_path, value):
         load_settings(env, tmp_path)
 
 
+# Deployment (specs/deployment): the agent sits behind a proxy, so the card's URL is configurable.
+def test_agent_public_url_defaults_to_unset(tmp_path):
+    write_dataset(tmp_path)
+    assert load_settings(env_for(tmp_path), tmp_path).agent_public_url is None
+    assert load_settings(env_for(tmp_path, AGENT_PUBLIC_URL="  "), tmp_path).agent_public_url is None
+
+
+@pytest.mark.parametrize("value", ["https://34.207.118.134.sslip.io/agent/", "http://localhost:8080/"])
+def test_agent_public_url_is_read(tmp_path, value):
+    write_dataset(tmp_path)
+    assert load_settings(env_for(tmp_path, AGENT_PUBLIC_URL=f" {value} "), tmp_path).agent_public_url == value
+
+
+@pytest.mark.parametrize("value", ["example.com/agent/", "ftp://example.com/", "https://", "https://h/a?x=1",
+                                   "https://h/a#f"])
+def test_bad_agent_public_url_is_a_config_error(tmp_path, value):
+    write_dataset(tmp_path)
+    with pytest.raises(ConfigError, match="AGENT_PUBLIC_URL"):
+        load_settings(env_for(tmp_path, AGENT_PUBLIC_URL=value), tmp_path)
+
+
+def test_max_turns_per_day_defaults_to_no_cap_and_is_read(tmp_path):
+    write_dataset(tmp_path)
+    assert load_settings(env_for(tmp_path), tmp_path).max_turns_per_day == 0
+    assert load_settings(env_for(tmp_path, MAX_TURNS_PER_DAY="200"), tmp_path).max_turns_per_day == 200
+
+
+def test_turn_limit_contact_is_read(tmp_path):
+    write_dataset(tmp_path)
+    assert load_settings(env_for(tmp_path), tmp_path).turn_limit_contact is None
+    s = load_settings(env_for(tmp_path, TURN_LIMIT_CONTACT=" Contact me on GitHub. "), tmp_path)
+    assert s.turn_limit_contact == "Contact me on GitHub."
+
+
+@pytest.mark.parametrize("value", ["-1", "lots"])
+def test_bad_max_turns_per_day_is_a_config_error(tmp_path, value):
+    write_dataset(tmp_path)
+    with pytest.raises(ConfigError, match="MAX_TURNS_PER_DAY"):
+        load_settings(env_for(tmp_path, MAX_TURNS_PER_DAY=value), tmp_path)
+
+
 def test_settings_repr_hides_the_dsn(tmp_path):
     write_dataset(tmp_path)
     assert "s3cret" not in repr(load_settings(env_for(tmp_path), tmp_path))
@@ -328,3 +369,12 @@ def test_bad_drill_settings(tmp_path, key, value):
     write_dataset(tmp_path)
     with pytest.raises(ConfigError, match=key):
         load_settings(env_for(tmp_path, **{key: value}), tmp_path)
+
+
+def test_process_settings_read_the_public_url_and_the_daily_cap():
+    from explorer_agent.config import process_settings
+
+    p = process_settings({"AGENT_PUBLIC_URL": "https://h/agent/", "MAX_TURNS_PER_DAY": "7", "TURN_LIMIT_CONTACT": " c "})
+    assert (p.agent_public_url, p.max_turns_per_day, p.turn_limit_contact) == ("https://h/agent/", 7, "c")
+    p = process_settings({})
+    assert (p.agent_public_url, p.max_turns_per_day, p.turn_limit_contact) == (None, 0, None)

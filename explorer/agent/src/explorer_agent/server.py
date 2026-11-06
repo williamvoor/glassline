@@ -13,6 +13,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from explorer_agent.budget import TurnBudget
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
 from explorer_agent.executor import Answerer, BoardViews, Conversations, DrillDowns, ExplorerExecutor, SavedViews
 
@@ -54,6 +55,7 @@ def build_app(
     boards: BoardViews | None = None,
     saved: SavedViews | None = None,
     cors: bool = True,
+    budget: TurnBudget | None = None,
 ) -> Starlette:
     """`saved` (Workspace mode) adds the conversation routes; `cors=False` leaves CORS to the
     Workspace router in front (B1)."""
@@ -61,7 +63,7 @@ def build_app(
     conversations = executor_conversations = conversations or Conversations(saved=saved.store if saved else None)
     if saved is not None:
         conversations.saved = saved.store
-    executor = ExplorerExecutor(answerer, executor_conversations, card, drills, model, boards, saved)
+    executor = ExplorerExecutor(answerer, executor_conversations, card, drills, model, boards, saved, budget)
     task_store = InMemoryTaskStore()
     handler = DefaultRequestHandler(
         agent_executor=executor,

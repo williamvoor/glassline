@@ -38,8 +38,10 @@ from explorer_agent.boards import (
     check_board,
     instance_results,
 )
+from explorer_agent.budget import TurnBudget
 from explorer_agent.config import (
     ConfigError,
+    ProcessSettings,
     Settings,
     WorkspaceEntry,
     WorkspaceUnavailable,
@@ -166,8 +168,16 @@ class Running:
             await self.pool.close()
 
 
+FROM_SETTINGS: Any = object()  # build_workspace's budget: the Dataset's own MAX_TURNS_PER_DAY
+
+
+def turn_budget(limit: int, contact: str | None) -> TurnBudget | None:
+    return TurnBudget(limit, contact=contact) if limit else None
+
+
 async def build_workspace(settings: Settings, url: str, *, saved_path: Path | None = None, cors: bool = True,
-                          connect_timeout_s: float | None = None, completion: Any = None) -> Running:
+                          connect_timeout_s: float | None = None, completion: Any = None,
+                          budget: TurnBudget | None = FROM_SETTINGS) -> Running:
     """Everything one Dataset needs, checked, as today's single agent (ADR 0039): the pool, the
     read-only check, the schema and its overlay, the Boards, the prompt and the app. With
     `saved_path` (Workspace mode) Conversations are saved there. The pool is closed on failure."""
@@ -208,6 +218,8 @@ async def build_workspace(settings: Settings, url: str, *, saved_path: Path | No
             drills=DrillDowns(runner, pipeline, prefetcher, settings.rows_to_model), model=settings.model,
             boards=BoardViews(renderer, pipeline, settings.board_prefetch_rows) if renderer is not None else None,
             saved=SavedViews(store, runner, pipeline) if store is not None else None, cors=cors,
+            budget=(turn_budget(settings.max_turns_per_day, settings.turn_limit_contact)
+                    if budget is FROM_SETTINGS else budget),
         )
         return Running(app, pool, renderer, conversations, store)
     except BaseException:
@@ -229,7 +241,7 @@ async def _listen(app: Any, settings: Settings, url: str) -> tuple[uvicorn.Serve
 
 async def _serve(settings: Settings) -> None:
     url = f"http://{settings.agent_host}:{settings.agent_port}"
-    running = await build_workspace(settings, url)
+    running = await build_workspace(settings, settings.agent_public_url or url)
     try:
         _, task = await _listen(running.app, settings, url)
         running.started()
@@ -239,11 +251,12 @@ async def _serve(settings: Settings) -> None:
 
 
 async def _workspace_builder(entry: WorkspaceEntry, settings: Settings, url: str, saved_path: Path, *,
-                             connect_timeout_s: float | None = None, completion: Any = None) -> Built:
+                             connect_timeout_s: float | None = None, completion: Any = None,
+                             budget: TurnBudget | None = None) -> Built:
     """One Workspace for the registry: a failed check becomes its reason (no DSN in it)."""
     try:
         running = await build_workspace(settings, url, saved_path=saved_path, cors=False,
-                                        connect_timeout_s=connect_timeout_s, completion=completion)
+                                        connect_timeout_s=connect_timeout_s, completion=completion, budget=budget)
     except _Fatal:
         raise WorkspaceUnavailable("database unreachable") from None
     except StartupError as e:
@@ -256,11 +269,27 @@ async def _workspace_builder(entry: WorkspaceEntry, settings: Settings, url: str
                  lambda: running.conversations.running, running.started, running.pool)
 
 
+def workspace_builder(base: ProcessSettings, *, completion: Any = None,
+                      connect_timeout_s: float | None = None) -> Any:
+    """The Registry's builder for Workspace mode: every Workspace shares one daily budget, built
+    from the process's MAX_TURNS_PER_DAY and TURN_LIMIT_CONTACT. `completion(name)` gives a
+    Workspace's stub model in tests."""
+    budget = turn_budget(base.max_turns_per_day, base.turn_limit_contact)
+
+    async def builder(entry: WorkspaceEntry, settings: Settings, ws_url: str, saved_path: Path) -> Built:
+        return await _workspace_builder(entry, settings, ws_url, saved_path, budget=budget,
+                                        connect_timeout_s=connect_timeout_s,
+                                        completion=completion(entry.name) if completion else None)
+
+    return builder
+
+
 async def _serve_workspaces(env: Mapping[str, str], data: Path, base: Settings) -> None:
     """Workspace mode (SPEC phase 1): every Workspace mounted under /w/<name>/, the list at
     /workspaces. Starts even when none is available."""
     url = f"http://{base.agent_host}:{base.agent_port}"
-    registry = Registry(data, EXPLORER_ROOT.parent, EXPLORER_ROOT, env, _workspace_builder, url)
+    public = base.agent_public_url.rstrip("/") if base.agent_public_url else url  # what the listing and cards name
+    registry = Registry(data, EXPLORER_ROOT.parent, EXPLORER_ROOT, env, workspace_builder(base), public)
     await registry.start()
     try:
         app = workspace_app(registry, base.client_origin, base.agent_host, base.agent_port)
