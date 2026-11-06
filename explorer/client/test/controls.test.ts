@@ -99,7 +99,7 @@ describe('BoardControls', () => {
     model.set('/controls/method', ['2']);
     model.set('/controls/hide', true);
     expect(sent).toHaveLength(3);
-    ctrl.revert(); // "busy"
+    ctrl.revert(3); // "busy"
     expect(model.get('/controls')).toEqual({...INITIAL, method: ['1']});
     expect(sent).toHaveLength(3); // the write-back sent nothing
     model.set('/controls/method', ['2']); // and a later change is still a change
@@ -121,7 +121,7 @@ describe('BoardControls', () => {
     expect(ctrl.pending).toBe(false);
     model.set('/controls/hide', true);
     expect(ctrl.pending).toBe(true);
-    ctrl.settled();
+    ctrl.settled(1);
     expect(ctrl.pending).toBe(false);
   });
 
@@ -130,5 +130,41 @@ describe('BoardControls', () => {
     ctrl.dispose();
     model.set('/controls/hide', true);
     expect(sent).toEqual([]);
+  });
+
+  it.each([
+    ['fail-old', 'accept-new'], ['accept-new', 'fail-old'],
+    ['accept-old', 'fail-new'], ['fail-new', 'accept-old'],
+    ['fail-old', 'fail-new'], ['fail-new', 'fail-old'],
+  ])('reconciles the accepted state after %s then %s', (first, second) => {
+    const {model, ctrl, sent} = setup();
+    model.set('/controls/method', ['1']);
+    model.set('/controls/method', ['2']);
+    for (const outcome of [first, second]) {
+      const seq = outcome.endsWith('old') ? 1 : 2;
+      if (outcome.startsWith('accept')) expect(ctrl.applied(seq)).toBe(true);
+      else ctrl.revert(seq);
+      ctrl.settled(seq);
+    }
+    const accepted = [first, second].find(x => x.startsWith('accept'));
+    expect(model.get('/controls/method')).toEqual([accepted?.endsWith('new') ? '2' : accepted ? '1' : 'all']);
+    expect(ctrl.pending).toBe(false);
+    expect(sent).toHaveLength(2); // reconciliation must not echo a request
+  });
+
+  it('preserves a newer unsent slider edit through an older failure or success', () => {
+    for (const accept of [false, true]) {
+      const {model, ctrl, timers, sent} = setup();
+      model.set('/controls/method', ['1']);
+      model.set('/controls/min', 7);
+      if (accept) ctrl.applied(1);
+      else ctrl.revert(1);
+      ctrl.settled(1);
+      expect(model.get('/controls/min')).toBe(7);
+      expect(timers.count).toBe(1);
+      timers.fire();
+      expect(sent.at(-1)!.values.min).toBe(7);
+      ctrl.dispose();
+    }
   });
 });

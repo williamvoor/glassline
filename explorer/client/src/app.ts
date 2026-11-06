@@ -609,8 +609,8 @@ export class ExplorerApp extends LitElement {
       // a network failure: reverted below
     } finally {
       if (processor === this.processor) {
-        if (!answered) ctrl.revert();
-        ctrl.settled();
+        if (!answered) ctrl.revert(seq);
+        ctrl.settled(seq);
       }
     }
   }

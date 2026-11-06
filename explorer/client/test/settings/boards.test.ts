@@ -139,7 +139,7 @@ describe('bs-boards (U7)', () => {
     expect(el.querySelector('.set-problems')!.textContent).toContain('at most 1');
   });
 
-  it('re-validates after an edit and ignores a stale reply', async () => {
+  it('serializes Board saves and ignores validation for older edits', async () => {
     const replies: ((s: BoardsState) => void)[] = [];
     const sent: string[] = [];
     const f = fakeFetch({});
@@ -159,11 +159,13 @@ describe('bs-boards (U7)', () => {
     area.value = 'second edit';
     area.dispatchEvent(new Event('input'));
     await settle(el);
+    expect(sent).toEqual(['first edit']);
+    replies[0](state({ problems: { explorer: ['boards/explorer.toml: older'], buyer: [] } }));
+    await settle(el);
     expect(sent).toEqual(['first edit', 'second edit']);
+    expect(changed).toEqual([]);
     const newer = state({ problems: { explorer: ['boards/explorer.toml: newer'], buyer: [] } });
     replies[1](newer);
-    await settle(el);
-    replies[0](state({ problems: { explorer: ['boards/explorer.toml: older'], buyer: [] } }));
     await settle(el);
     expect(el.querySelector('.board-problems')!.textContent).toContain('newer');
     expect(changed).toEqual([newer]);

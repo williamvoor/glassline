@@ -445,22 +445,30 @@ def build_app(
         force = body.get("force", False)
         if not isinstance(force, bool):
             return _err("force must be a boolean")
+        # Capture together before the first await: edits and checks must describe one export.
+        draft = copy.deepcopy(state.draft)
+        board_snapshot = copy.deepcopy(state.boards)
+        dsn_env, regenerating, export_pool = conn.dsn_env, regen["name"], conn.pool
         boards, board_problems = None, []
-        if state.boards is not None:
+        if board_snapshot is not None:
             async with boards_lock:
                 try:
-                    await recheck_boards()
+                    settings = load_draft_settings(env)
+                    dataset = draft_dataset(draft)
+                    runner = boards_runner(export_pool, dataset, timeout_ms, settings.sql_row_cap)
+                    check = await check_boards(board_snapshot["boards"], dataset, runner, settings.max_entity_boards)
+                    board_snapshot.update(check.to_dict())
                 except DraftFileError:
                     pass  # export_dataset refuses with the files' own errors
                 except SettingsError as e:
                     return _err(str(e))
-                boards = [{"name": b["name"], "toml": b["toml"]} for b in state.boards["boards"]]
-                board_problems = [*state.boards["set_problems"],
-                                  *(p for ps in state.boards["problems"].values() for p in ps)]
+                boards = [{"name": b["name"], "toml": b["toml"]} for b in board_snapshot["boards"]]
+                board_problems = [*board_snapshot["set_problems"],
+                                  *(p for ps in board_snapshot["problems"].values() for p in ps)]
         if settings_mode:
-            return await settings_export(body, boards, board_problems)
+            return await settings_export(body, draft, boards, board_problems, dsn_env, regenerating)
         try:
-            result = export_dataset(state.draft, str(body.get("name") or ""), str(body.get("target") or ""),
+            result = export_dataset(draft, str(body.get("name") or ""), str(body.get("target") or ""),
                                     datasets_root, force=force, boards=boards, board_problems=board_problems)
         except ExportError as e:
             return JSONResponse({"reasons": e.reasons}, status_code=422)
@@ -757,32 +765,32 @@ def build_app(
         kept["boards"] = _current_boards(workspace_dir(data_dir, name) / "dataset" / BOARDS_DIR)
         return JSONResponse(state.report)
 
-    async def settings_export(body: dict[str, Any], boards: list[dict[str, Any]] | None,
-                              board_problems: list[str]) -> JSONResponse:
+    async def settings_export(body: dict[str, Any], draft: dict[str, Any], boards: list[dict[str, Any]] | None,
+                              board_problems: list[str], dsn_env: str | None, regenerating: str | None) -> JSONResponse:
         """D3: the draft becomes a Workspace in the data directory, then the agent reloads."""
         assert data_dir is not None and state.draft is not None
-        name = regen["name"] or str(body.get("name") or "")
+        name = regenerating or str(body.get("name") or "")
         if not EXPORT_NAME.fullmatch(name):
             return JSONResponse({"reasons": ["the Workspace name must be lowercase letters, digits and underscores, "
                                              "starting with a letter"]}, status_code=422)
         try:
             entries = read_entries(data_dir)
-            if regen["name"] is None and any(e.get("name") == name for e in entries):
+            if regenerating is None and any(e.get("name") == name for e in entries):
                 return _err(f"a Workspace named {name} already exists", 409)
             root = workspace_dir(data_dir, name)
         except RegistryError as e:
             return _err(str(e), e.status)
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
-            result = export_dataset(state.draft, "dataset", "toml", root, force=regen["name"] is not None,
+            result = export_dataset(draft, "dataset", "toml", root, force=regenerating is not None,
                                     boards=boards, board_problems=board_problems)
         except ExportError as e:
-            if regen["name"] is None and not any(root.iterdir()):
+            if regenerating is None and not any(root.iterdir()):
                 root.rmdir()
             return JSONResponse({"reasons": e.reasons}, status_code=422)
-        if regen["name"] is None:
+        if regenerating is None:
             write_entries(data_dir, [*entries, {"name": name, "dataset_dir": str(result.dest.resolve()),
-                                                "dsn_env": conn.dsn_env}])
+                                                "dsn_env": dsn_env}])
         status, _ = await reload_now()
         log.info("workspace exported: %s regenerate=%s reload=%s", name, regen["name"] is not None, status)
         regen["name"] = None

@@ -158,8 +158,9 @@ def _captured(func: Callable[..., Any]) -> Callable[..., Any]:
 
     def run(weight: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
         try:
-            if has_weight and (problem := weight_problem(weight)):
-                raise MacroError(problem)
+            bound = signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            _static_arguments(func.__name__, bound.arguments)
             return func(*args, **kwargs)
         except _PanelReplaced as e:
             return e.card
@@ -224,6 +225,40 @@ def _format_name(fmt: str) -> str:
     if fmt not in FORMATS:
         raise MacroError(f"unknown format {fmt!r}; use one of: {', '.join(FORMATS)}")
     return fmt
+
+
+def _format_pairs(spec: str) -> dict[str, str]:
+    """Validate format grammar without needing any rows or column metadata."""
+    formats: dict[str, str] = {}
+    for pair in filter(None, (p.strip() for p in spec.split(","))):
+        column, sep, fmt = pair.rpartition(":")
+        if not sep or not column.strip():
+            raise MacroError(f"format entry {pair!r} must look like column:format")
+        formats[column.strip()] = _format_name(fmt.strip())
+    return formats
+
+
+def _static_arguments(name: str, args: Mapping[str, Any]) -> None:
+    """Rules shared by startup and Macro calls, independent of Result rows."""
+    if "weight" in args and (problem := weight_problem(args["weight"])):
+        raise MacroError(problem)
+    if name == "DataTable":
+        _format_pairs(args.get("format", ""))
+    elif name in ("BarChart", "LineChart", "Treemap", "Timeline", "Metric"):
+        _format_name(args.get("format") or "auto")
+    if name == "Metric":
+        row = args.get("row", 0)
+        if isinstance(row, bool) or not isinstance(row, int) or row < 0:
+            raise MacroError("row must be a whole number, 0 or more")
+    if name == "Timeline":
+        _timeline_options(args.get("sort", "result"), args.get("horizon_months", 0))
+
+
+def _timeline_options(sort: str, horizon_months: int) -> None:
+    if sort not in TIMELINE_SORTS:
+        raise MacroError(f"sort must be one of: {', '.join(TIMELINE_SORTS)}")
+    if isinstance(horizon_months, bool) or not isinstance(horizon_months, int) or horizon_months < 0:
+        raise MacroError("horizon_months must be a whole number of months, 0 or more")
 
 
 def column_label(column: str) -> str:
@@ -998,10 +1033,7 @@ def _timeline_parts(
         _column(result, color)
     if value:
         _numeric_column(result, value, "value")
-    if sort not in TIMELINE_SORTS:
-        raise MacroError(f"sort must be one of: {', '.join(TIMELINE_SORTS)}")
-    if isinstance(horizon_months, bool) or not isinstance(horizon_months, int) or horizon_months < 0:
-        raise MacroError("horizon_months must be a whole number of months, 0 or more")
+    _timeline_options(sort, horizon_months)
     fmt = _format_name(fmt or "auto")
     drawn: list[tuple[int, dict[str, Any], str, str]] = []
     left_out = 0
@@ -1159,13 +1191,7 @@ def Timeline(
 
 
 def _parse_formats(result: StoredResult, spec: str) -> dict[str, str]:
-    formats: dict[str, str] = {}
-    for pair in filter(None, (p.strip() for p in spec.split(","))):
-        column, sep, fmt = pair.rpartition(":")
-        if not sep:
-            raise MacroError(f"format entry {pair!r} must look like column:format")
-        formats[_column(result, column.strip())] = _format_name(fmt.strip())
-    return formats
+    return {_column(result, column): fmt for column, fmt in _format_pairs(spec).items()}
 
 
 def _text_columns(result: StoredResult, columns: list[str]) -> list[str]:
@@ -1573,7 +1599,12 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
     def template(text: Any, cid: str) -> None:
         if not isinstance(text, str):
             return
-        for query, _row_index, column, _fmt in placeholders(text, board=True):
+        for query, _row_index, column, fmt in placeholders(text, board=True):
+            if fmt:
+                try:
+                    _format_name(fmt)
+                except MacroError as e:
+                    problems.append(f"{cid}: {e}")
             if query not in outputs:
                 problems.append(f"{cid}: placeholder names unknown query {query!r}")
             else:
@@ -1593,8 +1624,10 @@ def check_columns(components: Iterable[dict[str, Any]], outputs: Outputs) -> lis
             continue
         for key in ("title", "label", "drill_title"):
             template(comp.get(key), cid)
-        if "weight" in comp and (problem := weight_problem(comp["weight"])):
-            problems.append(f"{cid}: {problem}")
+        try:
+            _static_arguments(name, comp)
+        except MacroError as e:
+            problems.append(f"{cid}: {e}")
         query = comp.get("result_id")
         if query not in outputs:
             problems.append(f"{cid}: {name} names unknown query {query!r}; queries are: {', '.join(outputs)}")

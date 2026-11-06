@@ -51,6 +51,7 @@ export class BsReview extends LitElement {
   @state() error = '';
   private timer: ReturnType<typeof setTimeout> | undefined;
   private validateSeq = 0;
+  private saving: Promise<boolean> = Promise.resolve(true);
   private loadedFrom: Draft | null = null;
   private lastBlockers = '';
 
@@ -80,8 +81,13 @@ export class BsReview extends LitElement {
 
   /** Before leaving the step: save pending edits on the server (validate stores them). */
   async leave(): Promise<boolean> {
-    clearTimeout(this.timer);
-    return this.validate();
+    let files: Files, comments: DraftComment[];
+    do {
+      files = this.files;
+      comments = this.comments;
+      if (!(await this.validate())) return false;
+    } while (files !== this.files || comments !== this.comments);
+    return true;
   }
 
   /** What Export sends for the Dataset: the edited files and comments, and the dismissed claims. */
@@ -95,16 +101,31 @@ export class BsReview extends LitElement {
   }
 
   /** Validate (which also stores the edits on the server). False when the request failed. */
-  async validate(): Promise<boolean> {
+  validate(): Promise<boolean> {
+    clearTimeout(this.timer);
     const seq = ++this.validateSeq;
-    try {
-      const v = await this.api.validate(this.files, this.comments);
-      if (seq === this.validateSeq) this.validation = v; // ignore replies to older edits
-      return true;
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e);
-      return false;
-    }
+    const files = this.files, comments = this.comments;
+    this.saving = this.saving.then(async () => {
+      if (!this.isConnected || seq !== this.validateSeq) return false;
+      try {
+        const v = await this.api.validate(files, comments);
+        if (seq === this.validateSeq && this.isConnected) {
+          this.validation = v;
+          this.error = '';
+        }
+        return true;
+      } catch (e) {
+        if (seq === this.validateSeq && this.isConnected) this.error = e instanceof Error ? e.message : String(e);
+        return false;
+      }
+    });
+    return this.saving;
+  }
+
+  override disconnectedCallback() {
+    clearTimeout(this.timer);
+    ++this.validateSeq;
+    super.disconnectedCallback();
   }
 
   private editFile(key: keyof Files, value: string) {

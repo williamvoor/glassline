@@ -14,6 +14,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from explorer_agent.sql_text import wrap
+
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 from pglast import ast, parse_sql
@@ -303,8 +305,7 @@ class SqlRunner:
                     if not fetched and cur.description is None:
                         # A stream that yields no rows leaves no column description. Ask for the
                         # columns without producing rows; the newlines keep a trailing comment inside.
-                        body = sql.strip().rstrip(";").rstrip()
-                        await cur.execute(f"SELECT * FROM (\n{body}\n) AS _explorer_empty LIMIT 0", params)
+                        await cur.execute(wrap(sql, "_explorer_empty", " LIMIT 0"), params)
                     elapsed_ms = round((time.perf_counter() - start) * 1000)
                     if cur.description is None:
                         return SqlFail(sqlstate=None, message="the statement returned no rows")

@@ -85,7 +85,7 @@ export class BoardControls {
   private seq = 0;
   private sentRaw = new Map<number, Record<string, unknown>>();
   private timer: unknown;
-  private inflight = 0;
+  private inflight = new Set<number>();
   private writing = false; // our own revert writes: each one fires the subscription
 
   constructor(options: BoardControlsOptions) {
@@ -105,7 +105,7 @@ export class BoardControls {
 
   /** A re-query of this Board is waiting for its reply. */
   get pending(): boolean {
-    return this.inflight > 0;
+    return this.inflight.size > 0;
   }
 
   private raw(): Record<string, unknown> {
@@ -146,7 +146,7 @@ export class BoardControls {
     if (same(values, this.lastSent)) return;
     this.lastSent = values;
     this.sentRaw.set(++this.seq, raw);
-    this.inflight++;
+    this.inflight.add(this.seq);
     this.notify();
     this.sendFn(this.seq, values);
   }
@@ -157,12 +157,21 @@ export class BoardControls {
     this.displayedSeq = seq;
     this.displayedRaw = this.sentRaw.get(seq)!;
     for (const s of [...this.sentRaw.keys()]) if (s <= seq) this.sentRaw.delete(s);
+    if (!this.hasNewerIntent(seq)) this.restoreDisplayed();
     return true;
   }
 
-  /** "busy", a rejection or a network failure: the displayed values go back into the model. */
-  revert() {
-    this.cancelTimer();
+  private hasNewerIntent(seq: number): boolean {
+    return this.timer !== undefined || [...this.sentRaw.keys()].some(s => s > seq);
+  }
+
+  /** A failed request cannot roll back a newer request or an unsent slider edit. */
+  revert(seq: number) {
+    this.sentRaw.delete(seq);
+    if (seq > this.displayedSeq && !this.hasNewerIntent(seq)) this.restoreDisplayed();
+  }
+
+  private restoreDisplayed() {
     this.lastSent = wireValues(this.controls, this.displayedRaw); // first, so the writes send nothing
     this.lastSeen = this.lastSent;
     this.writing = true;
@@ -174,8 +183,9 @@ export class BoardControls {
   }
 
   /** A reply of any kind arrived for one sent change. */
-  settled() {
-    this.inflight = Math.max(0, this.inflight - 1);
+  settled(seq: number) {
+    this.inflight.delete(seq);
+    this.sentRaw.delete(seq);
     this.notify();
   }
 
