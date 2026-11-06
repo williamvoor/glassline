@@ -13,7 +13,7 @@ npm run build    # tsc + vite build
 npm test         # vitest (happy-dom), including the interop test
 ```
 
-- The browser calls the agent directly at `VITE_AGENT_URL` (default `http://127.0.0.1:10002`). The agent allows the client origin with CORS (ADR 0007).
-- There is one mode (ADR 0048): the client always lists the agent's Workspaces and offers Settings. `VITE_BOOTSTRAP_URL` selects Settings’ API (default `http://127.0.0.1:8765`). `run.sh` sets it and `VITE_AGENT_URL` together.
+- The browser calls the agent directly at `VITE_AGENT_URL` (default `http://127.0.0.1:10002`). The agent allows the client origin with CORS.
+- There is one mode: the client always lists the agent's Workspaces and offers Settings. `VITE_BOOTSTRAP_URL` selects Settings’ API (default `http://127.0.0.1:8765`). `run.sh` sets it and `VITE_AGENT_URL` together.
 - The interop test starts the test-only stub agent (`explorer_agent.testing.stub_server`, one fake Workspace) itself, so **`uv` must be on the PATH**.
 - `test/fixtures/slice_transport.json` is recorded by the agent's tests. To regenerate it, run `UPDATE_FIXTURES=1 uv run pytest tests/test_ui.py` in `../agent`.

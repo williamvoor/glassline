@@ -17,7 +17,7 @@ uv sync --locked
 uv run python -m explorer_agent
 ```
 
-Startup requires `EXPLORER_DATA_DIR` (one mode, ADR 0048) and checks each Workspace's read-only
+Startup requires `EXPLORER_DATA_DIR` (there is one mode) and checks each Workspace's read-only
 login, Boards and prompt separately, marking failures unavailable with their reason.
 Settings come from root `.env` (or `EXPLORER_ENV_FILE`), with exported variables taking precedence.
 
@@ -31,7 +31,7 @@ Use `../run.sh` for the agent, Settings and the client together. The stub server
 ### Comment overlay
 
 For a database we can't add comments to, a Dataset can keep table and column descriptions in a
-Comment overlay file (ADR 0019, `../SPEC.md` §13). Name it in `dataset.toml`:
+Comment overlay file (`../SPEC.md` §13). Name it in `dataset.toml`:
 
 ```toml
 [comments]
@@ -59,7 +59,7 @@ UPDATE_SNAPSHOTS=1 uv run pytest tests/test_prompt.py   # after a deliberate sys
 
 Ordinary tests stub model calls and external APIs. `live_db` deliberately reads the configured
 database. The stub model is `testing/stub_model.py`, and the database
-is built by `austender.testing.build_test_db` (ADR 0010).
+is built by `austender.testing.build_test_db`.
 
 ## Logs
 

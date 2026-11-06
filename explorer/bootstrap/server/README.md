@@ -31,7 +31,7 @@ it shows as "skipped"), `--check` exits 1 if any table or column lacks a comment
 is over the 20,000-character target.
 
 "Login can add comments: no" means the login doesn't own the objects. Comments for such a
-database go in a Comment overlay (`comments.toml`, ADR 0019; format in `../../agent/README.md`).
+database go in a Comment overlay (`comments.toml`; format in `../../agent/README.md`).
 "Never analysed" tables have no planner statistics; the report doesn't run `ANALYZE` itself, so
 ask the owner to.
 
@@ -66,7 +66,7 @@ or `--effort low` to a drafting command to override its defaults. Choose `--targ
 of `toml` to export comments for a database owner to apply.
 
 - The model sees the report and can run read-only `SELECT`s through the explorer's SQL guard,
-  limited to the chosen schemas. It hands in the draft with a `submit_draft` tool call (ADR 0023).
+  limited to the chosen schemas. It hands in the draft with a `submit_draft` tool call.
 - **Claims:** every factual statement in the draft comes with SQL and an expectation. A claim is
   `verified`, `failed`, `error` or `needs_review`. Export refuses while a claim is `failed`,
   `error` or unchecked and not dismissed, while the files don't validate, or if the directory

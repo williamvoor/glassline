@@ -1,6 +1,6 @@
 # glimmer-trainer
 
-Separate Fireworks SFT environment for Muse Glimmer 30B (ADR 0015). Its SDK dependencies
+Separate Fireworks SFT environment for Muse Glimmer 30B. Its SDK dependencies
 require a separate environment from the compiler/scorer harness. Scoring runs through the
 harness CLI below.
 

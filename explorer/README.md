@@ -5,7 +5,7 @@ charts, tables, and metrics. It also supports an Explorer Board as a landing pag
 Boards opened from rows, Controls that re-query a Board in place, and Drill-downs into results.
 The client keeps an investigation log and tabs for the views opened during a Conversation.
 
-The central rule is [ADR 0001](../docs/adr/0001-data-reaches-the-screen-only-through-macros.md):
+The central rule is that
 the model refers to stored Results instead of retyping data into the UI. Server-side Macros
 produce Visuals and expose their SQL. `Cite` placeholders insert database values into prose.
 Bare numbers in model-written prose are warned about rather than universally rejected, since
@@ -75,7 +75,7 @@ caps, and an in-memory cache bound the work.
 
 ## One mode: Workspaces with Settings
 
-The explorer has one mode (ADR 0048): the agent serves the Workspaces listed in
+The explorer has one mode: the agent serves the Workspaces listed in
 `$EXPLORER_DATA_DIR/workspaces.toml`, the bootstrap server backs Settings, and the client always
 shows the Workspace picker and Settings. `EXPLORER_DATA_DIR` is required, an absolute path outside
 the repo. Each Workspace names its Dataset directory and the variable holding its read-only login.
@@ -159,7 +159,7 @@ Workspace reload; Settings export reloads the agent automatically.
 
 | Settings | Role |
 |---|---|
-| `MODEL`, `META_API_KEY`, `REASONING_EFFORT` | Serving model, credentials, and reasoning setting; Spark is the default, Wonder is permitted by ADR 0030 |
+| `MODEL`, `META_API_KEY`, `REASONING_EFFORT` | Serving model, credentials, and reasoning setting; Spark is the default, Wonder is permitted |
 | `FORMAT` | Output format; Boards require `express` |
 | `SQL_TIMEOUT_MS`, `SQL_ROW_CAP`, `ROWS_TO_MODEL`, `TABLE_ROW_CAP` | Query duration, stored rows, model preview, displayed table rows |
 | `MAX_TOOL_ITERATIONS`, `MAX_UI_RETRIES`, `TURN_TIMEOUT_S` | Model/Repair and Turn limits |
@@ -179,7 +179,7 @@ matching agent binding settings; choose its agent port with an exported `AGENT_P
 
 Keep Dataset-specific names and behavior in `../datasets/<name>/` or a Workspace under
 `EXPLORER_DATA_DIR`. The bootstrap CLI exports to `~/.glassline` by default; use
-`--root` to export elsewhere (ADR 0045). `dataset.toml` selects
+`--root` to export elsewhere. `dataset.toml` selects
 allowed schemas, context files, currency formatting, and starter questions. Notes explain
 querying rules; the glossary explains domain language. Database `COMMENT ON` text supplies
 the Data dictionary, with `comments.toml` optionally replacing selected descriptions.

@@ -2,9 +2,9 @@
 
 **Stopped (2026-11-05).** The explorer split was stopped after this server measured 31–117 s to the first token on the training sampler (`../../docs/issues/11.md`). The sidecar code is retained; nothing in the agent calls it.
 
-A local sidecar that samples Muse Glimmer on Fireworks' serverless training sampler. It was built for the proposed Surface-generation split (SPEC §19, ADR 0031 and 0042). Spec: `../specs/glimmer-server/SPEC.md`.
+A local sidecar that samples Muse Glimmer on Fireworks' serverless training sampler. It was built for the proposed Surface-generation split (SPEC §19). Spec: `../specs/glimmer-server/SPEC.md`.
 
-It is a separate `uv` project because the Fireworks training SDK's pins don't fit the agent's environment (ADR 0015).
+It is a separate `uv` project because the Fireworks training SDK's pins don't fit the agent's environment.
 
 ```bash
 uv sync
@@ -24,7 +24,7 @@ uv run python -m glimmer_server  # serves on GLIMMER_URL (127.0.0.1 only)
 - `POST /surface` takes `{messages, max_tokens?, grammar?, cache_key}` and returns `{text, finish, tokens, latency_s, usage, checkpoint}`.
 - Sampling is greedy. The grammar is GBNF, sent as `response_format`.
 
-**Proposed setups** (ADR 0042; integration stopped). Each server process serves one checkpoint:
+**Proposed setups** (integration stopped). Each server process serves one checkpoint:
 
 - **s225 alone:** `GLIMMER_CHECKPOINT` = s225, with no examples or grammar in the request.
 - **Base + 3 + grammar:** `GLIMMER_CHECKPOINT` = s000, with 3 macro examples and a grammar in the request.
