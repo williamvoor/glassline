@@ -12,6 +12,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from psycopg import sql as psql
+
 from psycopg_pool import AsyncConnectionPool
 
 from explorer_agent.config import SCHEMA_NAME
@@ -114,10 +116,6 @@ def is_range_type(type_name: str) -> bool:
     return t in NUMERIC_TYPES or t in TEMPORAL_TYPES
 
 
-def _ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
 @dataclass(frozen=True)
 class RangeOutcome:
     status: str  # ok | skipped | error
@@ -128,10 +126,12 @@ class RangeOutcome:
 async def column_ranges(runner: SqlRunner, schema: str, table: str, columns: Iterable[str]) -> RangeOutcome:
     """min and max of the given columns in one query, bounded by the runner's statement_timeout."""
     cols = list(columns)
-    selects = ", ".join(
-        f"min({_ident(c)}) AS mn_{i}, max({_ident(c)}) AS mx_{i}" for i, c in enumerate(cols)
-    )
-    result = await runner.run(f"SELECT {selects} FROM {_ident(schema)}.{_ident(table)}")
+    selects = psql.SQL(", ").join(
+        psql.SQL("min({}) AS {}, max({}) AS {}").format(
+            psql.Identifier(c), psql.Identifier(f"mn_{i}"), psql.Identifier(c), psql.Identifier(f"mx_{i}"))
+        for i, c in enumerate(cols))
+    query = psql.SQL("SELECT {} FROM {}").format(selects, psql.Identifier(schema, table))
+    result = await runner.run(query.as_string())
     if isinstance(result, SqlFail):
         if result.sqlstate == QUERY_CANCELED:
             return RangeOutcome("skipped", {})

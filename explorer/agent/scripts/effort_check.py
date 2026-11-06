@@ -30,6 +30,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import httpx
+from httpx_sse import SSEError, aconnect_sse
 from dotenv import dotenv_values
 
 from explorer_agent.catalog import EXPLORER_CATALOG_ID
@@ -169,14 +170,13 @@ async def _exchange(client: httpx.AsyncClient, body: dict[str, Any]) -> dict[str
     start = time.monotonic()
     error = ""
     try:
-        async with client.stream("POST", "/", json=body, headers={"X-A2A-Extensions": EXT_URI}) as r:
+        async with aconnect_sse(client, "POST", "/", json=body, headers={"X-A2A-Extensions": EXT_URI}) as source:
+            r = source.response
             if r.status_code != 200:
                 error = f"HTTP {r.status_code}"
             else:
-                async for line in r.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    payload = json.loads(line[5:])
+                async for event_frame in source.aiter_sse():
+                    payload = json.loads(event_frame.data)
                     if "error" in payload:
                         error = f"JSON-RPC error: {payload['error']}"
                         break
@@ -189,7 +189,7 @@ async def _exchange(client: httpx.AsyncClient, body: dict[str, Any]) -> dict[str
                         break
                     if text := _texts(parts):
                         statuses.append(text)
-    except (httpx.HTTPError, json.JSONDecodeError) as e:
+    except (httpx.HTTPError, json.JSONDecodeError, SSEError) as e:
         error = f"{type(e).__name__}: {e}"
     wall_s = round(time.monotonic() - start, 3)
 

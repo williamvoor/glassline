@@ -338,6 +338,37 @@ import type {ComponentApi, MessageProcessor} from '@a2ui/web_core/v0_9';
 import {oneWorkspace} from './one-workspace.js';
 
 describe('explorer-app Controls', () => {
+  it.each([null, {id: 'b1', controls: [{name: 'buyer', kind: 'unknown'}]}, {id: 'b1', controls: [null]}])(
+    'shows the Board but does not subscribe to malformed Control metadata: %j', async metadata => {
+      const agent = controlsAgent(() => ({reply: failedReply('unexpected')}), () => {
+        const reply = ctrlBoardReply() as Extract<AskEvent, {kind: 'final'}>;
+        return {...reply, metadata: {...reply.metadata, [BOARD_KEY]: metadata}};
+      });
+      const app = await mount(agent.connector);
+      expect(surfaceText(app)).toContain('Spend 10');
+      dataModel(app).set('/controls/buyer', ['0']);
+      await settle(app);
+      expect(agent.sent).toEqual([]);
+    });
+
+  it('accepts forward-compatible metadata and ignores a malformed in-place sequence', async () => {
+    const agent = controlsAgent(() => {
+      const reply = inPlaceReply(1, 'wrong panel', 'wrong log') as Extract<AskEvent, {kind: 'final'}>;
+      return {reply: {...reply, metadata: {...reply.metadata, [IN_PLACE_KEY]: {seq: '1'}}}};
+    }, () => {
+      const reply = ctrlBoardReply() as Extract<AskEvent, {kind: 'final'}>;
+      return {...reply, metadata: {...reply.metadata, [BOARD_KEY]: {id: 'b1', future: true, controls: [{name: 'buyer', kind: 'choice', extra: 1}]},
+        [TAB_KEY]: {id: 't1', title: null, kind: 'board', future: true}}};
+    });
+    const app = await mount(agent.connector);
+    expect(texts(app, '.tab-strip .tab-title')).toEqual(['Explorer']);
+    dataModel(app).set('/controls/buyer', ['0']);
+    await settle(app);
+    expect(agent.sent).toHaveLength(1);
+    expect(surfaceText(app)).toContain('Spend 10');
+    expect(dataModel(app).get('/controls/buyer')).toEqual(['all']);
+  });
+
   it('sends a change, dims the layout while pending, then replaces the panel and logs it in place', async () => {
     const g = gate();
     const agent = controlsAgent(seq => ({reply: inPlaceReply(seq, 'Spend 20', 'Buyer set to Dept A'), gate: g.promise}));

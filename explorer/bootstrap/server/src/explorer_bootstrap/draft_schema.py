@@ -6,12 +6,17 @@ required) even though we don't send `strict`, so a later switch to structured ou
 
 from __future__ import annotations
 
+import copy
 import math
 import tomllib
+from functools import lru_cache
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
+from explorer_bootstrap.json_shape import MAX_PROBLEMS, shape_problems
+
 FILES = ("dataset.toml", "notes.md", "glossary.md", "comments")
-MAX_PROBLEMS = 20
 
 
 def _obj(props: dict[str, Any]) -> dict[str, Any]:
@@ -72,7 +77,14 @@ SUBMIT_DRAFT_TOOL = {
 
 TOOLS = [RUN_SQL_TOOL, SUBMIT_DRAFT_TOOL]
 
-_EXPECT_KEYS = {"scalar": {"kind", "value", "abs_tol", "rel_tol"}, "set": {"kind", "values"}, "none": {"kind"}}
+_DRAFT_VALIDATOR = Draft202012Validator(DRAFT_PARAMETERS)
+
+
+@lru_cache
+def _claims_validator(extra_keys: frozenset[str]) -> Draft202012Validator:
+    schema = copy.deepcopy(DRAFT_PARAMETERS["properties"]["claims"])
+    schema["items"]["properties"].update({key: {} for key in extra_keys})
+    return Draft202012Validator(schema)
 
 
 def _is_number(v: Any) -> bool:
@@ -110,45 +122,29 @@ def _has_examples(toml_text: str) -> bool | None:
 
 def validate_draft_args(args: Any, report: dict[str, Any]) -> list[str]:
     """Problems with the model's submit_draft arguments, each naming the field path. Empty = valid."""
-    problems: list[str] = []
-
-    def bad(msg: str) -> None:
-        problems.append(msg)
-
-    if not isinstance(args, dict):
-        return ["arguments must be an object"]
-    extra = sorted(set(args) - {"files", "comments", "claims"})
-    if extra:
-        bad(f"unknown key {extra[0]}")
-    files = args.get("files")
-    if not isinstance(files, dict):
-        bad("files must be an object")
-    else:
-        for key in ("dataset_toml", "notes_md", "glossary_md"):
-            if not _nonblank(files.get(key)):
-                bad(f"files.{key} must be a non-blank string")
-        if _nonblank(files.get("dataset_toml")) and _has_comments_table(files["dataset_toml"]):
-            bad("files.dataset_toml must not have a [comments] table (export adds it)")
-        if _nonblank(files.get("dataset_toml")) and _has_examples(files["dataset_toml"]) is False:
-            bad("files.dataset_toml must propose starter examples (examples = [...])")
+    problems = shape_problems(_DRAFT_VALIDATOR, args)
+    if problems:
+        return problems
+    bad = problems.append
+    files = args["files"]
+    for key in ("dataset_toml", "notes_md", "glossary_md"):
+        if not _nonblank(files[key]):
+            bad(f"files.{key} must be a non-blank string")
+    if _has_comments_table(files["dataset_toml"]):
+        bad("files.dataset_toml must not have a [comments] table (export adds it)")
+    if _has_examples(files["dataset_toml"]) is False:
+        bad("files.dataset_toml must propose starter examples (examples = [...])")
 
     index = report_index(report)
-    comments = args.get("comments")
-    if not isinstance(comments, list):
-        bad("comments must be an array")
-        comments = []
     seen: set[tuple[str, str]] = set()
-    for i, c in enumerate(comments):
+    for i, c in enumerate(args["comments"]):
         where = f"comments[{i}]"
-        if not isinstance(c, dict) or set(c) != {"object", "column", "comment"}:
-            bad(f"{where} must have exactly object, column, comment")
-            continue
         obj, col = c["object"], c["column"]
-        if not isinstance(obj, str) or obj not in index:
-            bad(f"{where}.object {obj!r} is not a table or view in the report")
+        if obj not in index:
+            bad(f"{where}.object is not a table or view in the report")
             continue
-        if not isinstance(col, str) or (col and col not in index[obj]["columns"]):
-            bad(f"{where}.column {col!r} is not a column of {obj}")
+        if col and col not in index[obj]["columns"]:
+            bad(f"{where}.column is not a column of {obj}")
             continue
         if (obj, col) in seen:
             bad(f"{where} repeats {obj}{'.' + col if col else ''}")
@@ -156,34 +152,29 @@ def validate_draft_args(args: Any, report: dict[str, Any]) -> list[str]:
         if not _nonblank(c["comment"]):
             bad(f"{where}.comment must be a non-blank string")
 
-    problems.extend(claim_problems(args.get("claims")))
+    problems.extend(_claim_semantics(args["claims"]))
     return problems[:MAX_PROBLEMS]
 
 
 def claim_problems(claims: Any, *, extra_keys: frozenset[str] = frozenset()) -> list[str]:
     """Problems with a list of claims (the model's, or the person's edits with `extra_keys`)."""
+    problems = shape_problems(_claims_validator(extra_keys), claims)
+    if problems:
+        # This validator's root is the claims array, not the whole tool argument object.
+        return [p.replace("arguments", "claims", 1) if p.startswith("arguments") else "claims" + p
+                for p in problems]
+    return _claim_semantics(claims)
+
+
+def _claim_semantics(claims: list[dict[str, Any]]) -> list[str]:
     problems: list[str] = []
     bad = problems.append
-    if not isinstance(claims, list):
-        return ["claims must be an array"]
     for i, cl in enumerate(claims):
         where = f"claims[{i}]"
-        if not isinstance(cl, dict) or not {"text", "file", "sql", "expect"} <= set(cl) <= (
-            {"text", "file", "sql", "expect"} | extra_keys
-        ):
-            bad(f"{where} must have exactly text, file, sql, expect")
-            continue
         if not _nonblank(cl["text"]):
             bad(f"{where}.text must be a non-blank string")
-        if not isinstance(cl["file"], str) or cl["file"] not in FILES:
-            bad(f"{where}.file must be one of {', '.join(FILES)}")
-        if not isinstance(cl["sql"], str):
-            bad(f"{where}.sql must be a string")
         e = cl["expect"]
-        kind = e.get("kind") if isinstance(e, dict) else None
-        if not isinstance(kind, str) or kind not in _EXPECT_KEYS or set(e) != _EXPECT_KEYS[kind]:
-            bad(f"{where}.expect must be scalar {{value, abs_tol, rel_tol}}, set {{values}} or none")
-            continue
+        kind = e["kind"]
         if kind != "none" and not _nonblank(cl["sql"]):
             bad(f"{where}.sql is required for a {kind} expectation")
         if kind == "scalar":
@@ -193,8 +184,6 @@ def claim_problems(claims: Any, *, extra_keys: frozenset[str] = frozenset()) -> 
                 bad(f"{where}.expect tolerances must be >= 0")
         if kind == "set":
             vals = e["values"]
-            if not isinstance(vals, list) or not all(isinstance(v, str) for v in vals):
-                bad(f"{where}.expect.values must be an array of strings")
-            elif len(set(vals)) != len(vals):
+            if len(set(vals)) != len(vals):
                 bad(f"{where}.expect.values has duplicates")
     return problems[:MAX_PROBLEMS]

@@ -1,10 +1,9 @@
 // Shapes of the bootstrap server's JSON (explorer/bootstrap/SPEC.md, phases 1 and 2b-2c).
+import {z} from 'zod';
 
-export interface Connection {
-  host: string;
-  name: string;
-  schemas: { name: string; objects: number }[];
-}
+export const ConnectionSchema = z.object({host: z.string(), name: z.string(),
+  schemas: z.array(z.object({name: z.string(), objects: z.number()}).passthrough())}).passthrough();
+export type Connection = z.infer<typeof ConnectionSchema>;
 
 export interface SchemaColumn {
   name: string;
@@ -63,14 +62,9 @@ export interface Report {
   objects: ObjectReport[];
 }
 
-export interface Estimate {
-  model: string;
-  prompt_chars: number;
-  input_tokens_est: number;
-  max_calls: number;
-  first_call_usd: number;
-  run_ceiling_usd: number;
-}
+export const EstimateSchema = z.object({model: z.string(), prompt_chars: z.number(), input_tokens_est: z.number(), max_calls: z.number(),
+  first_call_usd: z.number(), run_ceiling_usd: z.number()}).passthrough();
+export type Estimate = z.infer<typeof EstimateSchema>;
 
 export type Expect =
   | { kind: 'scalar'; value: number; abs_tol: number; rel_tol: number }
@@ -111,10 +105,8 @@ export interface Draft {
   usage: { totals: { calls: number; prompt_tokens: number; cached_tokens: number; completion_tokens: number; cost_usd: number } };
 }
 
-export interface Validation {
-  errors: string[];
-  context_chars: number | null;
-}
+export const ValidationSchema = z.object({errors: z.array(z.string()), context_chars: z.number().nullable()}).passthrough();
+export type Validation = z.infer<typeof ValidationSchema>;
 
 export type DraftEvent =
   | { type: 'sql'; purpose: string; sql: string }

@@ -48,6 +48,49 @@ def sse_response(body: str) -> httpx.Response:
     return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+async def test_multiline_events_keepalives_and_split_utf8(newline):
+    class Bytes(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            # Each UTF-8 code point and every CRLF is split across byte chunks.
+            for byte in wire:
+                yield bytes([byte])
+    data = json.dumps({"jsonrpc": "2.0", "id": "1", "result": status_event("Café 😀", final=True)},
+                      indent=2, ensure_ascii=False)
+    text = ": keepalive" + newline * 2
+    text += newline.join("data: " + line for line in data.splitlines()) + newline * 2
+    wire = text.encode("utf-8")
+    calls = []
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, stream=Bytes(), headers={"content-type": "text/event-stream; charset=utf-8"})
+    async with mock_client(respond) as client:
+        result = await ec.ask(client, "q")
+    assert result["failure"] == "none" and result["prose"] == "Café 😀"
+    assert len(calls) == 1
+    assert calls[0].headers["X-A2A-Extensions"] == ec.EXT_URI
+
+
+@pytest.mark.parametrize("body,content_type,error", [
+    ("data: {not-json}\n\n", "text/event-stream", "JSONDecodeError"),
+    ('data: {"jsonrpc":"2.0","error":{"code":-1,"message":"refused"}}\n\n',
+     "text/event-stream", "JSON-RPC error"),
+    ('data: {}\n\n', "application/json", "SSEError"),
+])
+async def test_sse_failures_keep_transport_classification(body, content_type, error):
+    async with mock_client(lambda r: httpx.Response(200, text=body, headers={"content-type": content_type})) as client:
+        result = await ec.ask(client, "q")
+    assert result["failure"] == "transport" and error in result["prose"]
+
+
+async def test_sse_timeout_is_a_transport_failure():
+    def timeout(request):
+        raise httpx.ReadTimeout("slow stream", request=request)
+    async with mock_client(timeout) as client:
+        result = await ec.ask(client, "q")
+    assert result["failure"] == "transport" and "ReadTimeout" in result["prose"]
+
+
 # H1
 async def test_ask_against_stub_agent():
     async with stub_client() as c:

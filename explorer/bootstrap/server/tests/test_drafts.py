@@ -35,8 +35,8 @@ def _mut(fn):
 @pytest.mark.parametrize(
     ("change", "problem"),
     [
-        (lambda a: a.update(extra=1), "unknown key extra"),
-        (lambda a: a.pop("files"), "files must be an object"),
+        (lambda a: a.update(extra=1), "unknown key"),
+        (lambda a: a.pop("files"), "'files' is a required property"),
         (lambda a: a["files"].update(notes_md="  "), "files.notes_md must be a non-blank string"),
         (lambda a: a["files"].update(dataset_toml=a["files"]["dataset_toml"] + '[comments]\noverlay = "c.toml"\n'),
          "must not have a [comments] table"),
@@ -44,20 +44,20 @@ def _mut(fn):
         (lambda a: a["comments"].append({"object": "bs.mixed", "column": "nope", "comment": "x"}), "not a column"),
         (lambda a: a["comments"].append(dict(a["comments"][0])), "repeats bs.mixed.name"),
         (lambda a: a["comments"][0].update(comment=" "), "comments[0].comment must be a non-blank"),
-        (lambda a: a["comments"][0].pop("column"), "must have exactly object, column, comment"),
-        (lambda a: a["claims"][0].update(file="README"), "claims[0].file must be one of"),
+        (lambda a: a["comments"][0].pop("column"), "'column' is a required property"),
+        (lambda a: a["claims"][0].update(file="README"), "claims[0].file: must be one of"),
         (lambda a: a["claims"][0].update(text=""), "claims[0].text must be a non-blank"),
-        (lambda a: a["claims"][0]["expect"].pop("rel_tol"), "claims[0].expect must be scalar"),
-        (lambda a: a["claims"][0]["expect"].update(kind="range"), "claims[0].expect must be scalar"),
+        (lambda a: a["claims"][0]["expect"].pop("rel_tol"), "claims[0].expect: must match"),
+        (lambda a: a["claims"][0]["expect"].update(kind="range"), "claims[0].expect: must match"),
         (lambda a: a["claims"][0]["expect"].update(abs_tol=-1), "tolerances must be >= 0"),
-        (lambda a: a["claims"][0]["expect"].update(value=True), "must be finite numbers"),
+        (lambda a: a["claims"][0]["expect"].update(value=True), "claims[0].expect: must match"),
         (lambda a: a["claims"][0]["expect"].update(value=float("nan")), "must be finite numbers"),
         (lambda a: a["claims"][0].update(sql=" "), "sql is required for a scalar"),
         (lambda a: a["claims"][1]["expect"].update(values=["1", "1"]), "has duplicates"),
-        (lambda a: a["claims"][1]["expect"].update(values=[1]), "array of strings"),
-        (lambda a: a["claims"][0]["expect"].update(kind=["scalar"]), "claims[0].expect must be scalar"),
-        (lambda a: a["claims"][0].update(expect={"kind": {"x": 1}}), "claims[0].expect must be scalar"),
-        (lambda a: a["claims"][0].update(file=["notes.md"]), "claims[0].file must be one of"),
+        (lambda a: a["claims"][1]["expect"].update(values=[1]), "claims[1].expect: must match"),
+        (lambda a: a["claims"][0]["expect"].update(kind=["scalar"]), "claims[0].expect: must match"),
+        (lambda a: a["claims"][0].update(expect={"kind": {"x": 1}}), "claims[0].expect: must match"),
+        (lambda a: a["claims"][0].update(file=["notes.md"]), "claims[0].file: must be"),
         (lambda a: a["files"].update(dataset_toml=a["files"]["dataset_toml"].replace(
             'examples = ["How many rows does bs.mixed have?", "What grades appear in bs.mixed?"]\n', '')),
          "must propose starter examples"),
@@ -73,7 +73,7 @@ async def test_validate_draft_args_caps_problems(bs_report):
     a = valid_args()
     a["comments"] = [{"object": f"bs.t{i}", "column": "", "comment": "x"} for i in range(50)]
     assert len(validate_draft_args(a, bs_report)) == MAX_PROBLEMS
-    assert validate_draft_args([], bs_report) == ["arguments must be an object"]
+    assert validate_draft_args([], bs_report) == ["arguments: must be object"]
 
 
 # D7

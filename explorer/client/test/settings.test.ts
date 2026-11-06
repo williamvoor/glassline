@@ -9,7 +9,7 @@ import type {ExplorerApp} from '../src/app.js';
 import type {WorkspaceApi, WorkspaceInfo} from '../src/workspaces.js';
 import {REPORT, fakeFetch, settle} from './settings/helpers.js';
 
-const ESTIMATE = {model: 'meta/muse-wonder-1.0', input_tokens_est: 1000, first_call_usd: 0.01, run_ceiling_usd: 0.12, max_calls: 12};
+const ESTIMATE = {model: 'meta/muse-wonder-1.0', prompt_chars: 4000, input_tokens_est: 1000, first_call_usd: 0.01, run_ceiling_usd: 0.12, max_calls: 12};
 const EMPTY_SESSION = {dsn_env: null, report: null, regenerating: null, draft: false, boards: false, run: null};
 
 function routes(over: Record<string, (body: any) => [number, unknown]> = {}) {
