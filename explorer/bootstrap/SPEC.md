@@ -374,7 +374,7 @@ error. Messages never show the DSN or keys.
 | V1 | `validate_files`: a valid draft gives no errors and the exact context size (equals the agent's computation over a Dataset dir exported with the overlay); bad TOML, missing key, `[comments]`, unchosen schema → errors without temp paths | `test_drafts.py::test_validate_files` (db) |
 | E1 | Export refuses: bad name, existing dir, invalid files, blockers; nothing is written | `test_export.py::test_export_refusals` |
 | E2 | The same draft exports to both targets with the same comments: `comments.toml` loads as an overlay, `comments.sql` applied as the owner gives the same comments in the database | `test_export.py::test_both_targets_same_comments` (db) |
-| E3 | The overlay export works through the read-only role: the explorer starts with `DATASET_DIR=<export>` (subprocess, as `test_main` does) | `test_export.py::test_explorer_starts_with_overlay_export` (db) |
+| E3 | The overlay export works through the read-only role: the explorer, given a Workspace whose `dataset_dir` is the export (ADR 0048), starts and lists it as available (subprocess, as `test_main` does) | `test_export.py::test_explorer_starts_with_overlay_export` (db) |
 | E4 | Quoting: quotes, backslashes, newlines, DEL, non-BMP characters and odd identifiers round-trip through `comments.sql` (applied in the database) and `comments.toml` (`load_overlay`) | `test_export.py::test_sql_and_toml_quoting`, `::test_overlay_file_loads_with_tricky_text` (db) |
 | E5 | `export --force` into an existing directory replaces only the draft's files (others untouched), keeps replaced files in a dot-prefixed sibling backup the picker ignores, and still refuses a file; without `force` the existing directory still refuses; the API reports `overwrote` and `backup` | `test_export.py::test_export_force_replaces_only_the_drafts_files`, `::test_export_force_into_an_empty_dir_keeps_no_backup`, `::test_export_force_still_refuses_a_file`, `test_server.py::test_export_force` (db) |
 | L1 | CLI `draft` with a stub model writes a strict, secret-free `draft.json`; `verify` and `export` exit codes | `test_cli.py::test_draft_verify_export` (db; the stub is injected through a module-level `COMPLETION` hook, never the network) |
@@ -663,7 +663,7 @@ It's built in two parts:
     be drawn");
   - the total seconds, against `BOARD_COLD_TARGET_S` (1.5), as `ok` or `slow`.
 - The preview informs the reviewer but never blocks export: a "No rows" panel can be right. It
-  shows no A2UI. The reviewer opens the exported Dataset with `./run.sh --real` before committing.
+  shows no A2UI. The reviewer opens the exported Dataset with `./run.sh` before committing.
 
 ### Server
 

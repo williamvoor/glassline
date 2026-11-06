@@ -391,7 +391,7 @@ def test_workspace_mode_starts_from_the_command_line(pg, tmp_path, public_url):
         port = s.getsockname()[1]
     env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY", "AGENT_PUBLIC_URL")}
     env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "EXPLORER_DATA_DIR": str(data), "AGENT_PORT": str(port),
-                "A_DATABASE_URL": pg.ro_dsn, "DATASET_DIR": "agent/tests/fixtures/austender"})
+                "A_DATABASE_URL": pg.ro_dsn})
     if public_url:
         env["AGENT_PUBLIC_URL"] = public_url
     base = public_url.rstrip("/") if public_url else f"http://127.0.0.1:{port}"
@@ -412,7 +412,7 @@ def test_workspace_mode_starts_from_the_command_line(pg, tmp_path, public_url):
     finally:
         proc.terminate()
         _, err = proc.communicate(timeout=10)
-    assert "DATASET_DIR is ignored in Workspace mode" in err and pg.ro_dsn not in err
+    assert pg.ro_dsn not in err
 
 
 def test_workspace_mode_refuses_a_data_directory_in_the_repo():

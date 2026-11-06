@@ -74,6 +74,8 @@ The user delegated G15–G20 with "prefer simple solutions" and approved them (2
 
 ### Modes
 
+*Superseded by "One mode" (2026-11-06): only Workspace mode remains.*
+
 - **Single-Dataset mode** applies when `EXPLORER_DATA_DIR` is unset. Behaviour is exactly as today:
   `DATASET_DIR` and `DATABASE_URL`, the agent at the root URL, and nothing saved. Tests, `run.sh`
   and the harnesses keep working unchanged.
@@ -389,7 +391,7 @@ above, it is a deliberate amendment, listed here.
 - **B18 Board Control drift.** A Board Level also saves the option values its choice and multi
   indexes named (`shown`). If the current options give other values for those indexes, the Level is
   a "Board has changed" (G18), not a silent pick of another option.
-- **B15 Single-Dataset mode** builds no store and no routes, and the client shows no picker. Its
+- **B15 Single-Dataset mode** *(removed 2026-11-06, see "One mode")* builds no store and no routes, and the client shows no picker. Its
   code path is the same `build_workspace` with `saved=None`.
   - **Client mode:** the client's mode is set at build time by `VITE_WORKSPACES=1`. `run.sh --real`
     sets it when `EXPLORER_DATA_DIR` is in the environment or the root `.env`. Without it the
@@ -693,6 +695,35 @@ checkbox) is dead code in Settings and goes.
 | N19 | After Review edits, arriving on Boards (by Next or the step bar) saves the edits, then rechecks the held Boards; their new problems block Next (E15) | `wizard.test.ts` |
 | N18 | Regenerate is disabled while a New Workspace is in progress, and a ceiling for another model never shows (E13, E14) | `settings.test.ts`, `report.test.ts` |
 | M2 | Manual: create a Workspace and regenerate one end to end through the wizard against a real database (stub or real model), with screenshots of each step in both themes | manual |
+
+## One mode (amendment 2026-11-06, the user; ADR 0048)
+
+The explorer was deployed without Settings because the client was built without
+`VITE_WORKSPACES=1`. Single-Dataset mode is removed so that can't happen again. This replaces
+"Modes" in phase 1 and B15.
+
+- **O1 Client.** No build-time mode. The client always loads `/workspaces`, shows the picker,
+  saves Conversations and offers Settings. `VITE_WORKSPACES` is not read.
+- **O2 Agent.** `python -m explorer_agent` requires `EXPLORER_DATA_DIR`; without it, it exits 1
+  with `explorer: EXPLORER_DATA_DIR is required …`. `DATASET_DIR` and `DATABASE_URL` are not
+  read. `load_settings` takes the Dataset directory and login as arguments.
+- **O3 Dev tools.** `python -m explorer_agent boards <workspace>` and
+  `scripts/scenarios.py run|boards --workspace <name>` use that Workspace's entry. An unknown
+  name exits 1 naming it.
+- **O4 run.sh.** It always starts the real agent, the bootstrap server and the client, and refuses
+  without `EXPLORER_DATA_DIR`. No stub mode, no `--real`. Its callers (`run_demo.sh`,
+  `regen_dataset.sh`, the bootstrap server's help text) say plain `run.sh`.
+- **O5 Stub server.** Test-only. It serves `GET /workspaces` with one Workspace, `stub`, and the
+  A2A agent at `/w/stub/`, and prints `READY <workspace URL>`.
+
+| ID | Criterion | Test |
+|---|---|---|
+| O1 | The app lists Workspaces with no build flag | `workspaces.test.ts`, `app.test.ts` |
+| O2 | No `EXPLORER_DATA_DIR`: one-line failure; `DATASET_DIR` alone doesn't start an agent | `test_main.py` |
+| O3 | `boards <workspace>` checks that Workspace; an unknown name fails | `test_main.py` |
+| O4 | `run.sh` takes no flags and refuses without `EXPLORER_DATA_DIR`; no `VITE_WORKSPACES` in the client, `run.sh` or `deploy/` | `test_run_sh.py` |
+| O1 | Retry on the banner reloads the Workspace list when it failed to load | `workspaces.test.ts` |
+| O5 | The stub lists `stub` and serves its card under `/w/stub/` | `test_stub_server.py`, `interop.test.ts` |
 
 ## Test command
 

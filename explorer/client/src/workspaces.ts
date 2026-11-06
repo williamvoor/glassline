@@ -1,6 +1,5 @@
 // Workspaces and saved Conversations (specs/workspaces/SPEC.md phase 1): the agent's REST routes
-// and the hash routes. Workspace mode is on when the client is built with VITE_WORKSPACES=1
-// (run.sh sets it when EXPLORER_DATA_DIR is set); otherwise nothing here is used.
+// and the hash routes. The explorer has one mode (ADR 0048): this is always on.
 
 export interface WorkspaceInfo {
   name: string;

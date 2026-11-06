@@ -265,7 +265,7 @@ markup, visible focus.
 
 **Phase 2:**
 - With a stub model, the draft → review → export flow produces a directory that the explorer
-  starts with (`DATASET_DIR=datasets/<name>`), once for each comment target. The overlay target
+  starts with (originally `DATASET_DIR=datasets/<name>`; since ADR 0048, as a Workspace), once for each comment target. The overlay target
   works through AusTender's read-only role, which can't add comments.
 - One live run with `meta/muse-wonder-1.0` against the Victorian property sales dataset
   (`vicprop/`, built separately; wait for it), logging tokens, cached tokens and cost. Record

@@ -34,7 +34,7 @@ From the repository root:
 
 ```bash
 cd explorer
-./run.sh --real
+./run.sh
 ```
 
 Open **http://127.0.0.1:5173/#/settings** and select **Add a Workspace**:
@@ -51,7 +51,7 @@ Previews show query data and cold-render timings; review the rendered Boards in 
 after export.
 
 The old standalone UI and standalone serving workflow are retired (ADRs 0041 and 0045).
-Use `run.sh --real` in Workspace mode for the browser, or the [CLI](server/README.md).
+Use `run.sh` for the browser, or the [CLI](server/README.md).
 
 ## Review and export
 

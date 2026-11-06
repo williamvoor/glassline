@@ -65,6 +65,7 @@ check code and tests. READMEs describe current setup and operation.
 - [0041 — Bootstrap becomes Settings](adr/0041-bootstrap-becomes-the-explorers-settings.md)
 - [0044 — New Workspace wizard](adr/0044-new-workspace-is-a-wizard-with-inline-cards-and-model-chips.md)
 - [0045 — Datasets are deployment data](adr/0045-datasets-are-deployment-data-not-part-of-the-explorer.md)
+- [0048 — The explorer has one mode: Workspaces with Settings](adr/0048-the-explorer-has-one-mode-workspaces-with-settings.md)
 
 ### A2UI evaluation, training, and stopped integration
 

@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from explorer_agent.config import ConfigError, load_dataset, load_settings
+from explorer_agent.config import ConfigError, load_dataset, load_settings, process_settings
 
 EXPLORER_ROOT = Path(__file__).resolve().parents[2]
 SECRET_DSN = "postgresql://explorer_ro:s3cret-pw@db.example:5434/austender"
-BASE_ENV = {"DATABASE_URL": SECRET_DSN}
+FIXTURE = EXPLORER_ROOT / "agent" / "tests" / "fixtures" / "austender"
 
 
 def write_dataset(root: Path, *, toml: str | None = None, notes: bool = True, glossary: bool = True) -> Path:
@@ -26,14 +26,14 @@ def write_dataset(root: Path, *, toml: str | None = None, notes: bool = True, gl
     return d
 
 
-def env_for(tmp_path, **extra):
-    return {**BASE_ENV, "DATASET_DIR": "datasets/demo", **extra}
+def settings_for(tmp_path, **env):
+    return load_settings(env, tmp_path / "datasets" / "demo", SECRET_DSN)
 
 
 # D1
 def test_defaults(tmp_path):
     write_dataset(tmp_path)
-    s = load_settings(env_for(tmp_path), tmp_path)
+    s = settings_for(tmp_path)
     assert (s.model, s.format, s.reasoning_effort) == ("meta/muse-spark-1.3", "express", "minimal")
     assert (s.sql_timeout_ms, s.sql_row_cap, s.rows_to_model, s.table_row_cap) == (15000, 5000, 20, 200)
     assert (s.max_tool_iterations, s.max_ui_retries) == (8, 2)
@@ -48,23 +48,19 @@ def test_defaults(tmp_path):
 
 def test_overrides(tmp_path):
     write_dataset(tmp_path)
-    s = load_settings(
-        env_for(tmp_path, MODEL="openrouter/x", FORMAT="direct_json", SQL_ROW_CAP="10", PROMPT_CACHE_KEY="k"),
-        tmp_path,
-    )
+    s = settings_for(tmp_path, MODEL="openrouter/x", FORMAT="direct_json", SQL_ROW_CAP="10", PROMPT_CACHE_KEY="k")
     assert (s.model, s.format, s.sql_row_cap, s.prompt_cache_key) == ("openrouter/x", "direct_json", 10, "k")
 
 
 def test_empty_reasoning_effort_means_not_sent(tmp_path):
     write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path, REASONING_EFFORT=""), tmp_path).reasoning_effort is None
+    assert settings_for(tmp_path, REASONING_EFFORT="").reasoning_effort is None
 
 
 @pytest.mark.parametrize(
     ("env", "names"),
     [
         ({"FORMAT": "yaml"}, "FORMAT"),
-        ({"DATABASE_URL": ""}, "DATABASE_URL"),
         ({"SQL_ROW_CAP": "0"}, "SQL_ROW_CAP"),
         ({"SQL_TIMEOUT_MS": "-5"}, "SQL_TIMEOUT_MS"),
         ({"AGENT_PORT": "abc"}, "AGENT_PORT"),
@@ -73,7 +69,7 @@ def test_empty_reasoning_effort_means_not_sent(tmp_path):
 def test_bad_env_is_a_config_error(tmp_path, env, names):
     write_dataset(tmp_path)
     with pytest.raises(ConfigError, match=names) as e:
-        load_settings(env_for(tmp_path, **env), tmp_path)
+        settings_for(tmp_path, **env)
     assert "s3cret" not in str(e.value)
 
 
@@ -96,50 +92,35 @@ def test_bad_env_is_a_config_error(tmp_path, env, names):
 def test_bad_dataset_is_a_config_error(tmp_path, kwargs, expected):
     write_dataset(tmp_path, **kwargs)
     with pytest.raises(ConfigError, match=expected) as e:
-        load_settings(env_for(tmp_path), tmp_path)
+        settings_for(tmp_path)
     assert "s3cret" not in str(e.value)
 
 
 def test_missing_dataset_dir_is_a_config_error(tmp_path):
     with pytest.raises(ConfigError, match="dataset.toml"):
-        load_settings(env_for(tmp_path, DATASET_DIR="datasets/nope"), tmp_path)
+        load_settings({}, tmp_path / "datasets" / "nope", SECRET_DSN)
 
 
-def test_dataset_dir_accepts_an_absolute_path(tmp_path):
-    ds = write_dataset(tmp_path / "elsewhere")
-    other_root = tmp_path / "root"
-    other_root.mkdir()
-    assert load_settings(env_for(tmp_path, DATASET_DIR=str(ds)), other_root).dataset_dir == ds
-
-
-def test_dataset_dir_accepts_a_home_relative_path(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    ds = write_dataset(tmp_path / "mine")
-    other_root = tmp_path / "root"
-    other_root.mkdir()
-    assert load_settings(env_for(tmp_path, DATASET_DIR="~/mine/datasets/demo"), other_root).dataset_dir == ds
-
-
-# Regression: an unset DATASET_DIR fell back to the AusTender dataset (code must be dataset-agnostic).
-@pytest.mark.parametrize("value", [None, "", "  "])
-def test_dataset_dir_is_required(tmp_path, value):
-    env = dict(BASE_ENV) if value is None else {**BASE_ENV, "DATASET_DIR": value}
-    with pytest.raises(ConfigError, match="DATASET_DIR is required"):
-        load_settings(env, tmp_path)
+# ADR 0048: the login is an argument (a Workspace's dsn_env), never DATABASE_URL.
+@pytest.mark.parametrize("dsn", ["", "  "])
+def test_login_is_required(tmp_path, dsn):
+    ds = write_dataset(tmp_path)
+    with pytest.raises(ConfigError, match="read-only login is required"):
+        load_settings({"DATABASE_URL": SECRET_DSN}, ds, dsn)
 
 
 # Deployment (specs/deployment): the agent sits behind a proxy, so the card's URL is configurable.
 def test_agent_public_url_defaults_to_unset(tmp_path):
     write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path), tmp_path).agent_public_url is None
-    assert load_settings(env_for(tmp_path, AGENT_PUBLIC_URL="  "), tmp_path).agent_public_url is None
+    assert settings_for(tmp_path).agent_public_url is None
+    assert settings_for(tmp_path, AGENT_PUBLIC_URL="  ").agent_public_url is None
 
 
 @pytest.mark.parametrize("value", ["https://34.207.118.134.sslip.io/agent/", "http://localhost:8080/",
                                    "http://[::1]:8080/agent/"])
 def test_agent_public_url_is_read(tmp_path, value):
     write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path, AGENT_PUBLIC_URL=f" {value} "), tmp_path).agent_public_url == value
+    assert settings_for(tmp_path, AGENT_PUBLIC_URL=f" {value} ").agent_public_url == value
 
 
 @pytest.mark.parametrize("value", ["example.com/agent/", "ftp://example.com/", "https://", "https://h/a?x=1",
@@ -148,37 +129,23 @@ def test_agent_public_url_is_read(tmp_path, value):
 def test_bad_agent_public_url_is_a_config_error(tmp_path, value):
     write_dataset(tmp_path)
     with pytest.raises(ConfigError, match="AGENT_PUBLIC_URL"):
-        load_settings(env_for(tmp_path, AGENT_PUBLIC_URL=value), tmp_path)
-
-
-def test_max_turns_per_day_defaults_to_no_cap_and_is_read(tmp_path):
-    write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path), tmp_path).max_turns_per_day == 0
-    assert load_settings(env_for(tmp_path, MAX_TURNS_PER_DAY="200"), tmp_path).max_turns_per_day == 200
-
-
-def test_turn_limit_contact_is_read(tmp_path):
-    write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path), tmp_path).turn_limit_contact is None
-    s = load_settings(env_for(tmp_path, TURN_LIMIT_CONTACT=" Contact me on GitHub. "), tmp_path)
-    assert s.turn_limit_contact == "Contact me on GitHub."
+        settings_for(tmp_path, AGENT_PUBLIC_URL=value)
 
 
 @pytest.mark.parametrize("value", ["-1", "lots"])
-def test_bad_max_turns_per_day_is_a_config_error(tmp_path, value):
-    write_dataset(tmp_path)
+def test_bad_max_turns_per_day_is_a_config_error(value):
     with pytest.raises(ConfigError, match="MAX_TURNS_PER_DAY"):
-        load_settings(env_for(tmp_path, MAX_TURNS_PER_DAY=value), tmp_path)
+        process_settings({"MAX_TURNS_PER_DAY": value})
 
 
 def test_settings_repr_hides_the_dsn(tmp_path):
     write_dataset(tmp_path)
-    assert "s3cret" not in repr(load_settings(env_for(tmp_path), tmp_path))
+    assert "s3cret" not in repr(settings_for(tmp_path))
 
 
 # D3
 def test_committed_dataset_loads():
-    s = load_settings({**BASE_ENV, "DATASET_DIR": "agent/tests/fixtures/austender"}, EXPLORER_ROOT)
+    s = load_settings({}, FIXTURE, SECRET_DSN)
     assert s.dataset.name == "austender"
     assert s.dataset.allowed_schemas == ("mart",)
     assert (s.dataset.currency.code, s.dataset.currency.symbol) == ("AUD", "$")
@@ -199,7 +166,7 @@ def _drill_hints(notes: str) -> str:
 async def test_committed_drill_hints_name_real_tables_and_columns(ro_pool):
     from explorer_agent.schema import SchemaCatalog
 
-    s = load_settings({**BASE_ENV, "DATASET_DIR": "agent/tests/fixtures/austender"}, EXPLORER_ROOT)
+    s = load_settings({}, FIXTURE, SECRET_DSN)
     hints = _drill_hints(s.dataset.notes)
     tables = {f"{t.schema}.{t.name}": {c.name for c in t.columns} for t in await SchemaCatalog(ro_pool, ["mart"]).objects()}
     names = re.findall(r"`([^`]+)`", hints)
@@ -214,7 +181,7 @@ def test_schema_name_with_trailing_newline_is_rejected(tmp_path):
     write_dataset(tmp_path, toml='name="x"\ndescription="d"\nallowed_schemas=["mart\\n"]\nnotes="notes.md"\n'
                   'glossary="glossary.md"\n[currency]\ncode="A"\nsymbol="$"\n')
     with pytest.raises(ConfigError, match="invalid schema name"):
-        load_settings(env_for(tmp_path), tmp_path)
+        settings_for(tmp_path)
 
 
 # Regression (refuter): a non-UTF-8 file is a ConfigError, not a UnicodeDecodeError.
@@ -222,14 +189,14 @@ def test_non_utf8_notes_is_a_config_error(tmp_path):
     d = write_dataset(tmp_path)
     (d / "notes.md").write_bytes(b"\xff\xfe bad")
     with pytest.raises(ConfigError, match="UTF-8"):
-        load_settings(env_for(tmp_path), tmp_path)
+        settings_for(tmp_path)
 
 
-# Regression (refuter): a malformed DATABASE_URL is rejected at load, without the secret.
-def test_malformed_database_url_is_a_config_error(tmp_path):
-    write_dataset(tmp_path)
-    with pytest.raises(ConfigError, match="DATABASE_URL") as e:
-        load_settings(env_for(tmp_path, DATABASE_URL="explorer_ro:s3cret@localhost/db"), tmp_path)
+# Regression (refuter): a malformed login is rejected at load, without the secret.
+def test_malformed_login_is_a_config_error(tmp_path):
+    ds = write_dataset(tmp_path)
+    with pytest.raises(ConfigError, match="login") as e:
+        load_settings({}, ds, "explorer_ro:s3cret@localhost/db")
     assert "s3cret" not in str(e.value)
 
 
@@ -240,7 +207,7 @@ def test_table_row_cap_reaches_the_tables(tmp_path):
     from explorer_agent.ui import UiPipeline
 
     write_dataset(tmp_path)
-    settings = load_settings(env_for(tmp_path, TABLE_ROW_CAP="10"), tmp_path)
+    settings = settings_for(tmp_path, TABLE_ROW_CAP="10")
     store = ResultStore()
     store.add(sql="s", purpose="p", columns=["n"], column_types=["integer"],
               rows=[{"n": i} for i in range(50)], truncated=False)
@@ -273,7 +240,7 @@ def write_overlay_dataset(tmp_path, overlay, toml=OVERLAY_TOML):
 # O1
 def test_no_overlay_by_default(tmp_path):
     write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path), tmp_path).dataset.comment_overlay is None
+    assert settings_for(tmp_path).dataset.comment_overlay is None
 
 
 # O2
@@ -339,13 +306,13 @@ def test_overlay_error_never_quotes_comment_text(tmp_path):
 # Example questions for the client's empty state (optional, shown in the agent card).
 def test_examples_default_to_none(tmp_path):
     write_dataset(tmp_path)
-    assert load_settings(env_for(tmp_path), tmp_path).dataset.examples == ()
+    assert settings_for(tmp_path).dataset.examples == ()
 
 
 def test_examples_load(tmp_path):
     base = 'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "glossary.md"\nnotes = "notes.md"\n'
     write_dataset(tmp_path, toml=base + 'examples = ["One?", "Two?"]\n[currency]\ncode = "EUR"\nsymbol = "€"\n')
-    assert load_settings(env_for(tmp_path), tmp_path).dataset.examples == ("One?", "Two?")
+    assert settings_for(tmp_path).dataset.examples == ("One?", "Two?")
 
 
 @pytest.mark.parametrize("value", ['"one"', "[1]", '[""]', '["  "]'])
@@ -353,16 +320,16 @@ def test_bad_examples_are_a_config_error(tmp_path, value):
     base = 'name = "demo"\ndescription = "Demo"\nallowed_schemas = ["mart"]\nglossary = "glossary.md"\nnotes = "notes.md"\n'
     write_dataset(tmp_path, toml=base + f"examples = {value}\n[currency]\ncode = \"EUR\"\nsymbol = \"€\"\n")
     with pytest.raises(ConfigError, match="examples"):
-        load_settings(env_for(tmp_path), tmp_path)
+        settings_for(tmp_path)
 
 
 # SPEC §15: Actions and drill-down settings
 def test_drill_settings_defaults_and_overrides(tmp_path):
     write_dataset(tmp_path)
-    s = load_settings(env_for(tmp_path), tmp_path)
+    s = settings_for(tmp_path)
     assert (s.drill_prefetch_rows, s.drill_prefetch_timeout_ms, s.drill_check_timeout_ms) == (3, 3000, 2000)
     assert (s.max_drills_per_surface, s.max_action_sources, s.max_prefetched, s.max_pending_pairs) == (2, 50, 30, 5)
-    s = load_settings(env_for(tmp_path, DRILL_PREFETCH_ROWS="0", MAX_DRILLS_PER_SURFACE="1"), tmp_path)
+    s = settings_for(tmp_path, DRILL_PREFETCH_ROWS="0", MAX_DRILLS_PER_SURFACE="1")
     assert (s.drill_prefetch_rows, s.max_drills_per_surface) == (0, 1)
 
 
@@ -370,7 +337,7 @@ def test_drill_settings_defaults_and_overrides(tmp_path):
 def test_bad_drill_settings(tmp_path, key, value):
     write_dataset(tmp_path)
     with pytest.raises(ConfigError, match=key):
-        load_settings(env_for(tmp_path, **{key: value}), tmp_path)
+        settings_for(tmp_path, **{key: value})
 
 
 def test_process_settings_read_the_public_url_and_the_daily_cap():

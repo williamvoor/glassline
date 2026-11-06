@@ -17,9 +17,9 @@ Speed is the primary product requirement, subject to correct numbers.
 
 1. Read [Explorer's README](explorer/README.md) for the application, current architecture, and
    local development workflow.
-2. Run its stub mode below to see the UI without database or model credentials.
-3. Set up [VicProp](vicprop/README.md) for a small database loaded from a committed workbook,
+2. Set up [VicProp](vicprop/README.md) for a small database loaded from a committed workbook,
    or [AusTender](austender/README.md) for contract data ingested from an API.
+3. Run the explorer as described below (it needs a database and model credentials).
 4. Read the [glossary](CONTEXT.md) before changing interaction or rendering code.
 5. Consult the [documentation guide](docs/README.md) for specifications, decisions, and evidence.
 
@@ -56,8 +56,8 @@ flowchart TD
 
 The loaders own database writes. Explorer connects with a separate read-only login and sees
 only the configured schemas. AusTender and VicProp each have their own database and Compose
-service. Single-Dataset mode serves one Dataset; Workspace mode serves multiple Workspaces
-and saves their Conversations. Dataset-specific language and configuration live under
+service. The explorer serves the Workspaces in `EXPLORER_DATA_DIR` and saves their Conversations
+(one mode, ADR 0048). Dataset-specific language and configuration live under
 `datasets/<name>/` at the repo root (the owner's deployment data, ADR 0045), keeping application code independent of either example database.
 
 Explorer has two execution paths. Questions use the model's SQL tool loop and server-expanded
@@ -74,13 +74,13 @@ VegaChart, Glimmer catalogs, and gallery Seeds are vendored with provenance.
 ## Prerequisites
 
 Run `./check_prereqs.sh` to check Python 3.13, `uv`, Node.js 20+, npm, Docker/Compose,
-and shell helpers. Docker is needed for database setup/tests, but not the stub application.
+and shell helpers. Docker is needed for database setup and tests.
 Initial dependency installation needs Git and network access.
 
 Each Python/Node project has its own dependencies and lockfile. Install inside the relevant
 project directory; there is no root install or test command.
 
-## First run: no model or database
+## First run
 
 From the repository root:
 
@@ -93,19 +93,17 @@ cd ..
 ./run.sh
 ```
 
-Open **http://127.0.0.1:5173**. The launcher runs a stub A2A agent on port **10002** and the
-client on port **5173**. Replies use canned data and Express; this verifies the rendering and
-transport path rather than question answering. Stop both processes with Ctrl-C.
-
-For real questions, follow the [Explorer setup](explorer/README.md#run-against-a-real-dataset).
-It includes database preparation and the root `.env` settings. Model calls use credentials
-and may incur charges; ordinary tests and stub mode do not call a model.
+`run.sh` needs the root `.env` with a model key and `EXPLORER_DATA_DIR`: follow the
+[Explorer setup](explorer/README.md#run) first. It starts the agent on port **10002**, the
+bootstrap server (Settings) on **8765** and the client on **5173**; open
+**http://127.0.0.1:5173**. There is one mode, Workspaces with Settings (ADR 0048). Stop all three
+with Ctrl-C. Model calls use credentials and may incur charges; ordinary tests do not call a model.
 
 ## Configuration boundaries
 
 | File | Used by | What it holds |
 |---|---|---|
-| Root `.env` | Explorer agent and dataset bootstrap | Model credentials, read-only DSNs, selected Dataset, runtime limits |
+| Root `.env` | Explorer agent and dataset bootstrap | Model credentials, `EXPLORER_DATA_DIR`, read-only DSNs, runtime limits |
 | `explorer/.env.example` | Setup reference | Committed placeholders and example settings for the root `.env` |
 | `austender/.env` | AusTender CLI and Compose | Loader/read-only passwords, database connection, API User-Agent |
 | `vicprop/.env` | VicProp CLI and Compose | Loader/read-only passwords, database connection, workbook path |
@@ -122,18 +120,17 @@ cp austender/.env.example austender/.env  # only if you run the AusTender databa
 cp vicprop/.env.example vicprop/.env      # only if you run the VicProp database
 ```
 
-Fill in credentials and follow [single-Dataset setup](explorer/README.md#run-against-a-real-dataset)
-or [Workspace setup](explorer/bootstrap/README.md#setup-and-browser-workflow). Workspace mode
-uses `EXPLORER_DATA_DIR` and named database logins; it ignores `DATABASE_URL` and `DATASET_DIR`.
-The copied example has Workspace mode on: for single-Dataset mode, comment out `EXPLORER_DATA_DIR`.
+Fill in credentials and follow the [Explorer setup](explorer/README.md#run) or the
+[Workspace setup](explorer/bootstrap/README.md#setup-and-browser-workflow). The explorer needs
+`EXPLORER_DATA_DIR` and named database logins (`<NAME>_DATABASE_URL`).
 
 ## Ports
 
 | Service | Default | Set by |
 |---|---|---|
-| Explorer client (stub and real) | http://127.0.0.1:5173 | `explorer/run.sh`, `vite.config.ts` (strictPort) |
-| Explorer agent (stub and real) | http://127.0.0.1:10002 | Exported `AGENT_PORT` for `run.sh`; root `.env` also works for direct agent startup |
-| Bootstrap server (Settings' API) | http://127.0.0.1:8765 | `run.sh --real` in Workspace mode; exported `BOOTSTRAP_PORT` |
+| Explorer client | http://127.0.0.1:5173 | `explorer/run.sh`, `vite.config.ts` (strictPort) |
+| Explorer agent | http://127.0.0.1:10002 | Exported `AGENT_PORT` for `run.sh`; root `.env` also works for direct agent startup |
+| Bootstrap server (Settings' API) | http://127.0.0.1:8765 | `explorer/run.sh`; exported `BOOTSTRAP_PORT` |
 | Glimmer review UI | http://127.0.0.1:8767 | `python -m a2ui_eval.review --port 8767` (server default 8765 if omitted) |
 | AusTender Postgres | localhost:5434 | `austender/.env`, `austender/docker-compose.yml` |
 | VicProp Postgres | localhost:5435 | `vicprop/.env`, `vicprop/docker-compose.yml` |
@@ -160,7 +157,7 @@ Run each row from its listed directory after installing that project's dependenc
 
 [GitHub Actions CI](.github/workflows/ci.yml) runs only when a pull request is opened,
 reopened, or updated. Independent jobs test all seven Python projects, test and build the Explorer
-client (including transport against the stub agent), and build the Glimmer review UI
+client (including transport against the test-only stub agent), and build the Glimmer review UI
 before running the full eval suite with Chromium. Database tests use disposable
 Testcontainers Postgres 18 instances; `live_db` tests remain manual. The optional upstream
 clone is not checked out, so its reference-only comparison test is skipped.

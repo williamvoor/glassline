@@ -61,7 +61,7 @@ here, which unblocks B-M (the speed targets) and the Board scenarios.
   - the total time against §18's cold target (1.5 s).
   - It shows no A2UI rendering. The bootstrap UI has no A2UI renderer and doesn't import from
     `explorer/client` (bootstrap SPEC 2c), so the reviewer opens the exported Dataset with
-    `./run.sh --real` to see the Boards themselves.
+    `./run.sh` to see the Boards themselves.
 - **Server:**
   - `POST /api/boards/draft` starts the loop. It needs a draft (409 otherwise) and runs one loop
     at a time.
@@ -145,7 +145,7 @@ Docker.
 - **TOML text in the tool call, checked by the agent's own code.** One source of truth for Board
   rules, with no second schema to drift.
 - **Preview as tables, not A2UI.** It's cheap, it keeps the bootstrap UI free of the client, and
-  the reviewer still sees the real Boards through `run.sh --real` before committing.
+  the reviewer still sees the real Boards through `run.sh` before committing.
 - **Replace `boards/` whole on `force`.** A Board left out of the new set must not linger.
 - **Open, for review:**
   - Should Entity Boards be chosen by the model, or proposed by a stats query over key-like

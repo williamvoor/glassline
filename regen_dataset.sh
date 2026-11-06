@@ -335,7 +335,7 @@ if want export; then
     say "Changes in datasets/$NAME"
     git -C "$ROOT" status --short -- "datasets/$NAME"
     echo
-    echo "Next: review the diff, then open it with: (cd explorer && ./run.sh --real)"
+    echo "Next: review the diff, then open it with: (cd explorer && ./run.sh)"
     [[ -f "$DEST/scenarios.toml" ]] && echo "      and rerun its scenarios before committing."
     [[ "$TARGET" == "sql" ]] && echo "      Apply comments.sql as the objects' owner first."
     [[ -n "$BACKUP" ]] && echo "Backup: $BACKUP (delete it once you're happy; the dataset picker ignores it)"

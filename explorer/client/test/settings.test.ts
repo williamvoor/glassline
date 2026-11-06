@@ -159,7 +159,6 @@ describe('D6: Settings in the explorer', () => {
 
   function mountApp(a: WorkspaceApi, opened?: () => void) {
     const app = document.createElement('explorer-app') as ExplorerApp;
-    app.workspaceMode = true;
     app.workspaceApi = a;
     app.connector = async () => ({info: {description: '', examples: []}, async *askQuestion() {}, async *act() { opened?.(); }});
     document.body.appendChild(app);
@@ -246,13 +245,5 @@ describe('D6: Settings in the explorer', () => {
     await settle(app, 15);
     expect(window.location.hash).toBe('#/w/vic');
     expect((app.querySelector('explorer-settings') as HTMLElement).hidden).toBe(true);
-  });
-
-  it('shows no Settings button in single-Dataset mode', async () => {
-    const app = document.createElement('explorer-app') as ExplorerApp;
-    app.connector = async () => ({info: {description: '', examples: []}, async *askQuestion() {}, async *act() {}});
-    document.body.appendChild(app);
-    await settle(app);
-    expect(app.querySelector('.settings-toggle')).toBeNull();
   });
 });

@@ -108,7 +108,6 @@ async function mount(api: FakeApi, hash = ''): Promise<{app: ExplorerApp; agent:
   window.history.replaceState(null, '', hash || window.location.pathname);
   const app = document.createElement('explorer-app') as ExplorerApp;
   const agent = fakeAgent(() => app);
-  app.workspaceMode = true;
   app.workspaceApi = api;
   app.connector = agent.connector;
   document.body.appendChild(app);
@@ -202,16 +201,34 @@ describe('C1: the picker, unavailable Workspaces, switching and the Conversation
     expect(text(q(app, '.saved-list'))).toContain('No saved conversations yet.');
   });
 
-  it('shows no picker or list in single-Dataset mode', async () => {
-    window.history.replaceState(null, '', window.location.pathname);
-    const app = document.createElement('explorer-app') as ExplorerApp;
-    const agent = fakeAgent(() => app);
-    app.connector = agent.connector;
-    document.body.appendChild(app);
-    await settle(app);
-    expect(q(app, '.workspaces')).toBeNull();
-    expect(q(app, '.saved-toggle')).toBeNull();
-    expect(window.location.hash).toBe('');
+  // ADR 0048: with the agent down, the Workspace list fails to load; Retry loads the list again
+  // (it used to retry the single-Dataset connection, which can never recover the picker).
+  it('retries loading the Workspace list from the banner', async () => {
+    const api = new FakeApi();
+    let up = false;
+    const list = api.list.bind(api);
+    api.list = async () => { if (!up) throw new Error('fetch failed'); return list(); };
+    const {app} = await mount(api);
+    expect(text(q(app, '.banner'))).toContain('Cannot reach the agent');
+    expect(q(app, '.workspaces .workspace')).toBeNull();
+    up = true;
+    await click(app, q(app, '.banner button'));
+    expect(q(app, '.banner')).toBeNull();
+    expect(all(app, '.workspaces .workspace').length).toBeGreaterThan(0);
+    expect(window.location.hash).toBe('#/w/aus');
+  });
+
+  // O1 (ADR 0048): a deploy built without VITE_WORKSPACES came up with no picker and no Settings.
+  // There is no build flag now: the app always lists Workspaces and offers Settings.
+  it('lists Workspaces and offers Settings with no build flag', async () => {
+    expect(import.meta.env.VITE_WORKSPACES).toBeUndefined();
+    const api = new FakeApi();
+    const {app} = await mount(api);
+    expect(api.calls[0]).toBe('list');
+    expect(q(app, '.workspaces')).not.toBeNull();
+    expect(q(app, '.saved-toggle')).not.toBeNull();
+    expect(q(app, '.settings-toggle')).not.toBeNull();
+    expect(window.location.hash).toBe('#/w/aus');
   });
 });
 

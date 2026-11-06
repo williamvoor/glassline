@@ -1,16 +1,13 @@
-"""`python -m explorer_agent`: start the agent against the dataset database.
+"""`python -m explorer_agent`: serve the Workspaces in `EXPLORER_DATA_DIR`.
 
-Loads the repo root's `.env` (or `EXPLORER_ENV_FILE`) without overriding the environment, checks the
-login is read-only, checks the Dataset's Boards, builds the system prompt once, and serves A2A on
-AGENT_HOST:AGENT_PORT. A configuration or startup problem prints one line, `explorer: <message>`,
-and exits 1.
+Loads the repo root's `.env` (or `EXPLORER_ENV_FILE`) without overriding the environment, reads the
+Workspace list in `EXPLORER_DATA_DIR` (required: there is one mode, ADR 0048), builds each
+Workspace (read-only login check, Boards check, system prompt), mounts each available one under
+`/w/<name>/`, serves `/workspaces` on AGENT_HOST:AGENT_PORT, and saves Conversations. A
+configuration problem prints one line, `explorer: <message>`, and exits 1.
 
-With `EXPLORER_DATA_DIR` set (Workspace mode, specs/workspaces/SPEC.md) it reads the Workspace
-list there instead, mounts each available Workspace under `/w/<name>/`, serves `/workspaces`, and
-saves Conversations; `DATASET_DIR` and `DATABASE_URL` are ignored.
-
-`python -m explorer_agent boards` checks and renders each Board cold, printing its time, and exits
-1 when one misses the cold target (SPEC §18).
+`python -m explorer_agent boards <workspace>` checks and renders each of that Workspace's Boards
+cold, printing its time, and exits 1 when one misses the cold target (SPEC §18).
 """
 
 from __future__ import annotations
@@ -45,9 +42,9 @@ from explorer_agent.config import (
     Settings,
     WorkspaceEntry,
     WorkspaceUnavailable,
-    data_dir,
-    load_settings,
+    named_workspace_settings,
     process_settings,
+    required_data_dir,
 )
 from explorer_agent.drill import Prefetcher
 from explorer_agent.executor import BoardViews, Conversations, DrillDowns, SavedViews
@@ -103,7 +100,7 @@ async def _open_pool(settings: Settings, timeout_s: float | None = None):
         await pool.open(wait=True, timeout=timeout_s or DB_CONNECT_TIMEOUT_S)
     except PoolTimeout:
         await pool.close()  # it would keep retrying in the background
-        raise _Fatal("cannot connect to the database (check DATABASE_URL and that the database is running)") from None
+        raise _Fatal("cannot connect to the database (check the login and that the database is running)") from None
     return pool
 
 
@@ -168,19 +165,17 @@ class Running:
             await self.pool.close()
 
 
-FROM_SETTINGS: Any = object()  # build_workspace's budget: the Dataset's own MAX_TURNS_PER_DAY
-
-
 def turn_budget(limit: int, contact: str | None) -> TurnBudget | None:
     return TurnBudget(limit, contact=contact) if limit else None
 
 
-async def build_workspace(settings: Settings, url: str, *, saved_path: Path | None = None, cors: bool = True,
+async def build_workspace(settings: Settings, url: str, *, saved_path: Path,
                           connect_timeout_s: float | None = None, completion: Any = None,
-                          budget: TurnBudget | None = FROM_SETTINGS) -> Running:
-    """Everything one Dataset needs, checked, as today's single agent (ADR 0039): the pool, the
-    read-only check, the schema and its overlay, the Boards, the prompt and the app. With
-    `saved_path` (Workspace mode) Conversations are saved there. The pool is closed on failure."""
+                          budget: TurnBudget | None = None) -> Running:
+    """Everything one Workspace needs, checked (ADR 0039): the pool, the read-only check, the
+    schema and its overlay, the Boards, the prompt and the app, saving Conversations at
+    `saved_path`. CORS is the router's (B1). `budget` is the process's shared one. The pool is
+    closed on failure."""
     pool = await _open_pool(settings, connect_timeout_s)
     try:
         schemas = settings.dataset.allowed_schemas
@@ -205,7 +200,7 @@ async def build_workspace(settings: Settings, url: str, *, saved_path: Path | No
             runner, rows=settings.drill_prefetch_rows, timeout_ms=settings.drill_prefetch_timeout_ms,
             max_held=settings.max_prefetched,
         )
-        store = SavedStore(saved_path) if saved_path is not None else None
+        store = SavedStore(saved_path)
         conversations = Conversations(
             max_action_sources=settings.max_action_sources, max_pending_pairs=settings.max_pending_pairs,
             board_rows_to_model=settings.board_rows_to_model, board_pair_max_chars=settings.board_pair_max_chars,
@@ -217,9 +212,7 @@ async def build_workspace(settings: Settings, url: str, *, saved_path: Path | No
             description=settings.dataset.description, examples=settings.dataset.examples,
             drills=DrillDowns(runner, pipeline, prefetcher, settings.rows_to_model), model=settings.model,
             boards=BoardViews(renderer, pipeline, settings.board_prefetch_rows) if renderer is not None else None,
-            saved=SavedViews(store, runner, pipeline) if store is not None else None, cors=cors,
-            budget=(turn_budget(settings.max_turns_per_day, settings.turn_limit_contact)
-                    if budget is FROM_SETTINGS else budget),
+            saved=SavedViews(store, runner, pipeline), cors=False, budget=budget,
         )
         return Running(app, pool, renderer, conversations, store)
     except BaseException:
@@ -239,23 +232,12 @@ async def _listen(app: Any, settings: Settings, url: str) -> tuple[uvicorn.Serve
     return server, task
 
 
-async def _serve(settings: Settings) -> None:
-    url = f"http://{settings.agent_host}:{settings.agent_port}"
-    running = await build_workspace(settings, settings.agent_public_url or url)
-    try:
-        _, task = await _listen(running.app, settings, url)
-        running.started()
-        await task
-    finally:
-        await running.close()
-
-
 async def _workspace_builder(entry: WorkspaceEntry, settings: Settings, url: str, saved_path: Path, *,
                              connect_timeout_s: float | None = None, completion: Any = None,
                              budget: TurnBudget | None = None) -> Built:
     """One Workspace for the registry: a failed check becomes its reason (no DSN in it)."""
     try:
-        running = await build_workspace(settings, url, saved_path=saved_path, cors=False,
+        running = await build_workspace(settings, url, saved_path=saved_path,
                                         connect_timeout_s=connect_timeout_s, completion=completion, budget=budget)
     except _Fatal:
         raise WorkspaceUnavailable("database unreachable") from None
@@ -299,29 +281,25 @@ async def _serve_workspaces(env: Mapping[str, str], data: Path, base: Settings) 
         await registry.close()
 
 
+USAGE = "usage: python -m explorer_agent [boards <workspace>]"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args not in ([], ["boards"]):
-        print("usage: python -m explorer_agent [boards]", file=sys.stderr)
+    if not (args == [] or (len(args) == 2 and args[0] == "boards")):
+        print(USAGE, file=sys.stderr)
         return 2
     env_file = Path(os.environ.get("EXPLORER_ENV_FILE") or ENV_FILE)
     load_dotenv(env_file, override=False)
     try:
-        raw_data = os.environ.get("EXPLORER_DATA_DIR", "").strip()
-        if raw_data and args == []:
-            data = data_dir(raw_data, EXPLORER_ROOT.parent)
-            base = process_settings(os.environ)
-            _configure_logging(base.log_level)
-            for name in ("DATASET_DIR", "DATABASE_URL"):
-                if os.environ.get(name, "").strip():
-                    log.warning("%s is ignored in Workspace mode (EXPLORER_DATA_DIR is set)", name)
-            asyncio.run(_serve_workspaces(os.environ, data, base))
-            return 0
-        settings = load_settings(os.environ, EXPLORER_ROOT)
-        _configure_logging(settings.log_level)
-        if args == ["boards"]:
+        if args:
+            settings = named_workspace_settings(os.environ, args[1], EXPLORER_ROOT.parent, EXPLORER_ROOT)
+            _configure_logging(settings.log_level)
             return asyncio.run(_boards_check(settings))
-        asyncio.run(_serve(settings))
+        data = required_data_dir(os.environ, EXPLORER_ROOT.parent)
+        base = process_settings(os.environ)
+        _configure_logging(base.log_level)
+        asyncio.run(_serve_workspaces(os.environ, data, base))
     except (ConfigError, StartupError, _Fatal) as e:
         print(f"explorer: {e}", file=sys.stderr)
         return 1

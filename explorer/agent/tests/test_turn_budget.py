@@ -7,13 +7,10 @@ from datetime import date
 import httpx
 import pytest
 
-from explorer_agent.__main__ import EXPLORER_ROOT, build_workspace
 from explorer_agent.budget import TURN_LIMIT_PROSE, TurnBudget
-from explorer_agent.config import load_settings
 from explorer_agent.drill import Prefetcher
 from explorer_agent.executor import ACTION_FAILED_KEY, LEVEL_KEY, Conversations, DrillDowns
 from explorer_agent.server import build_app
-from explorer_agent.testing.stub_model import ScriptedCompletion, text
 from tests.test_executor import PLAIN_REPLY, REPLY, Answers, Runner, act, chart_action, meta, prose, send_action
 from tests.test_server import ORIGIN, URL, stream
 
@@ -81,23 +78,6 @@ async def test_without_a_budget_there_is_no_cap():
         for _ in range(3):
             await stream(client)
     assert len(answers.texts) == 3
-
-
-# Wiring: MAX_TURNS_PER_DAY from the environment reaches the running agent (startup builds the budget).
-@pytest.mark.db
-async def test_max_turns_per_day_caps_the_started_agent(pg):
-    settings = load_settings({"DATABASE_URL": pg.ro_dsn, "DATASET_DIR": "agent/tests/fixtures/austender",
-                              "MAX_TURNS_PER_DAY": "1"}, EXPLORER_ROOT)
-    model = ScriptedCompletion([text("One."), text("Two.")])
-    running = await build_workspace(settings, URL, completion=model)
-    try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=running.app), base_url=URL) as client:
-            first = await stream(client)
-            second = await stream(client)
-    finally:
-        await running.close()
-    assert prose(first) == "One."
-    assert prose(second) == TURN_LIMIT_PROSE
 
 
 def test_the_limit_message_ends_with_the_configured_contact():

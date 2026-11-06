@@ -1,11 +1,13 @@
 """Export to a new dataset directory, both comment targets (SPEC.md phase 2b: E1-E4)."""
 
+import json
 import os
 import socket
 import subprocess
 import sys
 import time
 import tomllib
+import urllib.request
 
 import psycopg
 import pytest
@@ -120,9 +122,13 @@ def test_explorer_starts_with_overlay_export(bs_report_sync, pg, tmp_path):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
+    data = tmp_path / "data"  # one mode (ADR 0048): the export is served as a Workspace
+    data.mkdir()
+    (data / "workspaces.toml").write_text(
+        f'[[workspace]]\nname = "bs"\ndataset_dir = "{out}"\ndsn_env = "BS_DATABASE_URL"\n', encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY")}
-    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "DATABASE_URL": pg.ro_dsn, "AGENT_PORT": str(port),
-                "DATASET_DIR": str(out)})
+    env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "EXPLORER_DATA_DIR": str(data),
+                "BS_DATABASE_URL": pg.ro_dsn, "AGENT_PORT": str(port)})
     proc = subprocess.Popen([sys.executable, "-m", "explorer_agent"], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
     try:
@@ -132,6 +138,9 @@ def test_explorer_starts_with_overlay_export(bs_report_sync, pg, tmp_path):
             if not line and proc.poll() is not None:
                 pytest.fail(f"explorer exited: {proc.stderr.read()}")
         assert "listening" in line
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/workspaces", timeout=10) as r:
+            [ws] = json.load(r)
+        assert (ws["name"], ws["status"]) == ("bs", "available"), ws.get("reason")
     finally:
         proc.terminate()
         proc.wait(timeout=10)

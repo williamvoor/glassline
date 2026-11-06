@@ -1,9 +1,10 @@
-"""A2A server wired to a canned answerer, for the client interop test and manual checks.
+"""A2A server wired to a canned answerer, for tests only (the client interop test).
 
-No database and no model: the store is seeded with the fixture result `r1`, and every
-answer is `FIXED_REPLY`, with a Drill query on the chart and a Follow-up (SPEC §15). Drill-downs
-run against `StubDrillRunner`'s canned rows, and the Explorer Board (SPEC §18) against
-`StubBoardRunner`'s. Never imported by `server.py`.
+Shaped like the real agent (ADR 0048): `GET /workspaces` lists one Workspace, `stub`, whose agent
+is at `/w/stub/`. No database and no model: the store is seeded with the fixture result `r1`, and
+every answer is `FIXED_REPLY`, with a Drill query on the chart and a Follow-up (SPEC §15).
+Drill-downs run against `StubDrillRunner`'s canned rows, and the Explorer Board (SPEC §18) against
+`StubBoardRunner`'s. Never imported by `server.py`. Prints `READY <the Workspace's URL>`.
 
     uv run python -m explorer_agent.testing.stub_server --port 10002
 """
@@ -16,6 +17,9 @@ import sys
 from pathlib import Path
 
 import uvicorn
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from explorer_agent.boards import Board, BoardQuery, BoardRenderer, Control
 from explorer_agent.drill import Prefetcher, rewrite
@@ -24,6 +28,7 @@ from explorer_agent.results import ResultStore
 from explorer_agent.server import build_app
 from explorer_agent.sql import SqlOk
 from explorer_agent.ui import UiPipeline, UiResult
+from explorer_agent.workspaces import AVAILABLE, PREFIX
 
 FIXTURE_PURPOSE = "top suppliers (fixture)"
 FIXTURE_SQL = (
@@ -243,6 +248,47 @@ def stub_boards() -> BoardViews:
     return BoardViews(renderer, _pipeline())
 
 
+STUB_WORKSPACE = "stub"
+STUB_DESCRIPTION = "Stub agent: every answer is the same fixture"
+
+
+class _StubRouter:
+    """The Workspace router's shape (workspaces.Registry) with one fixed Workspace."""
+
+    def __init__(self, agent: ASGIApp, base_url: str):
+        self.agent = agent
+        self.listing = [{"name": STUB_WORKSPACE, "description": STUB_DESCRIPTION, "status": AVAILABLE,
+                         "url": f"{base_url}{PREFIX}{STUB_WORKSPACE}"}]
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "lifespan":
+            while (await receive())["type"] != "lifespan.shutdown":
+                await send({"type": "lifespan.startup.complete"})
+            await send({"type": "lifespan.shutdown.complete"})
+            return
+        path, prefix = scope["path"], f"{PREFIX}{STUB_WORKSPACE}"
+        if path == "/workspaces" and scope.get("method") == "GET":
+            await JSONResponse(self.listing)(scope, receive, send)
+        elif path == prefix or path.startswith(prefix + "/"):
+            child = dict(scope)
+            child["root_path"] = scope.get("root_path", "") + prefix
+            child["path"] = path[len(prefix):] or "/"
+            child["raw_path"] = child["path"].encode()
+            await self.agent(child, receive, send)
+        else:
+            await JSONResponse({"error": "not found"}, status_code=404)(scope, receive, send)
+
+
+def stub_app(url: str, client_origin: str, *, boards: bool = True) -> ASGIApp:
+    agent = build_app(
+        stub_answerer, url=f"{url}{PREFIX}{STUB_WORKSPACE}", client_origin=client_origin, cors=False,
+        description=STUB_DESCRIPTION, examples=("Which suppliers received the most?",),
+        drills=stub_drills(), model="stub", boards=stub_boards() if boards else None,
+    )
+    return CORSMiddleware(_StubRouter(agent, url), allow_origins=[client_origin], allow_methods=["*"],
+                          allow_headers=["*"])
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--host", default="127.0.0.1")
@@ -252,11 +298,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     url = f"http://{args.host}:{args.port}"
-    app = build_app(
-        stub_answerer, url=url, client_origin=args.client_origin,
-        description="Stub agent: every answer is the same fixture", examples=("Which suppliers received the most?",),
-        drills=stub_drills(), model="stub", boards=None if args.no_boards else stub_boards(),
-    )
+    app = stub_app(url, args.client_origin, boards=not args.no_boards)
     server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="warning"))
 
     async def serve() -> None:
@@ -266,7 +308,7 @@ def main(argv: list[str] | None = None) -> None:
                 await task  # surfaces the startup error
                 return
             await asyncio.sleep(0.05)
-        print(f"READY {url}", flush=True)
+        print(f"READY {url}{PREFIX}{STUB_WORKSPACE}", flush=True)
         await task
 
     asyncio.run(serve())

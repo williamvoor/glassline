@@ -6,6 +6,7 @@ import '../src/app.js';
 import {ACTION_FAILED_KEY, LEVEL_KEY, LOG_KEY, MODEL_KEY, NO_BOARDS_KEY, OPEN_BOARD, TAB_KEY, type ExplorerApp} from '../src/app.js';
 import {MAX_TABS} from '../src/tabs.js';
 import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
+import {oneWorkspace} from './one-workspace.js';
 
 const CTX = 'ctx-1';
 
@@ -81,7 +82,9 @@ async function settle(app: ExplorerApp) {
 }
 
 async function mount(agent: Agent): Promise<ExplorerApp> {
+  window.history.replaceState(null, '', window.location.pathname);
   const app = document.createElement('explorer-app') as ExplorerApp;
+  app.workspaceApi = oneWorkspace();
   app.connector = agent.connector;
   document.body.appendChild(app);
   await settle(app);

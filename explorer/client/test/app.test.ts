@@ -33,7 +33,9 @@ const answer = (prose: string, contextId = 'ctx-1'): AskEvent[] => [
 ];
 
 async function mount(connector: () => Promise<AgentConnection>): Promise<ExplorerApp> {
+  window.history.replaceState(null, '', window.location.pathname);
   const app = document.createElement('explorer-app') as ExplorerApp;
+  app.workspaceApi = oneWorkspace();
   app.connector = connector;
   document.body.appendChild(app);
   await settle(app);
@@ -329,6 +331,7 @@ const surfaceText = (app: ExplorerApp) => q(app, '.canvas a2ui-surface')!.textCo
 const logTexts = (app: ExplorerApp) => texts(app, '.sidebar .log-entry .log-text');
 
 import type {ComponentApi, MessageProcessor} from '@a2ui/web_core/v0_9';
+import {oneWorkspace} from './one-workspace.js';
 
 describe('explorer-app Controls', () => {
   it('sends a change, dims the layout while pending, then replaces the panel and logs it in place', async () => {

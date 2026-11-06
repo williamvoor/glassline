@@ -1,4 +1,4 @@
-# One VM, the same as `explorer/run.sh --real` (Workspace mode). See README.md.
+# One VM, the same as `explorer/run.sh` (Workspace mode). See README.md.
 # Settings come from deploy/.env (copy .env.example).
 #
 # The agent, the bootstrap server (Settings) and Caddy share one network namespace, owned by `net`,

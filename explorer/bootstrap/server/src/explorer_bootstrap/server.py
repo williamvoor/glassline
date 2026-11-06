@@ -799,7 +799,7 @@ def build_app(
         # Workspaces G22: the browser UI is the explorer's Settings now.
         return PlainTextResponse(
             "This is the bootstrap API. Its browser UI is the explorer's Settings (#/settings): set\n"
-            "EXPLORER_DATA_DIR and run explorer/run.sh --real. The CLI (report, draft, verify, boards,\n"
+            "EXPLORER_DATA_DIR and run explorer/run.sh. The CLI (report, draft, verify, boards,\n"
             "export) still works on its own.\n"
         )
 

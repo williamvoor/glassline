@@ -1,4 +1,4 @@
-# One VM deploy (deploy/README.md), the same as `explorer/run.sh --real` in Workspace mode.
+# One VM deploy (deploy/README.md), the same as `explorer/run.sh`: Workspaces with Settings (ADR 0048).
 # Build context is the repo root: `docker compose` in deploy/ passes `..`. Two targets:
 #   agent  the explorer agent and the bootstrap server (Settings), keeping the repo layout
 #          (EXPLORER_ROOT is parents[3] of the agent's __main__.py, REPO_ROOT parents[5] of the
@@ -16,7 +16,7 @@ ARG VITE_AGENT_URL
 ARG VITE_BOOTSTRAP_URL
 RUN test -n "$VITE_AGENT_URL" && test -n "$VITE_BOOTSTRAP_URL" \
     || { echo "VITE_AGENT_URL and VITE_BOOTSTRAP_URL build args are required" >&2; exit 1; }
-RUN VITE_AGENT_URL="$VITE_AGENT_URL" VITE_BOOTSTRAP_URL="$VITE_BOOTSTRAP_URL" VITE_WORKSPACES=1 npm run build
+RUN VITE_AGENT_URL="$VITE_AGENT_URL" VITE_BOOTSTRAP_URL="$VITE_BOOTSTRAP_URL" npm run build
 
 # ---- agent ----------------------------------------------------------------------------------------
 FROM ghcr.io/astral-sh/uv:0.9.28-python3.13-bookworm-slim AS agent
