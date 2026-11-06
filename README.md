@@ -57,8 +57,8 @@ flowchart TD
 The loaders own database writes. Explorer connects with a separate read-only login and sees
 only the configured schemas. AusTender and VicProp each have their own database and Compose
 service. The explorer serves the Workspaces in `EXPLORER_DATA_DIR` and saves their Conversations
-(one mode, ADR 0048). Dataset-specific language and configuration live under
-`datasets/<name>/` at the repo root (the owner's deployment data, ADR 0045), keeping application code independent of either example database.
+(there is one mode). Dataset-specific language and configuration live under
+`datasets/<name>/` at the repo root (the owner's deployment data), keeping application code independent of either example database.
 
 Explorer has two execution paths. Questions use the model's SQL tool loop and server-expanded
 Macros. Boards, their Controls, and Drill-downs use prepared queries without another model
@@ -96,7 +96,7 @@ cd ..
 `run.sh` needs the root `.env` with a model key and `EXPLORER_DATA_DIR`: follow the
 [Explorer setup](explorer/README.md#run) first. It starts the agent on port **10002**, the
 bootstrap server (Settings) on **8765** and the client on **5173**; open
-**http://127.0.0.1:5173**. There is one mode, Workspaces with Settings (ADR 0048). Stop all three
+**http://127.0.0.1:5173**. There is one mode, Workspaces with Settings. Stop all three
 with Ctrl-C. Model calls use credentials and may incur charges; ordinary tests do not call a model.
 
 ## Configuration boundaries

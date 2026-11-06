@@ -50,7 +50,7 @@ Reports and query previews use no model. Drafting makes live model calls and rec
 Previews show query data and cold-render timings; review the rendered Boards in Explorer
 after export.
 
-The old standalone UI and standalone serving workflow are retired (ADRs 0041 and 0045).
+The old standalone UI and standalone serving workflow are retired.
 Use `run.sh` for the browser, or the [CLI](server/README.md).
 
 ## Review and export
