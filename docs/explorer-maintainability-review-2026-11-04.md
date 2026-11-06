@@ -1,8 +1,150 @@
 # Explorer maintainability and extensibility review
 
+## Implementation status (2026-11-07)
+
+The work was implemented in two batches, with the correctness fixes committed before the
+library replacements. The original review and pre-fix recheck below remain dated evidence.
+
+- **`9a63b3e` — correctness:** fixes all six findings. Control rejection/settlement identify
+  their request sequence and preserve newer intent; Board and Review saves are serialized;
+  Board navigation waits for running and pending saves and stays put on failure; export
+  captures Draft files, comments, claims, Boards and connection/target inputs before awaiting
+  checks, then writes that snapshot. Static Macro argument/format rules are shared with
+  startup, CLI rendering resolves Control defaults, and empty Results use scanner-aware SQL
+  wrapping. New regression tests cover these paths, including both export modes.
+- **`485d508` — libraries:** replaces structural tool/edited-claim checks with `jsonschema`,
+  bootstrap identifier/literal formatting with Psycopg composition, and per-line SSE decoding
+  with `httpx-sse`. Adds Zod validation at selected Settings response boundaries (connection,
+  model/Workspace lists, estimates and validation) and A2A metadata fields. Successful non-JSON
+  Settings responses now fail explicitly. Complex Draft/report/Board responses still use the
+  existing interfaces; this was a targeted Zod migration, not whole-envelope validation.
+  Python imports are declared directly and both lockfiles were refreshed offline without
+  upgrading packages. No new browser dependency was added.
+
+Schema semantics remain explicit: object/column membership, blanks, duplicates, finite
+values, tolerances, SQL requirements and Board-specific rules. Edited claims retain optional
+`dismissed`/`result` fields. Schema diagnostics remain bounded lists with field paths, but
+their wording intentionally changes and malformed values are not echoed. A 262-case
+old/new acceptance comparison found one difference: the demonstrated extra nested file
+field is now rejected. Provider tool schemas and prompt snapshots were not changed.
+
+Verification after the library batch: **1,094 agent unit tests** (`not db and not live_db`),
+**271 bootstrap tests** (full suite with disposable Postgres), **246 client tests** (including
+stub-agent interop), and **72 SSE/prompt tests** (including database-backed deterministic
+prefix/snapshot checks) passed. The correctness batch also passed **39 SQL/CLI integration
+tests**. The client production build passed; its main JavaScript chunk changed from 218.74
+to 219.25 kB gzip between the two batches. Existing client tests still emit localhost
+connection errors from Settings mounts, and the build retains its large-chunk warning.
+No live model or deployment acceptance run was made.
+
+The optional Pydantic/settings, Lit Task, debounce and TOML-writer migrations were not adopted:
+the fixes use the existing settings contracts, request counters, native timers and serializers.
+Task/debounce would not replace the newly required persistence ordering. No maintenance or
+bundle benefit was demonstrated that warranted those additional migrations in this batch.
+The larger shared-render/interface/module refactor recommendations remain future work.
+
 Reviewed 2026-11-04 against working-tree code at HEAD `57e1a34`.
 
 This is a review of the current module, as requested, rather than a regression review against a base branch. Existing working-tree changes were present before the review. Scope: the agent runtime, Lit client, bootstrap server and UI, their relevant tests, and their configuration/catalog boundaries. No application code was changed. Priorities describe current impact; they do not attribute defects to a particular commit.
+
+## Current-state recheck (2026-11-06)
+
+Checked against HEAD `f056df4` and the working tree. **All six defect findings remain valid.**
+The implementation and coverage claims need the corrections below, particularly because the
+standalone bootstrap UI has been retired. This section supersedes current-state assertions in
+the original review; the original execution records remain historical evidence. The original
+`57e1a34` object is unavailable in this checkout, so its provenance and historical test totals
+could not be independently reconstructed.
+
+### Defect verification
+
+| Original finding | Current implementation and fresh evidence | Verdict |
+|---|---|---|
+| Control failure/request sequence | `client/src/app.ts::ExplorerApp.sendControls` still calls sequence-free `revert()` and `settled()`. A fresh check using the real `DataModel` and `BoardControls` sent choices 1 and 2, reverted/settled request 1, then applied/settled request 2. `applied(2)` returned true, the input remained `all`, and pending was false. | **Confirmed.** |
+| Export the validated snapshot | `bootstrap/server/src/explorer_bootstrap/server.py::build_app` still mutates draft files in `apply_edits` outside `boards_lock`; `recheck_boards` captures a Dataset before awaiting, and both export paths subsequently read `state.draft`. A fresh in-process HTTP check exercised **Settings export**, with a stub connection/check and real file validation/export. While the Board check was paused on Allowed schema `fixture`, `/api/validate` accepted an edit to `other`; export then returned 200 and wrote `other`. Both schemas were in the synthetic report. | **Confirmed in the current full-stack export path.** |
+| Static/runtime Macro validation | `agent/src/explorer_agent/macros.py::check_columns` now checks `weight` and Metric `trend`, but still does not reject `format="typo"`. With the real parser, `check_board`, renderer and pipeline plus a stub runner, startup accepted an integer Metric and rendering produced `PANEL_UNDRAWABLE`. | **Confirmed; some newer static rules exist, but the demonstrated gap remains.** |
+| Flush Board edits before navigation | Current owners are `client/src/settings/boards.ts::BsBoards` and `client/src/settings/wizard.ts::ExplorerWizard`. `goTo` awaits saves only when leaving Review; the Boards Next button calls `go('export')` directly. A fresh fake-clock DOM check edited a Board, clicked Next, and exported before 400 ms: export used the old text. Advancing the clock saved the new text from the disconnected editor. | **Confirmed, with updated ownership and a direct Boards → Export reproduction.** The old Back event no longer exists. |
+| Board CLI defaults | `agent/src/explorer_agent/__main__.py::_boards_check` still calls `outcomes(board, fresh=True)` and `build_board` without resolved options/state. A valid number Control (`min=0`, `max=10`, `default=5`) passed startup and built using the runtime sequence, while the CLI's omitted-options build sequence raised `TypeError`. | **Confirmed by a stubbed render-sequence check; no live CLI/database run.** |
+| Empty Result SQL normalization | `agent/src/explorer_agent/sql.py::SqlRunner._run` still uses `strip().rstrip(';').rstrip()` in the empty-stream fallback. `pglast` accepted `SELECT 1 AS n WHERE false; -- trailing explanation` and `drill.wrap`'s version; the current fallback wrapper raised `ParseError`. | **Confirmed at the parser level; no live Postgres execution.** |
+
+### Recommendations and library claims
+
+The refactoring evidence remains: initial rendering differs across CLI/runtime/preview;
+Macro rules and classification are repeated; `UiPipeline.build` and `MacroContext.store`
+still annotate `ResultStore` despite `ResultView`/`_Named` consumers; Board/Drill runners use
+`Any`; `llm.py` imports `Conversation` and `StatusFn` from the executor; and
+`visual_verdicts` and the CLI still classify failures using rendered English text.
+The proposed small interfaces, shared rendering and validators, explicit panel outcomes and
+draft revision boundary therefore remain reasonable recommendations. Their exact design and
+maintenance benefit have not been measured or proven by this audit.
+
+| Candidate | Current assessment |
+|---|---|
+| `jsonschema` | **Still applicable.** Manual shape checks remain. Fresh comparison: `files.unexpected` passes `validate_draft_args` but fails `Draft202012Validator(DRAFT_PARAMETERS)`. `jsonschema` remains locked transitively; preserve semantic checks and the separate edited-claims contract. |
+| Psycopg SQL composition | **Still applicable.** `quote_ident`, `quote_literal` and both `_ident` helpers remain. Installed `Literal` emits an explicit escape string for a backslash. Consolidation remains useful; the hand-written literal assumes `standard_conforming_strings=on`. This audit did not execute generated SQL under either setting. |
+| `httpx-sse` | **Still applicable.** `_exchange` still parses each `data:` line separately. A fresh multiline mock event failed with `JSONDecodeError` in the current helper and decoded correctly with installed `httpx-sse`. The pinned A2A transport still imports `aconnect_sse` and `SSEError`. |
+| Zod | **Still applicable, with corrected dependency cost.** `Api.call<T>` moved to `client/src/settings/api.ts` and still casts successful responses. A fresh test returned null for a non-JSON HTTP 200 instead of validating a models response. Settings now shares the client's existing Zod dependency, so it needs **no separate bootstrap-UI dependency**. Metadata casts/manual checks also remain. |
+| Pydantic/settings | **Still a scoped evaluation.** Manual Control and settings parsing remain, and both packages are transitively locked. No new finding establishes that replacing settings parsing pays off. Strictness, environment conversion, precedence and sanitized diagnostics remain requirements. |
+| `@lit/task` | **Still a scoped evaluation.** Estimates and editor validation use manual request counters/state. The wizard already suppresses stale successful estimates; the suggestion concerns simplifying this machinery and covering its lifecycle. Task cannot order server saves. |
+| Debounce | **Still optional.** Timers now live in Settings `review.ts`/`boards.ts` and client `controls.ts`. The demonstrated missing flush/disposal behavior persists. A helper would still need to await running saves and preserve Control policy. |
+| TOML writer | **Still optional.** `_toml_string`/manual overlay generation remain. Settings also has `registry.py::render` for generated Workspace TOML, an additional serialization site outside the original candidate. No new serialization defect was established. |
+
+The original distinctions between generic library mechanics and application policy still
+hold for the SQL guard, model loop, Board cache/prefetch, formatting/charts, DataGrid,
+tabs/actions, Markdown, native HTTP/CLI and filesystem operations. These are design judgments,
+not assertions that those areas are defect-free or that alternative libraries were benchmarked.
+Existing issues 5, 6, 7 and 10 remain marked open; their individual reproductions were not rerun.
+
+Primary documentation was rechecked for [JSON Schema validation](https://python-jsonschema.readthedocs.io/en/stable/validate/),
+[Psycopg composition](https://www.psycopg.org/psycopg3/docs/api/sql.html),
+[HTTPX SSE](https://github.com/florimondmanca/httpx-sse),
+[Zod 3](https://github.com/colinhacks/zod/tree/v3),
+[Pydantic strictness](https://docs.pydantic.dev/latest/concepts/strict_mode/),
+[Lit Task](https://lit.dev/docs/data/task/),
+[Lodash debounce](https://lodash.com/docs/#debounce) and
+[Tomli-W](https://github.com/hukkin/tomli-w). This confirms the cited capabilities, not a
+completed migration, compatibility certification or performance benefit.
+
+### Coverage corrections and current execution
+
+- The old `bootstrap/ui/` code and test paths are historical. Active UI tests are under
+  `client/test/settings/`; wizard tests now own navigation, save failure, polling and export.
+  `BsReview.leaveForBoards` has become `BsReview.leave` plus `ExplorerWizard.goTo`.
+  Separate bootstrap-UI test/build commands no longer apply.
+- The SSE matrix overstates one gap: `test_effort_check.py::test_transport_failures`
+  **already tests premature EOF without a final event**. Retain that coverage. Multiline
+  events, comments/keepalives, CRLF/chunk/UTF-8 boundaries, malformed JSON, JSON-RPC errors,
+  wrong content type and explicit HTTP timeout cases remain missing from that helper's suite.
+- The principal coverage gaps remain: mixed Control success/failure ordering; pending Board
+  edits and running saves during navigation/disconnect; concurrent draft edit/export snapshots;
+  nested schema parity; malformed successful Settings responses; stale estimate failures and
+  abort/disconnect behavior; environment-source precedence; and the export edge cases listed
+  below. Existing valid/stale editor-response tests do not establish server write ordering.
+- `test_drafts.py`, `test_draft.py` and `test_export.py` still have module-level `db` markers,
+  hiding database-independent validation/settings/serialization cases from a marker-filtered run.
+  The current configuration tests also cover the newer public URL and daily model-run cap;
+  the original coverage summary is consequently incomplete rather than an exhaustive inventory.
+- Original counts, the original startup socket retry and the original reproduction history
+  remain dated records. In particular, `test_unreachable_database_fails_cleanly` is no longer
+  a current entrypoint test after the one-mode/Workspace changes.
+
+Fresh runs used the installed environments, `/dev/null` env-file overrides and the local
+LiteLLM cost map. No dependencies, application code or committed tests were changed.
+
+| Command / check | Result on this recheck |
+|---|---|
+| Agent: `.venv/bin/python -m pytest -q -p no:cacheprovider -m 'not db and not live_db' tests/test_config.py tests/test_board_controls.py tests/test_boards.py tests/test_entity_boards.py tests/test_effort_check.py tests/test_prompt.py tests/test_drill.py` | **307 passed, 23 deselected.** |
+| Bootstrap server: `.venv/bin/python -m pytest -q -p no:cacheprovider -m 'not db'` | **50 passed, 163 deselected.** |
+| Bootstrap server: explicit settings, overlay round-trip and shape selections from the earlier coverage audit | **7 passed** (some overlap the preceding run). |
+| Client: `npm test -- --exclude test/interop.test.ts` | **216 passed, 20 test files.** Includes Settings. Existing tests emitted localhost HTTP/CORS errors from Settings mounts: a passing total does not establish full network isolation. |
+| Temporary Python reproductions | Confirmed Macro, CLI-sequence, SQL-wrapper and Settings-export defects, schema drift and multiline SSE failure. Stubs/mock HTTP only. |
+| Temporary Vitest checks in a `/tmp` copy of the client | **3 passed:** reproduce Control mismatch, navigation/export before Board save plus detached save, and unchecked successful API response. |
+
+The temporary checks assert the observed defects; they are not regression fixes. Their files
+were `/tmp/explorer-review-recheck.py` and `/tmp/genui-review-client/test/recheck.test.ts` during
+this session. Database integration, live models, interop, builds and browser layout checks were
+not run. The six finding verdicts follow from source inspection and the scoped reproductions
+above; they do not certify all possible response orderings or migration equivalence.
 
 ## Revision assessment (2026-11-04)
 
