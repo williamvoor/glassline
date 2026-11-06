@@ -3283,3 +3283,59 @@ anyone else runs the bootstrap in Workspace mode.
   the owner writes `../datasets/austender`.
 - Workspace mode (`EXPLORER_DATA_DIR`, outside the repo) is the recommended setup in
   `.env.example`. Single-Dataset mode stays for tests, `run.sh` and the owner's own database.
+
+## 24. Amendment: one flat look, a dark Sidebar and a Canvas header (2026-11-06)
+
+Status: **built** (2026-11-06, at the user's request), awaiting the user's review. Client CSS
+and layout only: no change to the agent, Boards, Macros or the catalog. Amends §16 (look and
+feel), §18 (tab strip placement) and §22 (Card, share bar and SQL details values). ADR 0026
+and ADR 0001 hold. Decision: ADR 0049. Visual direction from a design mock-up the user commissioned; its ideas that
+need data or new Board or Macro fields (a highlighted Metric, a named extreme on a Metric, a
+"preliminary" Control option, distinct Treemap shades, title-cased labels, linked
+Control-to-chart markers) are out of scope.
+
+- **Shell.** The top bar is gone. A dark Sidebar (`--shell*` tokens, dark in both schemes)
+  holds, top to bottom: the Glassline mark and name; the Workspace picker (one row per
+  Workspace with a badge of its initials, from `data-initials` in CSS so the button's text stays
+  the name) with the selected Dataset's description under it; Saved conversations; the
+  investigation log; and the composer as a raised card ("Ask the data", a visible Enter/Shift+
+  Enter hint that is also the textarea's description). Beside it, a light column holds the
+  Canvas header (the tab strip as a segmented track; Settings and New conversation on the
+  right) over the Canvas or Settings. While Settings is open the Sidebar keeps the brand and
+  picker only, and the header shows no tabs.
+- **One flat look.** Settings loses its colour wash; its panels sit on the plain Canvas.
+- **Type.** A question heading is 34 px, weight 800. A Board's heading (`board_heading`): with
+  a question and a scope, the title becomes a small accent label and the question the 34 px
+  headline, the scope a 15 px muted line; otherwise the title is the headline. Captions outside
+  a Card read as sans sentence text; captions inside a Card (Metric names) stay mono uppercase
+  labels. A Visual's title is sans 15 px, sentence case, not a mono label. Visual hints are sans.
+- **Cards.** 18 × 20 px padding, 14 px radius, a deeper hover shadow (still no movement). A
+  Metric's figure is 40 px mono.
+- **Controls.** A Board's Controls Card loses its frame; a chips Control shows its label inline
+  and its chips in a segmented track. A2UI's filter box for long option lists is unchanged.
+- **SQL details** read as a small `</>` code chip that opens to the query.
+- **Share bars** are 6 px and fully rounded.
+- **Motion.** The tab view fades in when the Canvas first shows it (Lit reuses the element across tab
+  switches, and keying it would rebuild the Surface just to replay an animation). Every new
+  animation and transition is off under reduced motion.
+- **Narrow screens (< 760 px).** The Sidebar's top becomes a dark band above the Canvas header
+  (picker in a row, the log collapsible), and the composer stays pinned to the bottom.
+
+Criteria → tests:
+
+- Selected Workspace, Settings, New conversation and Ask buttons readable in both schemes; a
+  Sidebar spinner readable on the shell; the Delete all confirm card keeps its own button style →
+  `client/test/index-html.test.ts`.
+- Card padding, radius and hover; captions inside and outside a Card; Visual titles; the SQL
+  chip; share bars; Metric figures wrap; the badge has empty alternative text; the Board heading
+  rules apply on Board tabs only; the Controls rule skips a layout Card; reduced motion covers
+  every new animation and transition; the narrow composer keeps its label for screen readers →
+  `client/test/index-html.test.ts` (`the §24 redesign`, `Card hierarchy`, `DataGrid share bars`).
+- Picker in the Sidebar with a badge from the name; Settings and New conversation in the Canvas
+  header; while Settings is open, only the brand and picker in the Sidebar and no tabs; the
+  composer hint as the textarea's description → `client/test/workspaces.test.ts`.
+- Brand and Dataset description in the Sidebar; `.board` on Board tabs only →
+  `client/test/app.test.ts`.
+- The look itself (headline sizes, the segmented track, the dark shell, narrow-screen order and
+  sticky composer) is checked by screenshots against the stub agent at 1440 px (light, dark) and
+  390 px; no test renders layout.

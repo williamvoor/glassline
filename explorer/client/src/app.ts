@@ -88,6 +88,13 @@ export function surfaceIdOf(messages: Record<string, unknown>[]): string | undef
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
+/** A Workspace's badge: the first letters of its first two words ("vic_prop" → "VP"), else its first two letters. */
+export function initials(name: string): string {
+  const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? name).slice(0, 2);
+  return letters.toUpperCase();
+}
+
 /** `explorerModel` from a final message: a name, null (no model), or undefined (not sent). */
 function modelOf(metadata: Record<string, unknown> | undefined): string | null | undefined {
   if (!metadata || !(MODEL_KEY in metadata)) return undefined;
@@ -813,23 +820,27 @@ export class ExplorerApp extends LitElement {
 
   // rendering -----------------------------------------------------------------------------------
 
+  /** The Workspace picker, in the Sidebar (SPEC §24). The initials are a CSS badge
+   * (`data-initials`), so a button's text stays the Workspace's name. */
   private renderPicker() {
     return html`<div class="workspaces" role="group" aria-label="Workspaces">
+      ${this.workspaces.length ? html`<span class="side-label">Workspace</span>` : nothing}
       ${this.workspaces.map(w => w.status === 'available'
         ? html`<button type="button" class=${w.name === this.workspace?.name ? 'workspace selected' : 'workspace'}
             aria-pressed=${w.name === this.workspace?.name ? 'true' : 'false'} title=${w.description}
-            @click=${() => this.switchWorkspace(w.name)}>${w.name}</button>`
-        : html`<span class="workspace unavailable" title=${w.reason ?? ''}>
+            data-initials=${initials(w.name)} @click=${() => this.switchWorkspace(w.name)}>${w.name}</button>`
+        : html`<span class="workspace unavailable" title=${w.reason ?? ''} data-initials=${initials(w.name)}>
             <span class="name">${w.name}</span> <span class="reason">${w.reason ?? 'unavailable'}</span>
             <button type="button" class="retry-workspace" @click=${() => void this.retryWorkspaces()}>Retry</button>
           </span>`)}
+      ${this.info?.description ? html`<p class="dataset">${this.info.description}</p>` : nothing}
     </div>`;
   }
 
   private renderSaved() {
     if (!this.workspace) return nothing;
-    return html`<button type="button" class="saved-toggle label" aria-expanded=${this.listOpen ? 'true' : 'false'}
-        @click=${() => void this.toggleList()}>Conversations</button>
+    return html`<button type="button" class="saved-toggle" aria-expanded=${this.listOpen ? 'true' : 'false'}
+        @click=${() => void this.toggleList()}>Saved conversations</button>
       ${this.listOpen
         ? html`<div class="saved-list">
             ${this.listError ? html`<p class="error" role="alert">${this.listError}</p>` : nothing}
@@ -855,19 +866,18 @@ export class ExplorerApp extends LitElement {
         : nothing}`;
   }
 
+  /** The Canvas header (SPEC §24): the tab strip, then Settings and New conversation. */
   private renderHeader() {
-    return html`<header class="topbar">
-      <div class="title">
-        <span class="brand"><img src="/glassline-mark.png" alt="" width="28" height="28" /><h1>Glassline</h1></span>
-        ${this.info?.description ? html`<span class="dataset">${this.info.description}</span>` : nothing}
-      </div>
-      ${this.renderPicker()}
+    return html`<header class="canvas-head">
+      ${this.settingsOpen ? html`<span class="tab-strip-spacer"></span>` : this.renderTabStrip()}
+      <div class="head-actions">
       <button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
         aria-pressed=${this.settingsOpen ? 'true' : 'false'}
         @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>Settings</button>
       <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
         New conversation
       </button>
+      </div>
     </header>`;
   }
 
@@ -924,7 +934,7 @@ export class ExplorerApp extends LitElement {
       ...logOrder(this.tabs).map(tab => ({kind: 'tab' as const, tab, seq: tab.seq})),
       ...this.inPlace.map(entry => ({kind: 'in-place' as const, entry, seq: entry.seq})),
     ].sort((a, b) => a.seq - b.seq);
-    return html`<button type="button" class="log-head label" aria-expanded=${this.logOpen ? 'true' : 'false'}
+    return html`<button type="button" class="log-head" aria-expanded=${this.logOpen ? 'true' : 'false'}
         @click=${() => (this.logOpen = !this.logOpen)}>
         <span>Investigation</span><span class="count">${entries.length}</span>
       </button>
@@ -955,19 +965,29 @@ export class ExplorerApp extends LitElement {
   }
 
   private renderSidebar() {
-    return html`<aside class="sidebar" aria-label="Investigation">
-      ${this.renderSaved()}
-      ${this.renderLog()}
-      <form class="composer" @submit=${this.onSubmit}>
-        <label class="label" for="composer-box">Ask</label>
+    return html`<aside class="sidebar" aria-label="Workspaces and investigation">
+      <div class="side-top">
+        <div class="brand"><img src="/glassline-mark.png" alt="" width="28" height="28" /><h1>Glassline</h1></div>
+        ${this.renderPicker()}
+        <div class="investigation" ?hidden=${this.settingsOpen}>
+          ${this.renderSaved()}
+          ${this.renderLog()}
+        </div>
+      </div>
+      <form class="composer" @submit=${this.onSubmit} ?hidden=${this.settingsOpen}>
+        <label class="side-label" for="composer-box">Ask the data</label>
         <textarea
           id="composer-box"
           rows="3"
-          placeholder=${this.noWorkspace ? 'Add a Workspace in Settings first' : 'Ask a question about the data (Enter to send, Shift+Enter for a new line)'}
+          placeholder=${this.noWorkspace ? 'Add a Workspace in Settings first' : 'Ask a question about the data'}
+          aria-describedby="composer-hint"
           ?disabled=${this.noWorkspace}
           @keydown=${this.onKeydown}
         ></textarea>
-        <button type="submit" ?disabled=${this.busy || this.noWorkspace}>${this.busy ? 'Working…' : 'Ask'}</button>
+        <div class="composer-foot">
+          <span class="hint" id="composer-hint"><span aria-hidden="true">↵ send · ⇧↵ new line</span><span class="sr-only">Enter to send, Shift+Enter for a new line</span></span>
+          <button type="submit" ?disabled=${this.busy || this.noWorkspace}>${this.busy ? 'Working…' : 'Ask'}</button>
+        </div>
       </form>
     </aside>`;
   }
@@ -1055,7 +1075,7 @@ export class ExplorerApp extends LitElement {
     const surface = tab.surfaceId ? this.processor.model.surfacesMap.get(tab.surfaceId) : undefined;
     const heading = tab.kind === 'question' || tab.kind === 'ask'; // a Board and a Drill-down title themselves
     const examples = tab.key === EXPLORER_KEY && !this.tabs.some(t => t.kind === 'question');
-    return html`<section class="tab-view" role="tabpanel">
+    return html`<section class=${tab.kind === 'board' ? 'tab-view board' : 'tab-view'} role="tabpanel">
       ${heading ? html`<h2 class="question">${tab.title}</h2>` : nothing}
       ${tab.running ? this.renderStatus(tab.steps, tab.startedAt) : nothing}
       ${tab.loading ? html`<div class="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Loading…</div>` : nothing}
@@ -1085,13 +1105,14 @@ export class ExplorerApp extends LitElement {
         </main>`
       : nothing;
     const tab = this.tab(this.selected);
+    // SPEC §24: the dark Sidebar beside a light column of the Canvas header over the Canvas or Settings.
     return html`
-      ${this.renderHeader()}
-      ${settings}
-      <div class="shell" ?hidden=${this.settingsOpen}>
-        ${this.renderSidebar()}
-        <main class="canvas">
-          ${this.renderBanner()} ${this.renderTabStrip()} ${tab && !tab.closed ? this.renderTab(tab) : this.renderEmpty()}
+      ${this.renderSidebar()}
+      <div class="main">
+        ${this.renderHeader()}
+        ${settings}
+        <main class="canvas" ?hidden=${this.settingsOpen}>
+          ${this.renderBanner()} ${tab && !tab.closed ? this.renderTab(tab) : this.renderEmpty()}
         </main>
       </div>
     `;

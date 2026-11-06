@@ -65,7 +65,8 @@ describe('theme tokens', () => {
 });
 
 // M1 (2026-11-05): the selected Workspace and Settings buttons showed white text on a pale fill.
-describe('selected top bar buttons', () => {
+// SPEC §24 moved them: the Workspace into the dark Sidebar, Settings into the Canvas header.
+describe('selected Workspace and Settings buttons', () => {
   const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
   const darkTokens = block(block(style, /@media \(prefers-color-scheme: dark\)\s*\{/), /:root\s*\{/);
 
@@ -82,9 +83,12 @@ describe('selected top bar buttons', () => {
   for (const theme of ['light', 'dark'] as const) {
     it(`have readable text in the ${theme} theme`, () => {
       document.head.innerHTML = `<style>${style}${theme === 'dark' ? `:root{${darkTokens}}` : ''}</style>`;
-      document.body.innerHTML = `<explorer-app><header class="topbar">
+      document.body.innerHTML = `<explorer-app><aside class="sidebar">
         <div class="workspaces"><button class="workspace selected" aria-pressed="true">alpha</button></div>
-        <button class="settings-toggle selected" aria-pressed="true">Settings</button></header></explorer-app>`;
+        <form class="composer"><button type="submit">Ask</button></form></aside>
+        <div class="main"><header class="canvas-head"><div class="head-actions">
+        <button class="settings-toggle selected" aria-pressed="true">Settings</button>
+        <button class="new-conversation">New conversation</button></div></header></div></explorer-app>`;
       for (const button of document.querySelectorAll('button')) {
         const s = getComputedStyle(button);
         expect(s.color, button.textContent!).toMatch(/^#[0-9a-f]{6}$/i);
@@ -171,22 +175,26 @@ describe('Card hierarchy', () => {
     return out;
   };
 
-  it('turns only the first h4 of a Card into a mono uppercase muted label', () => {
+  // SPEC §24: a Visual's title reads as a sentence-case title; short labels (captions in a Card) stay mono uppercase.
+  it('turns only the first h4 of a Card into a sans title, and keeps Card captions as mono uppercase labels', () => {
     const title = rule('explorer-app .a2ui-card > * > :first-child > .a2ui-text-h4 h4');
-    expect(title).toMatch(/font:\s*600 11\.5px\/[\d.]+ var\(--mono\)/);
-    expect(title).toMatch(/letter-spacing:\s*0\.08em/);
-    expect(title).toMatch(/text-transform:\s*uppercase/);
-    expect(title).toMatch(/color:\s*var\(--muted\)/);
+    expect(title).toMatch(/font:\s*650 15px\/[\d.]+ var\(--sans\)/);
+    expect(title).not.toMatch(/uppercase/);
+    const label = rule('explorer-app .a2ui-card .a2ui-text.a2ui-text-caption');
+    expect(label).toMatch(/var\(--mono\)/);
+    expect(label).toMatch(/text-transform:\s*uppercase/);
+    expect(rule('explorer-app .a2ui-text.a2ui-text-caption')).not.toMatch(/uppercase/); // a sentence outside a Card
     expect(rule('explorer-app .a2ui-text h4')).toMatch(/font-size:\s*16px/); // prose h4s keep their style
   });
 
-  it('pads Cards 14px 16px with a soft ink shadow at rest and a stronger one on hover, without moving', () => {
-    expect(style).toMatch(/--a2ui-card-padding:\s*14px 16px;/);
+  it('pads Cards 18px 20px with a soft ink shadow at rest and a stronger one on hover, without moving', () => {
+    expect(style).toMatch(/--a2ui-card-padding:\s*18px 20px;/);
+    expect(style).toMatch(/--a2ui-card-border-radius:\s*14px;/);
     expect(style).toMatch(/--a2ui-card-box-shadow:\s*0 1px 2px color-mix\(in srgb, var\(--ink\) 4%, transparent\),\s*0 1px 3px color-mix\(in srgb, var\(--ink\) 6%, transparent\);/);
     const hover = rule('explorer-app .a2ui-card:hover');
-    expect(hover).toMatch(/box-shadow:\s*0 2px 8px color-mix\(in srgb, var\(--ink\) 8%, transparent\)/);
+    expect(hover).toMatch(/box-shadow:\s*0 1px 2px color-mix\(in srgb, var\(--ink\) 6%, transparent\),\s*0 12px 32px -12px color-mix\(in srgb, var\(--ink\) 22%, transparent\)/);
     expect(hover).not.toMatch(/transform|translate|margin/);
-    expect(rule('explorer-app .a2ui-card')).toMatch(/transition:\s*box-shadow 150ms/);
+    expect(rule('explorer-app .a2ui-card')).toMatch(/transition:\s*box-shadow 200ms/);
   });
 
   it('has no Card shadow in dark mode, and a strong border on hover there', () => {
@@ -199,8 +207,11 @@ describe('Card hierarchy', () => {
     expect(media('@media (prefers-reduced-motion: reduce)')).toMatch(/explorer-app \.a2ui-card\s*\{\s*transition:\s*none/);
   });
 
-  it('greys the SQL details summary', () => {
-    expect(rule('details.sql-details summary')).toMatch(/color:\s*var\(--faint\)/);
+  it('shows the SQL details summary as a muted code chip', () => {
+    const summary = rule('details.sql-details summary');
+    expect(summary).toMatch(/color:\s*var\(--muted\)/);
+    expect(summary).toMatch(/border:\s*1px solid var\(--line\)/);
+    expect(rule('details.sql-details summary::before')).toMatch(/content:\s*'<\/>'/);
   });
 });
 
@@ -212,14 +223,14 @@ describe('DataGrid share bars', () => {
     return at < 0 ? '' : style.slice(at, style.indexOf('}', at));
   };
 
-  it('are 4 px on a --soft track with a --chart-1 fill and 2 px radius', () => {
+  it('are 6 px, fully rounded, on a --soft track with a --chart-1 fill (SPEC §24)', () => {
     const track = rule('table.data-grid .share-bar');
-    expect(track).toMatch(/height:\s*4px/);
+    expect(track).toMatch(/height:\s*6px/);
     expect(track).toMatch(/background:\s*var\(--soft\)/);
-    expect(track).toMatch(/border-radius:\s*2px/);
+    expect(track).toMatch(/border-radius:\s*999px/);
     const fill = rule('table.data-grid .share-bar > span');
     expect(fill).toMatch(/background:\s*var\(--chart-1\)/);
-    expect(fill).toMatch(/border-radius:\s*2px/);
+    expect(fill).toMatch(/border-radius:\s*999px/);
   });
 
   it('grow from 0 over 300 ms, and not under reduced motion', () => {
@@ -283,5 +294,80 @@ describe('Rows on phones', () => {
     const child = block.match(new RegExp(`${row} > \\*\\s*\\{([^}]*)\\}`))?.[1] ?? '';
     expect(child).toMatch(/flex:\s*0 0 auto !important/);
     expect(child).toMatch(/width:\s*100%/);
+  });
+});
+
+// SPEC §24: the dark Sidebar, the Board heading and Controls, and reduced motion.
+describe('the §24 redesign', () => {
+  const style = indexHtml.slice(indexHtml.indexOf('<style>') + '<style>'.length, indexHtml.indexOf('</style>'));
+  const darkTokens = block(block(style, /@media \(prefers-color-scheme: dark\)\s*\{/), /:root\s*\{/);
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  // Refuter, 2026-11-06: the Sidebar's `.saved-list button` rule restyled the Delete all card's Cancel as a dark button.
+  it('keeps the inline confirm card\'s buttons in the confirm-card style inside the saved list', () => {
+    document.head.innerHTML = `<style>${style}</style>`;
+    document.body.innerHTML = `<explorer-app><aside class="sidebar"><div class="saved-list"><div class="confirm-card danger">
+      <p>Delete all?</p><div class="actions"><button class="card-confirm">Delete all</button><button class="card-cancel">Cancel</button></div>
+      </div></div></aside></explorer-app>`;
+    const cancel = getComputedStyle(document.querySelector('.card-cancel')!);
+    expect(cancel.backgroundColor).toBe('#ffffff'); // --panel, as everywhere else
+    expect(cancel.borderRadius).toBe('8px');
+  });
+
+  // Refuter, 2026-11-06: a running log entry's spinner arc was --accent on the dark Sidebar (about 2.8:1).
+  for (const theme of ['light', 'dark'] as const) {
+    it(`draws the Sidebar spinner in a readable accent in the ${theme} theme`, () => {
+      document.head.innerHTML = `<style>${style}${theme === 'dark' ? `:root{${darkTokens}}` : ''}</style>`;
+      document.body.innerHTML = `<explorer-app><aside class="sidebar"><span class="spinner"></span></aside></explorer-app>`;
+      const arc = getComputedStyle(document.querySelector('.spinner')!).borderTopColor;
+      const shell = getComputedStyle(document.querySelector('.sidebar')!).backgroundColor;
+      expect(arc).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(contrast(arc, shell)).toBeGreaterThanOrEqual(3);
+    });
+  }
+
+  it('unframes only a Controls Card: the second child of a Board Surface that is not its last (the layout)', () => {
+    expect(style).toContain('a2ui-surface > a2ui-basic-column > a2ui-card:nth-child(2):not(:last-child) > .a2ui-card');
+    expect(style).not.toMatch(/a2ui-card:nth-child\(2\) > \.a2ui-card/);
+  });
+
+  it('scopes the Board heading rules to Board tabs', () => {
+    const heading = [...style.matchAll(/^\s*([^{}\n]*a2ui-basic-column:first-child[^{]*)\{/gm)].map(m => m[1]);
+    expect(heading.length).toBeGreaterThanOrEqual(4);
+    for (const selector of heading) {
+      for (const part of selector.split(',').map(x => x.trim()).filter(Boolean)) expect(part).toContain('.tab-view.board');
+    }
+  });
+
+  it('wraps long Metric figures inside their Card', () => {
+    expect(style).toMatch(/explorer-app \.a2ui-card \.a2ui-text h2\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  it('gives the Workspace badge an empty alternative text, so the button is named by its Workspace only', () => {
+    expect(style).toMatch(/explorer-app \.workspace::before\s*\{[^}]*content:\s*attr\(data-initials\)\s*\/\s*''/);
+  });
+
+  it('turns off every new animation and transition under reduced motion', () => {
+    const blocks = [...style.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{/g)].map(m => block(style.slice(m.index), /\{/));
+    const redesign = blocks.find(b => b.includes('explorer-app .tab-view'));
+    expect(redesign, 'a reduced-motion block for §24').toBeDefined();
+    for (const s of ['explorer-app .tab-view', 'explorer-app .tab', 'explorer-app .log-entry', 'explorer-app .examples button',
+      'explorer-app .saved-toggle::after', 'details.sql-details summary']) {
+      expect(redesign, s).toContain(s);
+    }
+    expect(redesign).toMatch(/animation:\s*none;\s*transition:\s*none/);
+  });
+
+  it('keeps the composer\'s label for screen readers on narrow screens', () => {
+    const narrow = block(style.slice(style.indexOf('@media (max-width: 759px)')), /\{/);
+    expect(narrow).not.toMatch(/\.composer > \.side-label[^{]*\{\s*display:\s*none/);
   });
 });

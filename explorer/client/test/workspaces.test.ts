@@ -2,7 +2,7 @@
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import type {AgentConnection, AskEvent, UiAction} from '../src/a2a.js';
 import '../src/app.js';
-import {LEVEL_KEY, LOG_KEY, OPEN_BOARD, TAB_KEY, type ExplorerApp} from '../src/app.js';
+import {LEVEL_KEY, LOG_KEY, OPEN_BOARD, TAB_KEY, initials, type ExplorerApp} from '../src/app.js';
 import {EXPLORER_CATALOG_ID} from '../src/catalog.js';
 import {
   BOARD_CHANGED, DATA_CHANGED, parseRoute, pickWorkspace, routeHash,
@@ -141,6 +141,49 @@ describe('routes', () => {
     expect(routeHash({workspace: 'aus', conversation: 'a b'})).toBe('#/w/aus/c/a%20b');
     expect(pickWorkspace([DOWN, VIC, AUS], 'aus')).toBe(AUS);
     expect(pickWorkspace([DOWN, VIC, AUS], 'down')).toBe(VIC); // unavailable: the first available
+  });
+});
+
+describe('the picker in the Sidebar (SPEC §24)', () => {
+  it('derives a badge from the name, never from its text', () => {
+    expect(initials('aus')).toBe('AU');
+    expect(initials('vic_prop')).toBe('VP');
+    expect(initials('my data set')).toBe('MD');
+    expect(initials('x')).toBe('X');
+  });
+
+  it('sits in the Sidebar with a badge per Workspace, and Settings in the Canvas header', async () => {
+    const {app} = await mount(new FakeApi());
+    const aus = q(app, '.sidebar .workspaces button.workspace.selected')!;
+    expect(aus.getAttribute('data-initials')).toBe('AU');
+    expect(text(aus)).toBe('aus'); // the badge is CSS, not text
+    expect(q(app, '.main .canvas-head .settings-toggle')).not.toBeNull();
+    expect(q(app, '.main .canvas-head .new-conversation')).not.toBeNull();
+    expect(q(app, 'aside.sidebar')!.getAttribute('aria-label')).toBe('Workspaces and investigation');
+  });
+
+  it('keeps only the brand and picker in the Sidebar, and no tabs, while Settings is open', async () => {
+    const {app} = await mount(new FakeApi());
+    expect((q(app, '.sidebar .investigation') as HTMLElement).hidden).toBe(false);
+    await click(app, q(app, '.settings-toggle'));
+    expect((q(app, '.sidebar .investigation') as HTMLElement).hidden).toBe(true);
+    expect((q(app, '.sidebar .composer') as HTMLElement).hidden).toBe(true);
+    expect((q(app, 'main.canvas') as HTMLElement).hidden).toBe(true);
+    expect(q(app, '.tab-strip')).toBeNull();
+    expect(q(app, '.sidebar .brand')).not.toBeNull();
+    expect(q(app, '.sidebar .workspaces .workspace')).not.toBeNull();
+    await click(app, q(app, '.settings-toggle'));
+    expect((q(app, '.sidebar .investigation') as HTMLElement).hidden).toBe(false);
+    expect((q(app, '.sidebar .composer') as HTMLElement).hidden).toBe(false);
+  });
+
+  it('describes the composer with its Enter hint, readable without the glyphs', async () => {
+    const {app} = await mount(new FakeApi());
+    const box = q(app, '#composer-box')!;
+    expect(box.getAttribute('aria-describedby')).toBe('composer-hint');
+    const hint = q(app, '#composer-hint')!;
+    expect(hint.querySelector('[aria-hidden="true"]')!.textContent).toContain('↵');
+    expect(hint.querySelector('.sr-only')!.textContent).toBe('Enter to send, Shift+Enter for a new line');
   });
 });
 

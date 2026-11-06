@@ -24,6 +24,9 @@
         --mono: 'JetBrains Mono Variable', ui-monospace, monospace;
         /* Models on show (Workspaces SPEC phase 3, ADR 0044): one accent per model, apart from the charts'. */
         --model-wonder: #6a4ce0; --model-wonder-soft: #efebfd; --model-spark: #0a6b60; --model-spark-soft: #e3f4f1;
+        /* The Sidebar (SPEC §24): a dark shell in both schemes, beside the light (or dark) Canvas. */
+        --shell: #111824; --on-shell: #e8ecf2; --shell-muted: #9aa4b5; --shell-line: #222d3f; --shell-raised: #0b111a;
+        --shell-soft: #1c2636; --shell-accent: #6f9ff0; --shell-accent-soft: #16233a; --shell-accent-line: #2e4d80;
         --glass: color-mix(in srgb, var(--panel) 74%, transparent); --glass-line: color-mix(in srgb, var(--line-strong) 60%, transparent);
         --glass-shadow: 0 1px 0 color-mix(in srgb, #ffffff 70%, transparent) inset, 0 12px 32px -18px color-mix(in srgb, var(--ink) 35%, transparent);
 
@@ -36,7 +39,7 @@
         --a2ui-border-radius: 8px;
         --a2ui-font-family-title: var(--sans); --a2ui-font-family-monospace: var(--mono);
         --a2ui-card-background: var(--panel); --a2ui-card-border: 1px solid var(--line);
-        --a2ui-card-border-radius: 8px; --a2ui-card-padding: 14px 16px;
+        --a2ui-card-border-radius: 14px; --a2ui-card-padding: 18px 20px;
         --a2ui-card-box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent), 0 1px 3px color-mix(in srgb, var(--ink) 6%, transparent); --a2ui-card-margin: 0;
         --a2ui-button-border: 1px solid var(--line-strong); --a2ui-button-border-radius: 999px;
         --a2ui-button-padding: 6px 14px; --a2ui-button-box-shadow: none; --a2ui-button-font-weight: 500;
@@ -55,6 +58,7 @@
           --error: #ff8a9a; --error-bg: #3a1a21; --warn-bg: #3a3019;
           --chart-1: #8aa8e0; --chart-2: #e8916f; --chart-3: #5d8fd6; --chart-4: #8fbf97; --chart-5: #bb98d0; --chart-6: #d9b872;
           --model-wonder: #a898ff; --model-wonder-soft: #262044; --model-spark: #4fcfbe; --model-spark-soft: #12302d;
+          --shell: #0a0e15; --shell-raised: #06090e; --shell-line: #1f2733;
           --glass-shadow: 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent) inset, 0 16px 40px -20px #000000;
           --a2ui-card-box-shadow: none;
         }
@@ -67,99 +71,138 @@
       button:disabled { cursor: default; opacity: 0.55; }
       code, pre, kbd { font-family: var(--mono); }
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       .label {
         font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
       }
 
-      /* Layout: top bar, Sidebar, Canvas ---------------------------------------------------- */
-      explorer-app { display: flex; flex-direction: column; height: 100vh; }
-      explorer-app .topbar {
-        display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none;
-        padding: 12px 24px; background: var(--ink); color: var(--on-ink); border-bottom: 1px solid var(--line);
+      /* Layout (SPEC §24): a dark Sidebar beside a light column of the Canvas header over the Canvas -- */
+      explorer-app { display: grid; grid-template-columns: 288px minmax(0, 1fr); height: 100vh; }
+      explorer-app .side-label {
+        font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--shell-muted);
       }
-      explorer-app .topbar .title { display: flex; align-items: center; gap: 16px; min-width: 0; }
-      explorer-app .topbar .brand { display: flex; align-items: center; gap: 10px; flex: none; }
-      explorer-app .topbar .brand img { display: block; width: 28px; height: 28px; }
-      explorer-app .topbar h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
-      explorer-app .topbar .dataset {
-        padding-left: 16px; border-left: 1px solid color-mix(in srgb, var(--on-ink) 25%, transparent);
-        color: color-mix(in srgb, var(--on-ink) 85%, transparent); font-size: 14px;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      explorer-app .topbar button {
-        flex: none; padding: 7px 14px; border-radius: 8px; background: transparent; color: var(--on-ink);
-        border: 1px solid color-mix(in srgb, var(--on-ink) 30%, transparent); font-weight: 500;
-      }
-      explorer-app .topbar :focus-visible { outline-color: var(--on-ink); } /* accent is too dark on ink */
-      explorer-app .topbar button:hover:not(:disabled) { background: color-mix(in srgb, var(--on-ink) 10%, transparent); }
-      /* Selected Workspace or Settings: inverted, since the top bar's own text colour wins over a pale fill. */
-      explorer-app .topbar button[aria-pressed=true],
-      explorer-app .topbar button[aria-pressed=true]:hover:not(:disabled) {
-        background: var(--on-ink); color: var(--ink); border-color: var(--on-ink);
-      }
-
-      explorer-app .shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
       explorer-app .sidebar {
-        display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line);
+        display: flex; flex-direction: column; gap: 16px; min-height: 0; padding: 18px 14px 14px;
+        background: var(--shell); color: var(--on-shell); border-right: 1px solid var(--shell-line);
       }
-      /* The investigation log (SPEC §18): one entry per tab, in the order they opened */
+      explorer-app .sidebar :focus-visible { outline-color: var(--shell-accent); }
+      explorer-app .sidebar .spinner { border-color: var(--shell-line); border-top-color: var(--shell-accent); }
+      explorer-app .side-top { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+      explorer-app .brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px; }
+      explorer-app .brand img { display: block; width: 28px; height: 28px; }
+      explorer-app .brand h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+
+      /* Workspaces (specs/workspaces/SPEC.md phase 1): one row each, a badge of its initials */
+      explorer-app .workspaces { display: flex; flex-direction: column; gap: 4px; }
+      explorer-app .workspaces .side-label { padding: 0 6px 4px; }
+      explorer-app .workspace {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 44px; padding: 6px 8px;
+        border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--on-shell);
+        text-align: left; font-size: 14px; font-weight: 600; overflow-wrap: anywhere;
+      }
+      explorer-app .workspace::before {
+        content: attr(data-initials) / ''; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+        background: var(--shell-soft); color: var(--on-shell); font: 600 11px/1 var(--mono);
+      }
+      explorer-app button.workspace:hover { background: var(--shell-soft); }
+      explorer-app .workspace.selected, explorer-app .workspace.selected:hover {
+        background: var(--shell-accent-soft); border-color: var(--shell-accent-line); color: var(--on-shell);
+      }
+      explorer-app .workspace.selected::before { background: var(--accent); color: var(--on-accent); }
+      explorer-app .workspace.unavailable { color: var(--shell-muted); border: 1px dashed var(--shell-line); font-weight: 500; }
+      explorer-app .workspace .reason { font-size: 12px; }
+      explorer-app .workspaces .dataset { margin: 2px 6px 0; color: var(--shell-muted); font-size: 12.5px; line-height: 1.45; }
+      explorer-app .retry-workspace { padding: 1px 8px; border: 1px solid var(--shell-line); border-radius: 6px; background: var(--shell-raised); color: var(--on-shell); }
+
+      /* Saved Conversations and the investigation log (SPEC §18): one entry per tab, in the order they opened */
+      explorer-app .investigation { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+      explorer-app .saved-toggle {
+        display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 8px; border: 0; border-radius: 10px;
+        background: none; color: var(--on-shell); font-size: 14px; text-align: left;
+      }
+      explorer-app .saved-toggle::after { content: '›'; margin-left: auto; color: var(--shell-muted); transition: transform .15s; }
+      explorer-app .saved-toggle[aria-expanded='true']::after { transform: rotate(90deg); }
+      explorer-app .saved-toggle:hover { background: var(--shell-soft); }
+      explorer-app .saved-list { padding: 8px; border: 1px solid var(--shell-line); border-radius: 10px; background: var(--shell-raised); max-height: 40vh; overflow: auto; font-size: 13px; }
+      explorer-app .saved-list ol { list-style: none; margin: 0 0 8px; padding: 0; }
+      explorer-app .saved-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--shell-line); }
+      explorer-app .saved-list li button, explorer-app .saved-list .delete-all { padding: 1px 8px; border: 1px solid var(--shell-line); border-radius: 6px; background: var(--shell); color: var(--on-shell); }
+      explorer-app .saved-list .open-saved { border: 0; padding: 0; background: none; color: var(--shell-accent); text-align: left; flex: 1 1 100%; overflow-wrap: anywhere; }
+      explorer-app .saved-date, explorer-app .saved-empty { color: var(--shell-muted); font-size: 12px; }
+      explorer-app .saved-empty { margin: 0; }
+      explorer-app .sidebar .confirm-card { color: var(--fg); }
       explorer-app .log-head {
-        display: flex; justify-content: space-between; width: 100%; padding: 16px 20px 12px; text-align: left;
-        border: 0; border-bottom: 1px solid var(--line); background: none; cursor: default;
+        display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 6px; text-align: left;
+        border: 0; background: none; cursor: default;
+        font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--shell-muted);
       }
-      explorer-app .log { flex: 1; overflow-y: auto; margin: 0; padding: 12px; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-      explorer-app .log-spacer { flex: 1; } /* keeps the composer at the bottom before the first entry */
+      explorer-app .log-head .count { padding: 1px 8px; border-radius: 999px; background: var(--shell-soft); color: var(--on-shell); letter-spacing: 0; }
+      explorer-app .log { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
       explorer-app .log-entry {
         display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 10px 12px; text-align: left;
-        background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+        background: transparent; color: var(--on-shell); border: 1px solid var(--shell-line); border-radius: 12px;
+        transition: background-color .15s, border-color .15s;
       }
-      explorer-app .log-entry:hover { border-color: var(--line-strong); }
-      explorer-app .log-entry.selected { background: var(--accent-soft); border-color: var(--accent-line); }
-      explorer-app .log-tag { font: 500 10px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
-      explorer-app .log-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; overflow-wrap: anywhere; }
-      explorer-app .entry-state { display: flex; align-items: center; gap: 6px; min-height: 1em; font: 12px/1.3 var(--mono); color: var(--muted); }
+      explorer-app .log-entry:hover { background: var(--shell-soft); }
+      explorer-app .log-entry.selected { background: var(--shell-accent-soft); border-color: var(--shell-accent-line); }
+      explorer-app .log-tag { font: 500 10px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--shell-muted); }
+      explorer-app .log-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+      explorer-app .entry-state { display: flex; align-items: center; gap: 6px; min-height: 1em; font: 12px/1.3 var(--mono); color: var(--shell-muted); }
       explorer-app .entry-state:empty { display: none; }
 
+      /* The composer: a raised card at the Sidebar's foot */
       explorer-app .composer {
-        display: flex; flex-direction: column; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); background: var(--panel);
+        flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px;
+        background: var(--shell-raised); border: 1px solid var(--shell-line); border-radius: 16px;
       }
       explorer-app .composer textarea {
         resize: vertical; min-height: 72px; max-height: 40vh; padding: 10px 12px; font: inherit; font-size: 14px;
-        color: var(--fg); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px;
+        color: var(--on-shell); background: var(--shell); border: 1px solid var(--shell-line); border-radius: 10px;
       }
-      explorer-app .composer textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+      explorer-app .composer textarea::placeholder { color: var(--shell-muted); }
+      explorer-app .composer textarea:focus {
+        outline: none; border-color: var(--shell-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--shell-accent) 25%, transparent);
+      }
+      explorer-app .composer-foot { display: flex; align-items: center; gap: 8px; }
+      explorer-app .composer .hint { flex: 1; min-width: 0; font: 11px/1.35 var(--mono); color: var(--shell-muted); }
       explorer-app .composer button {
-        align-self: flex-end; padding: 8px 20px; border: 0; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-weight: 600;
+        flex: none; min-height: 40px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 600;
+      }
+      explorer-app .composer button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--on-shell)); }
+
+      /* The main column: the Canvas header (tabs, Settings, New conversation), then the Canvas or Settings */
+      explorer-app .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--canvas); }
+      explorer-app .canvas-head {
+        flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 32px;
+        background: var(--canvas); border-bottom: 1px solid var(--line);
+      }
+      explorer-app .tab-strip-spacer { flex: 1; }
+      explorer-app .head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+      explorer-app .head-actions button {
+        min-height: 40px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 10px;
+        background: var(--panel); color: var(--fg); font-weight: 500;
+      }
+      explorer-app .head-actions button:hover:not(:disabled) { border-color: var(--fg); }
+      explorer-app .head-actions .new-conversation { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 600; }
+      explorer-app .head-actions .new-conversation:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 88%, var(--canvas)); }
+      /* Settings open: its button inverted, like a selected tab. */
+      explorer-app .head-actions .settings-toggle[aria-pressed=true],
+      explorer-app .head-actions .settings-toggle[aria-pressed=true]:hover:not(:disabled) {
+        background: var(--primary); color: var(--on-primary); border-color: var(--primary);
       }
 
-      explorer-app .canvas { min-height: 0; overflow-y: auto; padding: 28px 32px 48px; }
-      explorer-app .canvas > * { max-width: 1120px; margin-left: auto; margin-right: auto; }
-      explorer-app .banner { margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
+      explorer-app .canvas { flex: 1; min-height: 0; overflow-y: auto; padding: 32px 32px 56px; }
+      explorer-app .canvas > * { max-width: 1180px; margin-left: auto; margin-right: auto; }
+      explorer-app .banner { margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
       explorer-app .banner button { margin-left: 8px; padding: 2px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); }
-      /* Workspaces (specs/workspaces/SPEC.md phase 1) */
-      explorer-app .workspaces { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-      explorer-app .workspace { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      explorer-app .workspace.unavailable { color: var(--faint); border-style: dashed; }
-      explorer-app .workspace .reason { font-size: 0.85em; }
-      explorer-app .retry-workspace, explorer-app .open-current, explorer-app .saved-list button { padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      explorer-app .saved-toggle { margin: 8px 16px 0; padding: 4px 0; border: 0; background: none; color: var(--accent); text-align: left; cursor: pointer; }
-      explorer-app .saved-list { margin: 4px 16px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); max-height: 40vh; overflow: auto; }
-      explorer-app .saved-list ol { list-style: none; margin: 0 0 8px; padding: 0; }
-      explorer-app .saved-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--line); }
-      explorer-app .saved-list .open-saved { border: 0; padding: 0; color: var(--accent); text-align: left; flex: 1 1 100%; overflow-wrap: anywhere; }
-      explorer-app .saved-date { color: var(--muted); font-size: 0.85em; }
-      explorer-app .notice { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
+      explorer-app .open-current { padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
+      explorer-app .notice { margin-bottom: 12px; padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--line-strong); }
       /* Settings (Workspaces SPEC phase 2): the bootstrap views, from the retired explorer/bootstrap/ui */
       explorer-app [hidden] { display: none !important; } /* Settings stays mounted while hidden */
-      explorer-app .settings-toggle { padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--fg); }
-      /* Glassline glass (Workspaces SPEC phase 3): frosted panels over a soft wash of the brand and model accents. */
+      /* Settings panels on the plain Canvas (SPEC §24 dropped the colour wash: one flat look for the app). */
       explorer-app .settings-page {
-        flex: 1; min-height: 0; overflow: auto; padding: 28px 24px 0; /* no bottom padding: it would lift the sticky footer */
-        background:
-          radial-gradient(60rem 30rem at 8% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
-          radial-gradient(44rem 26rem at 96% 4%, color-mix(in srgb, var(--model-wonder) 14%, transparent), transparent 70%),
-          radial-gradient(40rem 24rem at 70% 110%, color-mix(in srgb, var(--model-spark) 12%, transparent), transparent 70%),
-          var(--canvas);
+        flex: 1; min-height: 0; overflow: auto; padding: 28px 32px 0; /* no bottom padding: it would lift the sticky footer */
+        background: var(--canvas);
       }
       explorer-settings { display: block; max-width: 1080px; margin: 0 auto; padding-bottom: 32px; --ok: #15803d; --warn: #b45309; --bad: var(--error); --muted-ink: var(--muted); }
       @media (prefers-color-scheme: dark) { explorer-settings { --ok: #6fd08f; --warn: #f0b25a; } }
@@ -321,28 +364,33 @@
       explorer-settings .claim { margin: 12px 0; } explorer-settings .claim.dismissed { opacity: .6; }
       explorer-settings label.schema { display: block; }
 
-      explorer-app .empty { padding: 48px 0 24px; color: var(--muted); }
-      explorer-app .empty h2 { margin: 0 0 6px; color: var(--fg); font-size: 28px; letter-spacing: -0.02em; }
-      explorer-app .empty .label { margin-top: 28px; }
-      explorer-app .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+      /* The empty state: on the Explorer tab until the first question (examples), or with no Workspace */
+      explorer-app .empty { margin-top: 32px; padding: 28px 28px 30px; border: 1px dashed var(--line-strong); border-radius: 16px; color: var(--muted); }
+      explorer-app .empty h2 { margin: 0 0 6px; color: var(--fg); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+      explorer-app .empty p { margin: 0; max-width: 68ch; }
+      explorer-app .empty .label { margin-top: 22px; }
+      explorer-app .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
       explorer-app .examples button {
-        padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); color: var(--fg); text-align: left;
+        min-height: 40px; padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); color: var(--fg); text-align: left;
+        transition: border-color .15s, box-shadow .15s;
       }
-      explorer-app .examples button:hover { border-color: var(--fg); }
-      explorer-app .no-workspaces .open-settings { padding: 8px 16px; border: 0; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-weight: 600; }
+      explorer-app .examples button::before { content: '→'; margin-right: 8px; color: var(--accent); }
+      explorer-app .examples button:hover:not(:disabled) { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+      explorer-app .no-workspaces .open-settings { min-height: 40px; margin-top: 16px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--primary); color: var(--on-primary); font-weight: 600; }
 
-      /* Tabs (SPEC §18): one strip for the investigation; the selected tab below it ------------- */
+      /* Tabs (SPEC §18, §24): a segmented track in the Canvas header; the selected tab raised -------- */
       explorer-app .tab-strip {
-        display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin;
+        flex: 0 1 auto; min-width: 0; display: flex; gap: 2px; padding: 3px; overflow-x: auto; scrollbar-width: thin;
+        background: var(--soft); border: 1px solid var(--line); border-radius: 12px;
       }
       explorer-app .tab {
-        display: flex; align-items: center; flex: none; max-width: 260px; margin-bottom: -1px;
-        border: 1px solid transparent; border-bottom-color: var(--line); border-radius: 8px 8px 0 0;
+        display: flex; align-items: center; flex: none; max-width: 260px; border-radius: 9px; transition: background-color .15s;
       }
-      explorer-app .tab.selected { background: var(--panel); border-color: var(--line); border-bottom-color: var(--panel); }
+      explorer-app .tab:hover:not(.selected) { background: color-mix(in srgb, var(--panel) 55%, transparent); }
+      explorer-app .tab.selected { background: var(--panel); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 10%, transparent); }
       explorer-app .tab-select {
-        display: flex; align-items: center; gap: 6px; min-width: 0; padding: 8px 6px 8px 12px; border: 0; background: none;
-        color: var(--muted); font-size: 13px;
+        display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 34px; padding: 0 6px 0 12px; border: 0; background: none;
+        color: var(--muted); font-size: 13.5px;
       }
       explorer-app .tab.selected .tab-select { color: var(--fg); font-weight: 600; }
       explorer-app .tab:not(:has(.tab-close)) .tab-select { padding-right: 12px; }
@@ -356,9 +404,10 @@
         background: none; color: var(--faint); font-size: 15px; line-height: 1;
       }
       explorer-app .tab-close:hover:not(:disabled) { background: var(--soft); color: var(--fg); }
-      explorer-app .tab-view { scroll-margin-top: 16px; }
+      explorer-app .tab-view { scroll-margin-top: 16px; animation: view-in .35s ease-out; }
+      @keyframes view-in { from { opacity: 0; transform: translateY(6px); } }
       explorer-app .question, explorer-app .prose { overflow-wrap: anywhere; }
-      explorer-app .question { margin: 0 0 12px; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; white-space: pre-wrap; }
+      explorer-app .question { margin: 0 0 14px; max-width: 30em; font-size: 34px; line-height: 1.15; font-weight: 800; letter-spacing: -0.025em; white-space: pre-wrap; }
       explorer-app .status { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); font: 13px/1.4 var(--mono); }
       explorer-app .spinner {
         flex: none; width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%;
@@ -394,17 +443,56 @@
 
       /* Surfaces: Cards, titles, Metrics, buttons ------------------------------------------------ */
       explorer-app .level-view a2ui-surface { display: block; }
-      explorer-app .a2ui-card { height: 100%; transition: box-shadow 150ms ease, border-color 150ms ease; }
+      explorer-app .a2ui-card {
+        height: 100%; transition: box-shadow 200ms ease, border-color 200ms ease;
+      }
       /* SPEC §22 step 3: hover deepens the shadow without moving the Card (a lift makes bars harder to click). */
-      explorer-app .a2ui-card:hover { box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent); }
+      explorer-app .a2ui-card:hover {
+        box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent), 0 12px 32px -12px color-mix(in srgb, var(--ink) 22%, transparent);
+      }
       @media (prefers-color-scheme: dark) { explorer-app .a2ui-card:hover { box-shadow: none; border-color: var(--line-strong); } }
       @media (prefers-reduced-motion: reduce) { explorer-app .a2ui-card { transition: none; } }
       explorer-app .a2ui-text h4 { margin: 0; font-size: 16px; font-weight: 600; }
-      /* A Visual's title: the h4 that is a Card's first Text. Model-written h4s in prose keep the rule above. */
-      explorer-app .a2ui-card > * > :first-child > .a2ui-text-h4 h4 { font: 600 11.5px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-      explorer-app .a2ui-text.a2ui-text-caption { font: normal 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      /* A Visual's title: the h4 that is a Card's first Text, in sentence case. Model-written h4s in prose keep the rule above. */
+      explorer-app .a2ui-card > * > :first-child > .a2ui-text-h4 h4 { font: 650 15px/1.35 var(--sans); letter-spacing: -0.005em; color: var(--fg); }
+      /* Captions: a short label inside a Card (a Metric's name) stays uppercase mono; a sentence outside one reads as text. */
+      explorer-app .a2ui-text.a2ui-text-caption { font: normal 400 14px/1.5 var(--sans); color: var(--muted); }
+      explorer-app .a2ui-card .a2ui-text.a2ui-text-caption { font: normal 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
       explorer-app .a2ui-text.a2ui-text-caption em { font-style: normal; } /* A2UI wraps captions in <em> */
       explorer-app .a2ui-text h2 { margin: 2px 0; font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+      /* A Metric's figure: the h2 inside a Card. */
+      explorer-app .a2ui-card .a2ui-text h2 { font-size: 40px; line-height: 1.1; overflow-wrap: anywhere; }
+
+      /* A Board's heading (SPEC §24): `board_heading`, the first Column of the Surface's root. With a question and
+         a scope, the title becomes a small label above the question as the headline; otherwise the title is the
+         headline and its one line is the lead. */
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child { gap: 10px; margin-bottom: 4px; }
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child .a2ui-text h2 {
+        margin: 0; font: 800 34px/1.15 var(--sans); letter-spacing: -0.025em; overflow-wrap: anywhere;
+      }
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child:has(> :nth-child(3)) > :first-child .a2ui-text h2 {
+        display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px;
+        background: var(--accent-soft); color: var(--accent); font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+      }
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child:has(> :nth-child(3)) > :nth-child(2) .a2ui-text-caption {
+        display: block; max-width: 30em; font: 800 34px/1.15 var(--sans); letter-spacing: -0.025em; color: var(--fg); text-transform: none;
+      }
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child > :not(:first-child):last-child .a2ui-text-caption {
+        display: block; max-width: 68ch; font-size: 15px;
+      }
+      /* A Board's Controls (`board_controls`): no Card, each choice a segmented track. The root holds the heading, the
+         Controls and the layout, so the Controls are its second child and never its last (with no Controls, the layout is). */
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-card:nth-child(2):not(:last-child) > .a2ui-card,
+      explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-card:nth-child(2):not(:last-child) > .a2ui-card:hover {
+        padding: 0; border: 0; background: none; box-shadow: none;
+      }
+      explorer-app a2ui-choicepicker:has(.a2ui-chips-group) { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+      explorer-app a2ui-choicepicker:has(.a2ui-chips-group) > label { font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+      /* A2UI's own `a2ui-choicepicker .a2ui-choice-picker` sets a full width; its sheet comes later, so match and beat it. */
+      explorer-app a2ui-choicepicker .a2ui-chips-group {
+        display: flex; flex-flow: row wrap; width: auto; max-width: 100%; gap: 3px; padding: 3px;
+        border: 1px solid var(--line); border-radius: 12px; background: var(--soft);
+      }
       explorer-app a2ui-basic-button button:hover:not(:disabled) { border-color: var(--fg); }
       /* Phones (SPEC §22 P14): Rows of Cards stack, so every Card is full width and weights apply on wide
          screens only. A2UI sets each child's weight as an inline flex, hence !important. */
@@ -413,8 +501,11 @@
         explorer-app a2ui-basic-row:has(> a2ui-card) > * { flex: 0 0 auto !important; width: 100%; }
       }
       /* Controls as chips (SPEC §22 step 6). */
-      explorer-app .a2ui-chip { font: 12px/1.4 var(--mono); color: var(--fg); }
+      explorer-app .a2ui-chip { font: 12px/1.4 var(--mono); font-variant-numeric: tabular-nums; color: var(--fg); }
+      explorer-app .a2ui-chips-group .a2ui-chip { min-height: 32px; padding: 0 12px; border-color: transparent; border-radius: 9px; background: transparent; }
+      explorer-app .a2ui-chips-group .a2ui-chip:hover:not(.a2ui-chip-selected) { background: var(--panel); }
       explorer-app .a2ui-chip.a2ui-chip-selected { color: var(--on-primary); }
+      explorer-app .a2ui-chips-group .a2ui-chip.a2ui-chip-selected { background: var(--primary); font-weight: 600; }
 
       /* Chart tooltips (SPEC §22): vega-tooltip's element lives in body; the class beats its defaults */
       #vg-tooltip-element.explorer-theme {
@@ -425,7 +516,7 @@
       #vg-tooltip-element.explorer-theme td.value { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
       /* Visual hints and DataGrid (SPEC §16) */
-      .visual-hint { margin: 0 0 6px; font: 12px/1.4 var(--mono); color: var(--muted); }
+      .visual-hint { margin: 0 0 8px; font: 13px/1.4 var(--sans); color: var(--muted); }
       table.data-grid { border-collapse: collapse; width: 100%; font-size: 14px; }
       table.data-grid th {
         padding: 8px 10px; border-bottom: 1px solid var(--line-strong); color: var(--muted);
@@ -435,9 +526,9 @@
       table.data-grid td[style*='right'] { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
       table.data-grid caption { caption-side: bottom; padding-top: 6px; color: var(--muted); font: 12px/1.4 var(--mono); text-align: left; }
       table.data-grid tr.clickable { cursor: pointer; }
-      table.data-grid .share-bar { display: block; height: 4px; margin-top: 4px; background: var(--soft); border-radius: 2px; }
+      table.data-grid .share-bar { display: block; height: 6px; margin-top: 6px; background: var(--soft); border-radius: 999px; overflow: hidden; }
       /* SPEC §22 step 5: the fill grows from 0 when the row first renders (Lit keeps the span after that). */
-      table.data-grid .share-bar > span { display: block; height: 100%; background: var(--chart-1); border-radius: 2px; animation: share-grow 300ms ease-out; }
+      table.data-grid .share-bar > span { display: block; height: 100%; background: var(--chart-1); border-radius: 999px; animation: share-grow 300ms ease-out; }
       @keyframes share-grow { from { width: 0; } }
       @media (prefers-reduced-motion: reduce) { table.data-grid .share-bar > span { animation: none; } }
       table.data-grid tr.clickable:hover, table.data-grid tr.clickable:focus { background: var(--accent-soft); outline: none; }
@@ -447,33 +538,56 @@
         color: var(--accent); font: 500 10px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; vertical-align: 1px;
       }
       table.data-grid tr.askable:hover .ask-tag, table.data-grid tr.askable:focus .ask-tag { visibility: visible; }
-      details.sql-details { margin: 8px 0 0; color: var(--muted); font: 12px/1.4 var(--mono); }
-      details.sql-details summary { cursor: pointer; color: var(--faint); }
+      /* The SQL behind a Visual (SPEC §24): a small code chip that opens to the query. */
+      details.sql-details { margin: 10px 0 0; color: var(--muted); font: 11px/1.4 var(--mono); }
+      details.sql-details summary {
+        display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 8px; list-style: none; cursor: pointer;
+        border: 1px solid var(--line); border-radius: 7px; color: var(--muted); transition: border-color .15s, color .15s;
+      }
+      details.sql-details summary::-webkit-details-marker { display: none; }
+      details.sql-details summary::before { content: '</>'; font-weight: 600; color: var(--accent); }
+      details.sql-details summary:hover, details.sql-details[open] summary { border-color: var(--line-strong); color: var(--fg); }
       details.sql-details pre {
         margin: 8px 0 0; padding: 10px 12px; overflow-x: auto; border-radius: 6px; background: var(--soft); color: var(--fg); font-size: 12px;
       }
 
-      /* Narrow screens: one column; the log a collapsible panel above the Canvas; the composer pinned at the bottom */
+      /* Narrow screens: one column. The dark Sidebar's top (brand, Workspaces, a collapsible log) above the
+         Canvas header and Canvas; the composer pinned at the bottom. */
       @media (max-width: 759px) {
-        explorer-app { height: auto; min-height: 100vh; }
-        explorer-app .topbar { padding: 10px 16px; }
-        explorer-app .topbar .dataset { display: none; }
-        explorer-app .shell { display: flex; flex-direction: column; }
+        explorer-app { display: flex; flex-direction: column; height: auto; min-height: 100vh; }
         explorer-app .sidebar { display: contents; }
-        explorer-app .log-head { order: 1; padding: 10px 16px; background: var(--panel); cursor: pointer; }
+        explorer-app .side-top { order: 1; flex: none; gap: 12px; overflow: visible; padding: 12px 16px; background: var(--shell); color: var(--on-shell); }
+        explorer-app .workspaces { flex-direction: row; flex-wrap: wrap; align-items: center; }
+        explorer-app .workspaces .side-label { display: none; }
+        explorer-app .workspace { min-height: 40px; }
+        explorer-app .workspaces .dataset { display: none; }
+        explorer-app .log-head { min-height: 40px; cursor: pointer; }
         explorer-app .log-head::after { content: '▾'; margin-left: 8px; }
         explorer-app .log-head[aria-expanded='true']::after { content: '▴'; }
         explorer-app .log-head .count { margin-left: auto; }
-        explorer-app .log { order: 1; flex: none; display: none; max-height: 50vh; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+        explorer-app .log { display: none; max-height: 50vh; overflow-y: auto; }
         explorer-app .log.open { display: flex; }
-        explorer-app .log-spacer { display: none; }
         explorer-app .log-text { -webkit-line-clamp: 2; }
-        explorer-app .tab-strip { margin: -4px -16px 16px; padding: 0 16px; }
-        explorer-app .canvas { order: 2; flex: 1; overflow: visible; padding: 20px 16px 24px; }
-        explorer-app .question { font-size: 22px; }
-        explorer-app .composer { order: 3; position: sticky; bottom: 0; z-index: 2; padding: 10px 16px; flex-direction: row; align-items: flex-end; }
-        explorer-app .composer .label { display: none; }
+        explorer-app .main { order: 2; flex: 1; }
+        explorer-app .canvas-head { padding: 10px 16px; }
+        explorer-app .head-actions { margin-left: 0; }
+        explorer-app .canvas { overflow: visible; padding: 20px 16px 24px; }
+        explorer-app .settings-page { padding: 20px 16px 0; }
+        explorer-app .question,
+        explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child .a2ui-text h2,
+        explorer-app .tab-view.board a2ui-surface > a2ui-basic-column > a2ui-basic-column:first-child:has(> :nth-child(3)) > :nth-child(2) .a2ui-text-caption { font-size: 24px; }
+        explorer-app .a2ui-card .a2ui-text h2 { font-size: 32px; }
+        explorer-app .composer {
+          order: 3; position: sticky; bottom: 0; z-index: 2; gap: 8px; padding: 10px 16px; border-radius: 0; border-width: 1px 0 0;
+          flex-direction: row; align-items: flex-end;
+        }
+        explorer-app .composer .hint { display: none; }
+        explorer-app .composer > .side-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
         explorer-app .composer textarea { flex: 1; min-height: 44px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        explorer-app .tab-view, explorer-app .tab, explorer-app .log-entry, explorer-app .examples button,
+        explorer-app .saved-toggle::after, details.sql-details summary { animation: none; transition: none; }
       }
     </style>
   </head>
