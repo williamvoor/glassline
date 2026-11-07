@@ -16,7 +16,7 @@ it('rejects a successful non-JSON body instead of handing null to the UI', async
   await expect(api.models()).rejects.toBeInstanceOf(ApiError);
 });
 
-it('retains forward-compatible fields and accepts the older missing declared flag', async () => {
+it('retains forward-compatible fields', async () => {
   const data = {models: ['m'], default: 'm', future: {enabled: true}};
   expect(await response(data).models()).toEqual(data);
   expect(await response({connections: [], current: null}).connections()).toEqual({connections: [], current: null});
@@ -25,10 +25,10 @@ it('retains forward-compatible fields and accepts the older missing declared fla
 it('validates the selected Settings responses at the API boundary', async () => {
   expect(await response({host: 'h', name: 'd', schemas: [{name: 's', objects: 1, extra: true}]}).connection()).toMatchObject({host: 'h'});
   expect(await response({errors: [], context_chars: null}).validate({dataset_toml: '', notes_md: '', glossary_md: ''}, [])).toEqual({errors: [], context_chars: null});
-  expect(await response({workspaces: [{name: 'demo', dsn_env: 'DEMO_DATABASE_URL', kind: 'data', future: 1}]}).workspaces()).toMatchObject({workspaces: [{name: 'demo'}]});
+  expect(await response({workspaces: [{name: 'demo', connection: 'demo', kind: 'data', future: 1}]}).workspaces()).toMatchObject({workspaces: [{name: 'demo'}]});
   // A registry entry without a login is listed (so it can be deleted), not a broken response.
-  expect(await response({workspaces: [{name: 'demo', dsn_env: null, kind: 'data'}]}).workspaces()).toMatchObject({workspaces: [{name: 'demo', dsn_env: null}]});
-  await expect(response({workspaces: [{name: 'demo', dsn_env: 1, kind: 'data'}]}).workspaces()).rejects.toBeInstanceOf(ApiError);
+  expect(await response({workspaces: [{name: 'demo', connection: null, kind: 'data'}]}).workspaces()).toMatchObject({workspaces: [{name: 'demo', connection: null}]});
+  await expect(response({workspaces: [{name: 'demo', connection: 1, kind: 'data'}]}).workspaces()).rejects.toBeInstanceOf(ApiError);
   await expect(response({errors: 'bad', context_chars: 0}).validate({dataset_toml: '', notes_md: '', glossary_md: ''}, [])).rejects.toBeInstanceOf(ApiError);
   await expect(response({model: 'm', run_ceiling_usd: '0.5'}).estimate('m', 'low')).rejects.toBeInstanceOf(ApiError);
 });

@@ -6,7 +6,7 @@ import {LitElement, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 
 import {confirmCard} from '../cards.js';
-import {Api, type SettingsWorkspace} from './api.js';
+import {Api, type ConnectionChoice, type SettingsWorkspace} from './api.js';
 import './wizard.js';
 import type {ExplorerWizard} from './wizard.js';
 
@@ -23,6 +23,9 @@ export class ExplorerSettings extends LitElement {
 
   @state() workspaces: SettingsWorkspace[] = [];
   @state() deleting = ''; // the Workspace whose Delete card is open
+  @state() connections: ConnectionChoice[] = [];
+  @state() editingLabel = ''; // the Connection whose label is being edited
+  @state() deletingConnection = ''; // the Connection whose Delete card is open
   @state() busy = false;
   @state() error = '';
   @state() notice = '';
@@ -68,7 +71,76 @@ export class ExplorerSettings extends LitElement {
   async load() {
     await this.guard(async () => {
       this.workspaces = (await this.api.workspaces()).workspaces;
+      this.connections = (await this.api.connections()).connections.filter(c => c.listed);
     });
+  }
+
+  async relabel(c: ConnectionChoice, label: string) {
+    // Once only: Enter saves, then the removed input may blur; Escape cancels, then it may blur.
+    if (this.editingLabel !== c.name) return;
+    this.editingLabel = '';
+    if (label.trim() === c.label) return;
+    this.busy = true;
+    await this.guard(async () => {
+      this.connections = (await this.api.relabelConnection(c.name, label)).connections.filter(x => x.listed);
+    });
+    this.busy = false;
+  }
+
+  async deleteConnection(c: ConnectionChoice) {
+    this.deletingConnection = '';
+    this.busy = true;
+    await this.guard(async () => {
+      this.connections = (await this.api.deleteConnection(c.name)).connections.filter(x => x.listed);
+      this.notice = `Deleted the Connection ${c.label}.`;
+    });
+    this.busy = false;
+  }
+
+  private connectionLabel(name: string | null) {
+    if (!name) return html`<span class="error">missing</span>`;
+    const c = this.connections.find(x => x.name === name);
+    return c ? html`${c.label} <code class="muted">${c.url_env}</code>` : html`<code>${name}</code>`;
+  }
+
+  private renderConnections() {
+    if (!this.connections.length) return nothing;
+    return html`<h2>Connections</h2>
+      <p class="muted">Read-only database logins. Each names a <code>.env</code> variable; several Workspaces can share one.</p>
+      <table class="connections-table">
+        <thead><tr><th>Label</th><th>Variable</th><th>Used by</th><th></th></tr></thead>
+        <tbody>
+          ${this.connections.map(c => {
+            const users = this.workspaces.filter(w => w.connection === c.name).map(w => w.name);
+            return html`<tr>
+                <td>${this.editingLabel === c.name
+                  ? html`<input class="connection-label" .value=${c.label} maxlength="80" aria-label="Label for ${c.name}"
+                      @keydown=${(e: KeyboardEvent) => {
+                        if (e.key === 'Enter') void this.relabel(c, (e.target as HTMLInputElement).value);
+                        if (e.key === 'Escape') this.editingLabel = '';
+                      }}
+                      @blur=${(e: FocusEvent) => void this.relabel(c, (e.target as HTMLInputElement).value)}>`
+                  : c.label}</td>
+                <td><code>${c.url_env}</code>${c.ready ? nothing : html` <span class="error">not set</span>`}</td>
+                <td>${users.length ? users.join(', ') : html`<span class="muted">none</span>`}</td>
+                <td class="actions">
+                  <button class="rename-connection" ?disabled=${this.busy} @click=${() => (this.editingLabel = c.name)}>Rename</button>
+                  <button class="delete-connection" ?disabled=${this.busy || users.length > 0}
+                    title=${users.length ? `Used by ${users.join(', ')}` : nothing}
+                    @click=${() => (this.deletingConnection = c.name)}>Delete</button>
+                </td>
+              </tr>
+              ${this.deletingConnection === c.name
+                ? html`<tr class="delete-row"><td colspan="4">${confirmCard({
+                    message: `Delete the Connection ${c.label}? The variable stays in .env.`,
+                    confirm: `Delete ${c.label}`, tone: 'danger',
+                    onConfirm: () => void this.deleteConnection(c),
+                    onCancel: () => (this.deletingConnection = ''),
+                  })}</td></tr>`
+                : nothing}`;
+          })}
+        </tbody>
+      </table>`;
   }
 
   async deleteWorkspace(ws: SettingsWorkspace) {
@@ -126,11 +198,11 @@ export class ExplorerSettings extends LitElement {
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
       ${this.workspaces.length
         ? html`<table>
-            <thead><tr><th>Name</th><th>Login variable</th><th>Dataset</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Connection</th><th>Dataset</th><th></th></tr></thead>
             <tbody>
               ${this.workspaces.map(ws => html`<tr>
                   <td>${ws.name}</td>
-                  <td>${ws.dsn_env ? html`<code>${ws.dsn_env}</code>` : html`<span class="error">missing</span>`}</td>
+                  <td>${this.connectionLabel(ws.connection)}</td>
                   <td>${ws.kind === 'data' ? 'made in Settings' : html`in the repo <span class="muted">(regenerate it with
                     <code>regen_dataset.sh</code>)</span>`}</td>
                   <td class="actions">
@@ -146,6 +218,7 @@ export class ExplorerSettings extends LitElement {
             </tbody>
           </table>`
         : html`<p class="muted">No Workspaces yet.</p>`}
+      ${this.renderConnections()}
       <p><button class="reload-agent" ?disabled=${this.busy} @click=${() => void this.reloadAgent()}>Reload the agent</button>
         <span class="muted">Picks up Workspaces and Dataset files that changed.</span></p>
     </section>`;

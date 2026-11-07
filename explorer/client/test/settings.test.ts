@@ -10,15 +10,19 @@ import type {WorkspaceApi, WorkspaceInfo} from '../src/workspaces.js';
 import {REPORT, fakeFetch, settle} from './settings/helpers.js';
 
 const ESTIMATE = {model: 'meta/muse-wonder-1.0', prompt_chars: 4000, input_tokens_est: 1000, first_call_usd: 0.01, run_ceiling_usd: 0.12, max_calls: 12};
-const EMPTY_SESSION = {dsn_env: null, report: null, regenerating: null, draft: false, boards: false, run: null};
+const EMPTY_SESSION = {connection: null, report: null, regenerating: null, draft: false, boards: false, run: null};
 
 function routes(over: Record<string, (body: any) => [number, unknown]> = {}) {
   return fakeFetch({
     'GET /api/workspaces': () => [200, {workspaces: [
-      {name: 'aus', dsn_env: 'AUS_DATABASE_URL', kind: 'repo'},
-      {name: 'mine', dsn_env: 'MINE_DATABASE_URL', kind: 'data'},
+      {name: 'aus', connection: 'aus', kind: 'repo'},
+      {name: 'mine', connection: 'mine', kind: 'data'},
     ]}],
-    'GET /api/connections': () => [200, {connections: ['VIC_DATABASE_URL'], current: null}],
+    'GET /api/connections': () => [200, {connections: [
+      {name: 'aus', label: 'AusTender', url_env: 'AUS_DATABASE_URL', listed: true, ready: true},
+      {name: 'spare', label: 'Spare', url_env: 'SPARE_DATABASE_URL', listed: true, ready: false},
+      {name: 'vic', label: 'vic', url_env: 'VIC_DATABASE_URL', listed: false, ready: true},
+    ], current: null}],
     'GET /api/models': () => [200, {models: ['meta/muse-wonder-1.0', 'meta/muse-spark-1.3'], default: 'meta/muse-wonder-1.0'}],
     'GET /api/session': () => [200, EMPTY_SESSION],
     'POST /api/estimate': () => [200, ESTIMATE],
@@ -56,16 +60,16 @@ describe('N1: Settings is the Workspace list; New Workspace opens the wizard', (
     const f = routes();
     const el = await mountSettings(f);
     const rows = [...el.querySelectorAll('.settings-workspaces tbody tr')].map(r => r.textContent!.replace(/\s+/g, ' ').trim());
-    expect(rows[0]).toContain('aus AUS_DATABASE_URL in the repo');
+    expect(rows[0]).toContain('aus AusTender AUS_DATABASE_URL in the repo');
     expect(rows[0]).not.toContain('Regenerate'); // repo Datasets: read-only
-    expect(rows[1]).toContain('mine MINE_DATABASE_URL made in Settings');
+    expect(rows[1]).toContain('mine mine made in Settings'); // a Connection not listed: its name
     expect(el.querySelector('.settings-workspaces .connect-var')).toBeNull(); // logins are the wizard's now
     expect(f.calls[0]!.path).toBe('GET /api/workspaces');
     expect(BOOTSTRAP_URL).toBe('http://127.0.0.1:8765');
   });
 
   it('lists a Workspace with no login variable as missing, and still offers Delete', async () => {
-    const f = routes({'GET /api/workspaces': () => [200, {workspaces: [{name: 'broken', dsn_env: null, kind: 'data'}]}]});
+    const f = routes({'GET /api/workspaces': () => [200, {workspaces: [{name: 'broken', connection: null, kind: 'data'}]}]});
     const el = await mountSettings(f);
     const row = el.querySelector('.settings-workspaces tbody tr')!;
     expect(row.textContent).toContain('missing');
@@ -79,7 +83,8 @@ describe('N1: Settings is the Workspace list; New Workspace opens the wizard', (
     expect((el.querySelector('.settings-workspaces') as HTMLElement).hidden).toBe(true);
     expect((el.querySelector('explorer-wizard') as HTMLElement).hidden).toBe(false);
     expect(paths(f)).toContain('GET /api/session'); // the wizard matches the server's state
-    expect([...el.querySelectorAll('explorer-wizard .connect-var')].map(b => b.textContent!.trim())).toEqual(['VIC_DATABASE_URL']);
+    expect([...el.querySelectorAll('explorer-wizard .connect-var')].map(b => b.textContent!.replace(/\s+/g, ' ').trim()))
+      .toEqual(['AusTender', 'Spare (not set)', 'vic (new)']);
   });
 
   it('deletes after a card that names what is deleted; Cancel deletes nothing (N11)', async () => {
@@ -115,7 +120,7 @@ describe('N1: Settings is the Workspace list; New Workspace opens the wizard', (
 
   it('disables Regenerate while a New Workspace is in progress, and offers to continue it (N18, E13)', async () => {
     const f = routes({
-      'POST /api/connect': () => [200, {host: 'h', name: 'vic', dsn_env: 'VIC_DATABASE_URL', schemas: [{name: 's', objects: 2}]}],
+      'POST /api/connect': () => [200, {host: 'h', name: 'vic', connection: 'aus', connection_label: 'AusTender', schemas: [{name: 's', objects: 2}]}],
     });
     const el = await mountSettings(f);
     await click(el, 'button.new-workspace');
@@ -254,5 +259,71 @@ describe('D6: Settings in the explorer', () => {
     await settle(app, 15);
     expect(window.location.hash).toBe('#/w/vic');
     expect((app.querySelector('explorer-settings') as HTMLElement).hidden).toBe(true);
+  });
+});
+
+describe('Connections (specs/connections/SPEC.md C9, A5)', () => {
+  const listed = (label: string) => ({connections: [
+    {name: 'aus', label: 'AusTender', url_env: 'AUS_DATABASE_URL', listed: true, ready: true},
+    {name: 'spare', label, url_env: 'SPARE_DATABASE_URL', listed: true, ready: false},
+  ]});
+
+  it('lists only listed Connections, with who uses them; one in use cannot be deleted', async () => {
+    const el = await mountSettings(routes());
+    const rows = [...el.querySelectorAll('.connections-table tbody tr')].map(r => r.textContent!.replace(/\s+/g, ' ').trim());
+    expect(rows).toHaveLength(2); // the bare VIC variable is the wizard's, not a Connection yet
+    expect(rows[0]).toContain('AusTender AUS_DATABASE_URL aus');
+    expect(rows[1]).toContain('Spare SPARE_DATABASE_URL not set none');
+    const deletes = [...el.querySelectorAll<HTMLButtonElement>('.connections-table button.delete-connection')];
+    expect(deletes[0]!.disabled).toBe(true);
+    expect(deletes[0]!.title).toBe('Used by aus');
+    expect(deletes[1]!.disabled).toBe(false);
+  });
+
+  it('Escape cancels a rename, and Enter saves once even though the input then blurs (refuter)', async () => {
+    const f = routes({'POST /api/connections/spare/label': (b) => [200, listed(b.label)]});
+    const el = await mountSettings(f);
+    (el.querySelectorAll<HTMLButtonElement>('button.rename-connection')[1]!).click();
+    await settle(el);
+    let input = el.querySelector<HTMLInputElement>('input.connection-label')!;
+    input.value = 'Changed';
+    input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+    input.dispatchEvent(new FocusEvent('blur')); // a browser may blur the input as it is removed
+    await settle(el);
+    expect(f.calls.filter(c => c.path === 'POST /api/connections/spare/label')).toHaveLength(0);
+
+    (el.querySelectorAll<HTMLButtonElement>('button.rename-connection')[1]!).click();
+    await settle(el);
+    input = el.querySelector<HTMLInputElement>('input.connection-label')!;
+    input.value = 'Saved';
+    input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter'}));
+    input.dispatchEvent(new FocusEvent('blur'));
+    await settle(el);
+    expect(f.calls.filter(c => c.path === 'POST /api/connections/spare/label')).toHaveLength(1);
+  });
+
+  it('renames on Enter and deletes after an inline card', async () => {
+    const f = routes({
+      'POST /api/connections/spare/label': (b) => [200, listed(b.label)],
+      'POST /api/connections/spare/delete': () => [200, {connections: listed('Spare').connections.slice(0, 1)}],
+    });
+    const el = await mountSettings(f);
+    (el.querySelectorAll<HTMLButtonElement>('button.rename-connection')[1]!).click();
+    await settle(el);
+    const input = el.querySelector<HTMLInputElement>('input.connection-label')!;
+    input.value = 'Backup';
+    input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter'}));
+    await settle(el);
+    expect(f.calls.find(c => c.path === 'POST /api/connections/spare/label')!.body).toEqual({label: 'Backup'});
+    expect(el.querySelector('.connections-table tbody tr:nth-child(2)')!.textContent).toContain('Backup');
+
+    (el.querySelectorAll<HTMLButtonElement>('button.delete-connection')[1]!).click();
+    await settle(el);
+    expect(el.querySelector('.confirm-card')!.textContent).toContain('Delete the Connection Backup?');
+    expect(f.calls.some(c => c.path === 'POST /api/connections/spare/delete')).toBe(false); // nothing until confirmed
+    (el.querySelector('.confirm-card .card-confirm') as HTMLButtonElement).click();
+    await settle(el);
+    expect(el.querySelectorAll('.connections-table tbody tr')).toHaveLength(1);
+    expect(el.querySelector('.notice-settings')!.textContent).toContain('Deleted the Connection Backup.');
   });
 });

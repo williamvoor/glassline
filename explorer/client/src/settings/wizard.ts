@@ -7,7 +7,7 @@ import {customElement, property, state} from 'lit/decorators.js';
 
 import {confirmCard} from '../cards.js';
 import {modelChip} from '../model-chip.js';
-import {Api, ApiError} from './api.js';
+import {Api, ApiError, type ConnectionChoice} from './api.js';
 import './connect.js';
 import './report.js';
 import './review.js';
@@ -49,10 +49,9 @@ export class ExplorerWizard extends LitElement {
 
   @state() step: WizardStep = 'database';
   @state() reached = 0; // the furthest step index the flow's state supports
-  @state() available: string[] = [];
+  @state() available: ConnectionChoice[] = [];
   /** Whether any `<NAME>_DATABASE_URL` is set: an empty list then means all are in use. */
-  @state() declared = true;
-  @state() connection: (Connection & {dsn_env: string}) | null = null;
+  @state() connection: (Connection & {connection: string; connection_label: string}) | null = null;
   @state() regenerating = '';
   @state() report: Report | null = null;
   @state() models: string[] = [...MODELS];
@@ -157,7 +156,7 @@ export class ExplorerWizard extends LitElement {
   async resume() {
     await this.guard(async () => {
       const s = await this.api.session();
-      const stale = (this.report && !s.report) || (this.connection && s.dsn_env !== this.connection.dsn_env);
+      const stale = (this.report && !s.report) || (this.connection && s.connection !== this.connection.connection);
       if (stale && !this.running && !this.boardsRunning) {
         const lost = Boolean(this.report || this.draft);
         this.reset();
@@ -165,7 +164,9 @@ export class ExplorerWizard extends LitElement {
       }
       // Rebuilt only from progress (a report): a login alone, kept after a discard (E8), starts afresh.
       if (!this.report && !this.connection && s.report) {
-        if (s.dsn_env) this.connection = {...(await this.api.connection()), dsn_env: s.dsn_env};
+        if (s.connection) {
+          this.connection = {...(await this.api.connection()), connection: s.connection, connection_label: s.connection};
+        }
         this.regenerating = s.regenerating ?? '';
         this.report = s.report;
         if (s.draft) {
@@ -183,17 +184,24 @@ export class ExplorerWizard extends LitElement {
       if (!this.connection && !this.regenerating) {
         const c = await this.api.connections();
         this.available = c.connections;
-        this.declared = c.declared ?? false;
       }
     });
   }
 
   // Step 1: Database ---------------------------------------------------------------------------
 
+  /** The offered Connections, with the current one first if the list no longer has it. */
+  private choices(): ConnectionChoice[] {
+    const c = this.connection;
+    if (!c || this.available.some(a => a.name === c.connection)) return this.available;
+    return [{name: c.connection, label: c.connection_label, url_env: '', listed: true, ready: true}, ...this.available];
+  }
+
   chooseConnection(name: string) {
-    if (this.connection?.dsn_env === name) return;
+    if (this.connection?.connection === name) return;
     if (this.report || this.draft) {
-      this.asking = {message: LOST, confirm: `Use ${name}`, run: () => this.connect(name)};
+      const label = this.available.find(c => c.name === name)?.label ?? name;
+      this.asking = {message: LOST, confirm: `Use ${label}`, run: () => this.connect(name)};
       return;
     }
     void this.connect(name);
@@ -482,16 +490,15 @@ export class ExplorerWizard extends LitElement {
     return html`<section class="glass database" aria-labelledby="db-h">
         <h2 id="db-h">Choose a database</h2>
         ${this.available.length || this.connection
-          ? html`<div class="connections" role="radiogroup" aria-label="Logins">
-              ${[...new Set([...(this.connection ? [this.connection.dsn_env] : []), ...this.available])].map(name => html`
-                <button type="button" role="radio" class="connect-var" aria-checked=${this.connection?.dsn_env === name ? 'true' : 'false'}
-                  ?disabled=${this.busy} @click=${() => this.chooseConnection(name)}>${name}</button>`)}
+          ? html`<div class="connections" role="radiogroup" aria-label="Connections">
+              ${this.choices().map(c => html`
+                <button type="button" role="radio" class="connect-var" aria-checked=${this.connection?.connection === c.name ? 'true' : 'false'}
+                  ?disabled=${this.busy || !c.ready} title=${c.ready ? nothing : `${c.url_env} is not set in .env`}
+                  @click=${() => this.chooseConnection(c.name)}>${c.label}
+                  ${c.ready && c.listed ? nothing : html`<small class="muted">${c.ready ? '(new)' : '(not set)'}</small>`}</button>`)}
             </div>`
-          : this.declared
-            ? html`<p class="muted">Every <code>*_DATABASE_URL</code> variable in <code>.env</code> already has a Workspace.
-                Add a new variable with a read-only login, then restart the explorer.</p>`
-            : html`<p class="muted">No <code>&lt;NAME&gt;_DATABASE_URL</code> variable is set in <code>.env</code>.
-                Add one with a read-only login, then restart the explorer.</p>`}
+          : html`<p class="muted">No Connection and no <code>&lt;NAME&gt;_DATABASE_URL</code> variable is set in <code>.env</code>.
+              Add one with a read-only login, then restart the explorer.</p>`}
       </section>
       ${this.connection
         ? html`<bs-connect .connection=${this.connection} .api=${this.api} .datasets=${[]} ?busy=${this.busy}
