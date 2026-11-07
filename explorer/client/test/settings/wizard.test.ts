@@ -11,7 +11,7 @@ afterEach(() => (document.body.innerHTML = ''));
 
 const ESTIMATE = { model: 'meta/muse-wonder-1.0', prompt_chars: 3, input_tokens_est: 1000, first_call_usd: 0.01, run_ceiling_usd: 0.12, max_calls: 12 };
 const VALID = { errors: [], context_chars: 10 };
-const EMPTY: Session = { dsn_env: null, report: null, regenerating: null, draft: false, boards: false, run: null };
+const EMPTY: Session = { connection: null, report: null, regenerating: null, draft: false, boards: false, run: null };
 const CALL = { type: 'call', usage: { prompt_tokens: 1000, cached_tokens: 600, completion_tokens: 50, cost_usd: 0.02 } };
 
 function boardsState(extra: Partial<BoardsState> = {}): BoardsState {
@@ -23,14 +23,19 @@ function boardsState(extra: Partial<BoardsState> = {}): BoardsState {
 
 type Routes = Parameters<typeof fakeFetch>[0];
 
+function choice(name: string, label: string, over: Record<string, unknown> = {}) {
+  return { name, label, url_env: `${name.toUpperCase()}_DATABASE_URL`, listed: true, ready: true, ...over };
+}
+
 function routes(over: Routes = {}) {
   const draft = makeDraft([claim('verified')]);
   let polls = 0;
   return fakeFetch({
     'GET /api/models': () => [200, { models: ['meta/muse-wonder-1.0', 'meta/muse-spark-1.3'], default: 'meta/muse-wonder-1.0' }],
     'GET /api/session': () => [200, EMPTY],
-    'GET /api/connections': () => [200, { connections: ['VIC_DATABASE_URL', 'OTHER_DATABASE_URL'], current: null }],
-    'POST /api/connect': (b) => [200, { host: 'h', name: 'vic', dsn_env: b.dsn_env, schemas: [{ name: 's', objects: 2 }] }],
+    'GET /api/connections': () => [200, { connections: [choice('vic', 'Victoria'), choice('other', 'Other')], current: null }],
+    'POST /api/connect': (b) => [200, { host: 'h', name: 'vic', connection: b.connection, connection_label: b.connection,
+      schemas: [{ name: 's', objects: 2 }] }],
     'POST /api/report': () => [200, REPORT],
     'POST /api/estimate': () => [200, ESTIMATE],
     'POST /api/draft': () => [200, { run_id: 'd1' }],
@@ -117,14 +122,24 @@ describe('N3, N4: Database, then a Draft that only a Draft button starts', () =>
     expect(current(el)).toBe('Review'); // a finished Draft moves on by itself
   });
 
-  it('with no login offered, says whether none is declared or every one is in use', async () => {
-    const none = await mountWizard(routes({ 'GET /api/connections': () => [200, { connections: [], current: null, declared: false }] }));
+  it('with no Connection and no variable, says how to add one', async () => {
+    const none = await mountWizard(routes({ 'GET /api/connections': () => [200, { connections: [], current: null }] }));
     const noneText = none.el.querySelector('section.database p.muted')!.textContent!.replace(/\s+/g, ' ');
-    expect(noneText).toContain('No <NAME>_DATABASE_URL variable is set');
-    expect(noneText).not.toContain('already has a Workspace');
-    document.body.innerHTML = '';
-    const used = await mountWizard(routes({ 'GET /api/connections': () => [200, { connections: [], current: null, declared: true }] }));
-    expect(used.el.querySelector('section.database p.muted')!.textContent).toContain('already has a Workspace');
+    expect(noneText).toContain('No Connection and no <NAME>_DATABASE_URL variable is set');
+  });
+
+  it('C5: shows Connections by label, marks bare variables as new, and disables an unset one', async () => {
+    const { el, f } = await mountWizard(routes({ 'GET /api/connections': () => [200, { connections: [
+      choice('vic', 'Victoria'), choice('gone', 'Gone', { ready: false }), choice('aus', 'aus', { listed: false }),
+    ], current: null }] }));
+    const buttons = [...el.querySelectorAll<HTMLButtonElement>('.connect-var')];
+    expect(buttons.map((b) => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+      'Victoria', 'Gone (not set)', 'aus (new)']); // never the .env variable's name
+    expect(buttons[1]!.disabled).toBe(true);
+    expect(buttons[1]!.title).toBe('GONE_DATABASE_URL is not set in .env');
+    buttons[2]!.click();
+    await settle(el);
+    expect(f.calls.find((c) => c.path === 'POST /api/connect')!.body).toEqual({ connection: 'aus' });
   });
 });
 
@@ -282,7 +297,7 @@ describe('N7: a change that discards later work asks on a card first', () => {
     const { el, f } = await mountWizard();
     await toReview(el);
     await click(el, '.wizard-steps button[data-step=database]');
-    const other = [...el.querySelectorAll('.connect-var')].find((b) => b.textContent!.trim() === 'OTHER_DATABASE_URL') as HTMLButtonElement;
+    const other = [...el.querySelectorAll('.connect-var')].find((b) => b.textContent!.trim() === 'Other') as HTMLButtonElement;
     other.click();
     await settle(el);
     expect(el.querySelector('.confirm-card')!.textContent).toContain('replaces the Draft and its Boards');
@@ -320,13 +335,13 @@ describe('N10: resuming from the server', () => {
   it('rebuilds at the furthest step the server holds after a page reload', async () => {
     const draft = makeDraft([claim('verified')]);
     const { el } = await mountWizard(routes({
-      'GET /api/session': () => [200, { ...EMPTY, dsn_env: 'VIC_DATABASE_URL', report: REPORT, draft: true, boards: true }],
+      'GET /api/session': () => [200, { ...EMPTY, connection: 'vic', report: REPORT, draft: true, boards: true }],
       'GET /api/connection': () => [200, { host: 'h', name: 'vic', schemas: [] }],
       'GET /api/draft': () => [200, { draft, validation: VALID }],
       'GET /api/boards': () => [200, boardsState()],
     }));
     expect(current(el)).toBe('Boards');
-    expect(el.connection!.dsn_env).toBe('VIC_DATABASE_URL');
+    expect(el.connection!.connection).toBe('vic');
     expect(el.querySelectorAll('bs-boards [role=tab]')).toHaveLength(1);
     expect((el.querySelector('.wizard-footer button.next') as HTMLButtonElement).disabled).toBe(false);
   });
@@ -432,7 +447,7 @@ describe('error paths (refuter)', () => {
   it('a page reload during a Boards run resumes on the Boards step and follows the run', async () => {
     const draft = makeDraft([claim('verified')]);
     const { el } = await mountWizard(routes({
-      'GET /api/session': () => [200, { ...EMPTY, dsn_env: 'VIC_DATABASE_URL', report: REPORT, draft: true, run: { id: 'b1', kind: 'boards' } }],
+      'GET /api/session': () => [200, { ...EMPTY, connection: 'vic', report: REPORT, draft: true, run: { id: 'b1', kind: 'boards' } }],
       'GET /api/connection': () => [200, { host: 'h', name: 'vic', schemas: [] }],
       'GET /api/draft': () => [200, { draft, validation: VALID }],
     }));

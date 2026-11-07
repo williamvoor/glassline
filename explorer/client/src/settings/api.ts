@@ -3,8 +3,12 @@ import {ConnectionSchema, EstimateSchema, ValidationSchema} from './types.js';
 import {z} from 'zod';
 
 const ModelsSchema = z.object({models: z.array(z.string()), default: z.string()}).passthrough();
-const ConnectionsSchema = z.object({connections: z.array(z.string()), current: z.string().nullable(), declared: z.boolean().optional()}).passthrough();
-const WorkspaceSchema = z.object({name: z.string(), dsn_env: z.string().nullable(), kind: z.enum(['data', 'repo'])}).passthrough();
+/** A Connection Settings offers (C5): a listed one, or a bare `*_DATABASE_URL` variable (`listed: false`). */
+const ConnectionChoiceSchema = z.object({name: z.string(), label: z.string(), url_env: z.string(), listed: z.boolean(),
+  ready: z.boolean()}).passthrough();
+const ConnectionsSchema = z.object({connections: z.array(ConnectionChoiceSchema), current: z.string().nullable()}).passthrough();
+const ConnectionListSchema = z.object({connections: z.array(ConnectionChoiceSchema)}).passthrough();
+const WorkspaceSchema = z.object({name: z.string(), connection: z.string().nullable(), kind: z.enum(['data', 'repo'])}).passthrough();
 const WorkspacesSchema = z.object({workspaces: z.array(WorkspaceSchema)}).passthrough();
 const ErrorSchema = z.object({error: z.string().optional(), reasons: z.array(z.string()).optional()}).passthrough();
 import {traceOn} from '../trace.js';
@@ -22,6 +26,7 @@ type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 // D6); the Settings-mode routes are added at the end.
 
 export type SettingsWorkspace = z.infer<typeof WorkspaceSchema>;
+export type ConnectionChoice = z.infer<typeof ConnectionChoiceSchema>;
 
 /** The bootstrap server's API. Every POST is JSON (the server refuses anything else). */
 export class Api {
@@ -107,8 +112,15 @@ export class Api {
   connections() {
     return this.call('/api/connections', undefined, ConnectionsSchema);
   }
-  connect(dsnEnv: string) {
-    return this.call('/api/connect', { dsn_env: dsnEnv }, ConnectionSchema.extend({dsn_env: z.string()}));
+  connect(connection: string) {
+    return this.call('/api/connect', { connection },
+      ConnectionSchema.extend({connection: z.string(), connection_label: z.string()}));
+  }
+  relabelConnection(name: string, label: string) {
+    return this.call(`/api/connections/${encodeURIComponent(name)}/label`, { label }, ConnectionListSchema);
+  }
+  deleteConnection(name: string) {
+    return this.call(`/api/connections/${encodeURIComponent(name)}/delete`, {}, ConnectionListSchema);
   }
   workspaces() {
     return this.call('/api/workspaces', undefined, WorkspacesSchema);

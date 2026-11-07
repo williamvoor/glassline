@@ -168,7 +168,7 @@ export interface BoardsState {
 
 /** What the bootstrap server holds (Workspaces SPEC E7), for resuming after a page reload. */
 export interface Session {
-  dsn_env: string | null;
+  connection: string | null;
   report: Report | null;
   regenerating: string | null;
   draft: boolean;
