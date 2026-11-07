@@ -85,10 +85,10 @@ describe('selected Workspace and Settings buttons', () => {
       document.head.innerHTML = `<style>${style}${theme === 'dark' ? `:root{${darkTokens}}` : ''}</style>`;
       document.body.innerHTML = `<explorer-app><aside class="sidebar">
         <div class="workspaces"><button class="workspace selected" aria-pressed="true">alpha</button></div>
+        <div class="investigation"><button class="new-conversation">New conversation</button></div>
         <form class="composer"><button type="submit">Ask</button></form></aside>
         <div class="main"><header class="canvas-head"><div class="head-actions">
-        <button class="settings-toggle selected" aria-pressed="true">Settings</button>
-        <button class="new-conversation">New conversation</button></div></header></div></explorer-app>`;
+        <button class="settings-toggle selected" aria-pressed="true">Settings</button></div></header></div></explorer-app>`;
       for (const button of document.querySelectorAll('button')) {
         const s = getComputedStyle(button);
         expect(s.color, button.textContent!).toMatch(/^#[0-9a-f]{6}$/i);
@@ -360,7 +360,7 @@ describe('the §24 redesign', () => {
     const redesign = blocks.find(b => b.includes('explorer-app .tab-view'));
     expect(redesign, 'a reduced-motion block for §24').toBeDefined();
     for (const s of ['explorer-app .tab-view', 'explorer-app .tab', 'explorer-app .log-entry', 'explorer-app .examples button',
-      'explorer-app .saved-toggle::after', 'details.sql-details summary']) {
+      'explorer-app .saved-toggle .icon', 'details.sql-details summary']) {
       expect(redesign, s).toContain(s);
     }
     expect(redesign).toMatch(/animation:\s*none;\s*transition:\s*none/);

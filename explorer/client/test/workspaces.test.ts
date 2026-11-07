@@ -158,8 +158,27 @@ describe('the picker in the Sidebar (SPEC §24)', () => {
     expect(aus.getAttribute('data-initials')).toBe('AU');
     expect(text(aus)).toBe('aus'); // the badge is CSS, not text
     expect(q(app, '.main .canvas-head .settings-toggle')).not.toBeNull();
-    expect(q(app, '.main .canvas-head .new-conversation')).not.toBeNull();
+    expect(q(app, '.main .canvas-head .new-conversation')).toBeNull();
+    // New conversation sits in the Sidebar between Saved conversations and the Investigation log.
+    const order = [...app.querySelectorAll('.sidebar .investigation > button')].map(b => b.className);
+    expect(order).toEqual(['saved-toggle', 'new-conversation', 'log-head']);
+    expect(q(app, '.canvas-head .trace-toggle')).toBeNull(); // Trace moved to Settings, Preferences
     expect(q(app, 'aside.sidebar')!.getAttribute('aria-label')).toBe('Workspaces and investigation');
+  });
+
+  it('gives the mock-up\'s buttons decorative icons that leave their names alone', async () => {
+    const {app} = await mount(new FakeApi());
+    for (const sel of ['.settings-toggle', '.sidebar .new-conversation', '.saved-toggle', '.composer button[type=submit]',
+                       '.tab.fixed .tab-select']) {
+      const button = q(app, sel);
+      expect(button, sel).not.toBeNull();
+      const icons = button!.querySelectorAll('svg.icon');
+      expect(icons.length, sel).toBeGreaterThan(0);
+      for (const icon of icons) expect(icon.getAttribute('aria-hidden'), sel).toBe('true');
+    }
+    expect(text(q(app, '.settings-toggle'))).toBe('Settings');
+    expect(text(q(app, '.sidebar .new-conversation'))).toBe('New conversation');
+    expect(text(q(app, '.saved-toggle'))).toBe('Saved conversations');
   });
 
   it('keeps only the brand and picker in the Sidebar, and no tabs, while Settings is open', async () => {
