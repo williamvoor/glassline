@@ -1,7 +1,19 @@
 #!/bin/sh
-# The agent container's command: seed the Workspace list on the first start, then run the agent.
+# The agent container's command: seed the Workspace and Connection lists on the first start, then
+# run the agent.
 set -eu
 : "${EXPLORER_DATA_DIR:?EXPLORER_DATA_DIR must be set}"
+CONNS="$EXPLORER_DATA_DIR/connections.toml"
+if [ ! -e "$CONNS" ]; then
+  cp /app/deploy/connections.toml "$CONNS"
+  echo "explorer: seeded $CONNS"
+elif ! grep -q '^name = "austender"' "$CONNS"; then
+  # The austender Workspace names this Connection, so it comes back with it (see below). If its
+  # variable is already listed under another name, the duplicate makes this entry invalid, and the
+  # Workspace says so (fix it in Settings by deleting the other Connection).
+  grep -v '^#' /app/deploy/connections.toml >> "$CONNS"
+  echo "explorer: re-added the austender Connection to $CONNS"
+fi
 LIST="$EXPLORER_DATA_DIR/workspaces.toml"
 if [ ! -e "$LIST" ]; then
   cp /app/deploy/workspaces.toml "$LIST"

@@ -137,14 +137,24 @@ Commands below start from the repository root unless a working directory is stat
 Open **http://127.0.0.1:5173**. With no Workspaces yet, the app offers New Workspace: pick the
 `*_DATABASE_URL` login, let the model draft the Dataset and Boards, review, and export. To serve
 a committed Dataset such as `../datasets/vicprop` instead, list it in
-`$EXPLORER_DATA_DIR/workspaces.toml`:
+`$EXPLORER_DATA_DIR/workspaces.toml`, naming a Connection from `$EXPLORER_DATA_DIR/connections.toml`:
 
 ```toml
+# workspaces.toml
 [[workspace]]
 name = "vicprop"
 dataset_dir = "datasets/vicprop"   # relative to the repo root, or absolute
-dsn_env = "VICPROP_DATABASE_URL"
+connection = "vicprop"
+
+# connections.toml (the login stays in .env)
+[[connection]]
+name = "vicprop"
+label = "Victorian house prices"
+url_env = "VICPROP_DATABASE_URL"
 ```
+
+To add a database of your own, see
+[Add an existing Postgres database](bootstrap/README.md#add-an-existing-postgres-database).
 
 `run.sh` starts the agent, the bootstrap server (Settings) and the client, and stops all three on
 Ctrl-C. A Workspace whose login can write, or whose Dataset or Boards are invalid, is listed as
@@ -168,7 +178,7 @@ Workspace reload; Settings export reloads the agent automatically.
 | `BOARD_*`, `MAX_BOARD_CACHE`, `MAX_BOARD_INSTANCES`, `MAX_CONTROL_OPTIONS` | Board concurrency, rows, caching, instances, and Control limits |
 | `AGENT_HOST`, `AGENT_PORT`, `CLIENT_ORIGIN`, `LOG_LEVEL` | Server binding, CORS, and logging |
 | `EXPLORER_DATA_DIR` | Required. The Workspaces and saved Conversations; must be outside the repo |
-| `<NAME>_DATABASE_URL` | A read-only login a Workspace names as its `dsn_env`; Settings offers each one |
+| `<NAME>_DATABASE_URL` | A read-only login; a Connection names it as its `url_env`, and Settings offers each one |
 | `VITE_AGENT_URL`, `VITE_BOOTSTRAP_URL` | Browser agent URL and Settings API URL; set together by `run.sh` |
 
 See [.env.example](.env.example) and [`config.py`](agent/src/explorer_agent/config.py) for

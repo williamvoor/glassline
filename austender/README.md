@@ -126,8 +126,10 @@ postgresql://explorer_ro:<password>@localhost:5434/austender
 ```
 
 Put that value in `AUSTENDER_DATABASE_URL` in the repository root `.env` and list a Workspace
-with `dataset_dir = "datasets/austender"` and `dsn_env = "AUSTENDER_DATABASE_URL"` in
-`$EXPLORER_DATA_DIR/workspaces.toml`. URL-encode special characters in the password. Then follow
+with `dataset_dir = "datasets/austender"` and `connection = "austender"` in
+`$EXPLORER_DATA_DIR/workspaces.toml`, and a Connection `austender` with
+`url_env = "AUSTENDER_DATABASE_URL"` in `$EXPLORER_DATA_DIR/connections.toml` (or pick the
+variable in Settings, which writes the Connection). URL-encode special characters in the password. Then follow
 [Explorer's setup](../explorer/README.md#run).
 
 The Data dictionary comes from `mart` table/column comments, with any Dataset Comment overlay

@@ -18,6 +18,7 @@
 !deploy/Caddyfile
 !deploy/ensure_roles.py
 !deploy/workspaces.toml
+!deploy/connections.toml
 !deploy/start-agent.sh
 **/__pycache__
 **/.venv

@@ -37,7 +37,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY explorer/agent/src src
 COPY explorer/catalog /app/explorer/catalog
 COPY datasets/austender /app/datasets/austender
-COPY deploy/ensure_roles.py deploy/workspaces.toml deploy/start-agent.sh /app/deploy/
+COPY deploy/ensure_roles.py deploy/workspaces.toml deploy/connections.toml deploy/start-agent.sh /app/deploy/
 RUN uv sync --frozen --no-dev
 WORKDIR /app/explorer/bootstrap/server
 COPY explorer/bootstrap/server/src src

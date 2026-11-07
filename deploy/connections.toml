@@ -1,0 +1,9 @@
+# The first Connection list (deploy/README.md), copied into the data volume on the agent's first
+# start (start-agent.sh), which also re-adds this Connection whenever the list lacks it.
+# url_env names the read-only login in deploy/.env (compose passes it to the agent and the
+# bootstrap server). The file never holds the login itself.
+
+[[connection]]
+name = "austender"
+label = "AusTender"
+url_env = "AUSTENDER_DATABASE_URL"

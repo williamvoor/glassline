@@ -35,7 +35,8 @@ people you trust with that. Never publish Postgres's port.
 | `Caddyfile` | Site, TLS, auth, proxy |
 | `ensure_roles.py` | Runs austender's own `ensure_roles` against the VM's database |
 | `workspaces.toml` | The first Workspace list (AusTender), copied into `/data` on the agent's first start |
-| `start-agent.sh` | The agent's command: seed the list if missing, then start |
+| `connections.toml` | The first Connection list (AusTender's read-only login, by variable name), seeded the same way |
+| `start-agent.sh` | The agent's command: seed the lists if missing, then start |
 | `connections.env` | Optional: more read-only logins Settings can offer (git-ignored, made on the VM) |
 | `.env.example` | Settings to copy to `deploy/.env` on the VM |
 | `basic_auth.caddy` | The login, made on the VM (git-ignored) |
@@ -94,7 +95,7 @@ rsync -az --delete -e "ssh -i $KEY" --relative \
   ./explorer/bootstrap/server/README.md ./explorer/bootstrap/server/src ./explorer/bootstrap/templates \
   ./explorer/catalog ./explorer/client ./datasets/austender \
   ./deploy/Dockerfile ./deploy/Dockerfile.dockerignore ./deploy/compose.yaml ./deploy/Caddyfile \
-  ./deploy/ensure_roles.py ./deploy/workspaces.toml ./deploy/start-agent.sh \
+  ./deploy/ensure_roles.py ./deploy/workspaces.toml ./deploy/connections.toml ./deploy/start-agent.sh \
   ./deploy/.env.example ./deploy/README.md \
   "$HOST:genUI/"
 ssh -i $KEY $HOST mkdir -p genUI/deploy/dumps
@@ -208,14 +209,18 @@ Then open `https://<elastic-ip>.sslip.io/`, log in, pick the AusTender Workspace
 
 The Workspace list and every Workspace's files and saved Conversations live in the `explorer_data`
 volume (`/data` in `agent` and `bootstrap`). The first start seeds the list from
-`deploy/workspaces.toml` (AusTender, login `AUSTENDER_DATABASE_URL`); after that the volume's copy
-is the one in use and Settings edits it. AusTender is repo kind, so Settings can delete it but
+`deploy/workspaces.toml` (AusTender, Connection `austender`) and the Connection list from
+`deploy/connections.toml` (login variable `AUSTENDER_DATABASE_URL`); after that the volume's copies
+are the ones in use and Settings edits them. A Workspace list from before Connections (entries
+with `dsn_env`) is rewritten by Settings when it starts; until then those Workspaces show as
+unavailable ("needs migration"), so check the picker after the first deploy with this change. AusTender is repo kind, so Settings can delete it but
 can't recreate it: the agent re-adds it on its next start (`docker compose restart agent`) whenever
 no Workspace is named `austender`. Back it up with
 `docker run --rm -v glassline_explorer_data:/data -v "$PWD":/out alpine tar czf /out/explorer-data.tgz -C /data .`
 
-**Add a database for New Workspace.** Settings offers only `*_DATABASE_URL` logins that are
-declared and not yet used by a Workspace; users never type a connection string. Each must be a
+**Add a database for New Workspace.** Settings offers the Connections and any declared
+`*_DATABASE_URL` login no Connection names yet (choosing one makes it a Connection); several
+Workspaces can share one. Users never type a connection string. Each must be a
 read-only role (Settings refuses one that can write). Declare them in `deploy/connections.env`:
 
 ```bash
@@ -276,6 +281,7 @@ Elastic IP the hostname and certificate stay valid.
 | Page loads, then "Cannot reach the agent" | `docker compose logs agent`; `/agent/workspaces` must list `https://<PUBLIC_HOST>/agent/w/<name>` URLs |
 | A Workspace shows as unavailable | its reason in the picker; `login can write`: rerun `roles`; `… not set`: the variable is missing |
 | Settings: no database to choose | declare a `*_DATABASE_URL` in `connections.env` (see "Workspaces and Settings") |
+| A Workspace says "needs migration" | Settings rewrites old `dsn_env` entries when it starts: `docker compose restart bootstrap` |
 | 403 "forbidden" from `/agent` or `/bootstrap` | the Host guard: check the Caddyfile's `header_up Host localhost:<port>` |
 | `explorer: cannot connect to the database` | `db` healthy? `EXPLORER_RO_PASSWORD` matches what `roles` set (rerun it after changing it) |
 | New IP or hostname | Update `PUBLIC_HOST`, then `docker compose up -d --build` (rebuilds the client's URL) |
