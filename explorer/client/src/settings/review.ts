@@ -85,7 +85,8 @@ export class BsReview extends LitElement {
     do {
       files = this.files;
       comments = this.comments;
-      if (!(await this.validate())) return false;
+      const saved = await this.validate();
+      if (!saved && files === this.files && comments === this.comments) return false;
     } while (files !== this.files || comments !== this.comments);
     return true;
   }
