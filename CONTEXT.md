@@ -6,13 +6,17 @@ A data explorer that answers plain-English questions about a Postgres database w
 
 ### Data
 
+**Connection**:
+One named, read-only login to a Postgres database. Each distinct login is one Connection; several Datasets may share it.
+_Avoid_: Database (for the login), DSN, data source
+
 **Dataset**:
-One database plus the configuration and hand-written notes that describe it to the agent (allowed schemas, notes, glossary). Each Workspace has exactly one Dataset. Datasets are deployment data, not part of the explorer (ADR 0045).
+The configuration and hand-written notes that describe part of a Connection's database to the agent (allowed schemas, notes, glossary). Each Workspace has exactly one Dataset. Datasets are deployment data, not part of the explorer (ADR 0045).
 _Avoid_: Database (for the whole bundle), source, domain
 
 **Workspace**:
 One Dataset together with its saved Conversations: what the user switches between. A Workspace can be unavailable (its database can't be reached, or its login can write); its Conversations are kept but can't be opened until it is available again.
-_Avoid_: Project, database, connection, Dataset (for the pair)
+_Avoid_: Project, database, Connection, Dataset (for the pair)
 
 **Draft**:
 A proposed Dataset (and optionally its Boards) written by a model from a database's report, which the user reviews and edits before it becomes a Workspace. Nothing in a Draft is used to answer questions until it is exported.

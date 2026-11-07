@@ -6,6 +6,11 @@ user on 2026-11-04. Where this file is silent, `explorer/SPEC.md` and `bootstrap
 Decisions: ADR 0039 (Workspaces are sub-apps of one agent process), ADR 0040 (saved
 Conversations keep SQL, not rows), ADR 0041 (the bootstrap UI becomes Settings). All accepted (2026-11-04).
 
+
+> **Superseded in part (2026-11-07):** a Workspace now names a **Connection** (`connection =`)
+> instead of a variable (`dsn_env`), and Settings offers Connections instead of unused variables.
+> Every mention of `dsn_env` below, including the `/api/connect` and `/api/session` fields, is
+> history. See `specs/connections/SPEC.md` (ADR 0051).
 ## Why
 
 Today one running agent serves one Dataset, and a Conversation lives only as long as the agent

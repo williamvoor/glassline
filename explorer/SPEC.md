@@ -248,7 +248,7 @@ committed `explorer/.env.example` with placeholders.
 | `FORMAT` | `express` | `express` or `direct_json` |
 | `REASONING_EFFORT` | `minimal` | Passed as `reasoning_effort` only when set; empty = not sent (other providers may reject it) |
 | `META_API_KEY` | (none) | Read by LiteLLM; other providers use their own variables |
-| `EXPLORER_DATA_DIR` | (required) | The Workspaces directory, outside the repo. Each Workspace's Dataset directory and login (`dsn_env`) come from `workspaces.toml` there. `DATABASE_URL` and `DATASET_DIR` were removed with single-Dataset mode (ADR 0048, 2026-11-06) |
+| `EXPLORER_DATA_DIR` | (required) | The Workspaces directory, outside the repo. Each Workspace's Dataset directory and Connection come from `workspaces.toml` there, and each Connection's login variable from `connections.toml` (specs/connections/SPEC.md, 2026-11-07). `DATABASE_URL` and `DATASET_DIR` were removed with single-Dataset mode (ADR 0048, 2026-11-06) |
 | `PROMPT_CACHE_KEY` | `explorer-<dataset>` | Fixed per dataset |
 | `SQL_TIMEOUT_MS` | `15000` | `statement_timeout` per query |
 | `SQL_ROW_CAP` | `5000` | Rows fetched and stored per query |
