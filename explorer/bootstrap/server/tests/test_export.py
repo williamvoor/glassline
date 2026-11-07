@@ -125,7 +125,8 @@ def test_explorer_starts_with_overlay_export(bs_report_sync, pg, tmp_path):
     data = tmp_path / "data"  # one mode (ADR 0048): the export is served as a Workspace
     data.mkdir()
     (data / "workspaces.toml").write_text(
-        f'[[workspace]]\nname = "bs"\ndataset_dir = "{out}"\ndsn_env = "BS_DATABASE_URL"\n', encoding="utf-8")
+        f'[[workspace]]\nname = "bs"\ndataset_dir = "{out}"\nconnection = "bs"\n', encoding="utf-8")
+    (data / "connections.toml").write_text('[[connection]]\nname = "bs"\nurl_env = "BS_DATABASE_URL"\n', encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "MODEL", "META_API_KEY")}
     env.update({"EXPLORER_ENV_FILE": "/nonexistent/.env", "EXPLORER_DATA_DIR": str(data),
                 "BS_DATABASE_URL": pg.ro_dsn, "AGENT_PORT": str(port)})

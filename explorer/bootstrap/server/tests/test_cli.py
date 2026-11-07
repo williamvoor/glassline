@@ -335,3 +335,47 @@ def test_export_default_root_is_outside_the_repo_and_created(capsys, tmp_path, m
     code, out, _ = _run(capsys, "export", "--draft", str(draft), "--name", "x", "--target", "toml")
     assert default.is_dir()
     assert "is not a directory" not in out
+
+
+# --- C7: --connection (explorer/specs/connections/SPEC.md A7) ------------------------------------
+
+
+def _connections(tmp_path, monkeypatch, text):
+    data = tmp_path / "data"
+    data.mkdir(exist_ok=True)
+    (data / "connections.toml").write_text(text, encoding="utf-8")
+    monkeypatch.setenv("EXPLORER_DATA_DIR", str(data))
+
+
+@pytest.mark.db
+def test_a7_connection_uses_that_connections_variable_over_bootstrap_url(pg, monkeypatch, capsys, tmp_path):
+    _connections(tmp_path, monkeypatch, '[[connection]]\nname = "bs"\nurl_env = "BS_DATABASE_URL"\n')
+    monkeypatch.setenv("BS_DATABASE_URL", pg.ro_dsn)
+    monkeypatch.setenv("BOOTSTRAP_DATABASE_URL", "postgresql://u:p@127.0.0.1:1/unreachable")
+    code, out, err = _run(capsys, "report", "--connection", "bs", "--schemas", "bs", "--no-minmax")
+    assert code == 0, err
+
+
+def test_a7_an_unknown_or_unset_connection_fails_naming_the_known_ones(monkeypatch, capsys, tmp_path):
+    _connections(tmp_path, monkeypatch, '[[connection]]\nname = "bs"\nurl_env = "BS_DATABASE_URL"\n'
+                                        '[[connection]]\nname = "aus"\nurl_env = "AUS_DATABASE_URL"\n')
+    code, _, err = _run(capsys, "report", "--connection", "nope", "--schemas", "bs")
+    assert code == 2 and "no Connection named 'nope' (known: aus, bs)" in err
+    code, _, err = _run(capsys, "report", "--connection", "bs", "--schemas", "bs")
+    assert code == 2 and "BS_DATABASE_URL is not set" in err
+
+
+def test_a7_connection_needs_the_data_directory(monkeypatch, capsys):
+    monkeypatch.delenv("EXPLORER_DATA_DIR", raising=False)
+    code, _, err = _run(capsys, "report", "--connection", "bs", "--schemas", "bs")
+    assert code == 2 and "--connection needs EXPLORER_DATA_DIR" in err
+
+
+@pytest.mark.parametrize("command", [
+    ["draft", "--schemas", "bs", "--out", "x.json"], ["verify", "--draft", "x.json"],
+    ["boards", "--draft", "x.json", "--out", "y.json"],
+    ["export", "--draft", "x.json", "--name", "n", "--target", "toml"],
+])
+def test_a7_every_database_command_takes_connection(command):
+    args = cli._parser().parse_args([*command, "--connection", "bs"])
+    assert args.connection == "bs"

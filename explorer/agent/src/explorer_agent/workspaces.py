@@ -22,11 +22,15 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from explorer_agent.config import (
+    CONNECTIONS_FILE,
     WORKSPACES_FILE,
     ConfigError,
+    ConnectionList,
     WorkspaceEntry,
     WorkspaceListing,
     WorkspaceUnavailable,
+    connection_url_env,
+    load_connections,
     load_workspace_list,
     workspace_settings,
 )
@@ -77,9 +81,20 @@ class Workspace:
         return self.built is not None and self.built.running()
 
 
-def dataset_fingerprint(entry: WorkspaceEntry) -> str:
-    """The entry as written plus every Dataset file's path and bytes (B5)."""
+def login_key(entry: WorkspaceEntry, connections: ConnectionList) -> str:
+    """What the entry's Connection resolves to (a variable name or the reason it can't), so a
+    Connection change rebuilds the Workspaces that use it. Never a URL."""
+    try:
+        return connection_url_env(entry, connections)
+    except WorkspaceUnavailable as e:
+        return f"unavailable: {e}"
+
+
+def dataset_fingerprint(entry: WorkspaceEntry, login: str = "") -> str:
+    """The entry as written, its resolved login variable, and every Dataset file's path and
+    bytes (B5)."""
     h = hashlib.sha256(json.dumps(entry.raw, sort_keys=True, default=str).encode())
+    h.update(b"\0login\0" + login.encode())
     root = entry.dataset_dir
     if root.is_dir():
         for p in sorted(root.rglob("*")):
@@ -101,6 +116,7 @@ class Registry:
         self.builder = builder
         self.base_url = base_url
         self.workspaces: dict[str, Workspace] = {}  # list order
+        self.connections = ConnectionList()  # read with the list, on start and each reload
         self._lock = asyncio.Lock()
 
     @property
@@ -117,9 +133,9 @@ class Registry:
         if item.entry is None:
             return Workspace(item.name, UNAVAILABLE, item.error)
         entry = item.entry
-        fingerprint = dataset_fingerprint(entry)
+        fingerprint = dataset_fingerprint(entry, login_key(entry, self.connections))
         try:
-            settings = workspace_settings(self.env, entry, self.explorer_root)
+            settings = workspace_settings(self.env, entry, self.explorer_root, self.connections)
             built = await self.builder(entry, settings, f"{self.base_url}{PREFIX}{entry.name}", self.saved_path(entry.name))
         except WorkspaceUnavailable as e:
             log.warning("workspace unavailable: %s: %s", entry.name, e)
@@ -131,6 +147,7 @@ class Registry:
         return Workspace(entry.name, AVAILABLE, None, entry, fingerprint, built, built.description)
 
     def _read(self) -> list[WorkspaceListing]:
+        self.connections = load_connections(self.data_dir / CONNECTIONS_FILE)
         return load_workspace_list(self.list_path, self.repo_root)
 
     async def start(self) -> None:
@@ -162,7 +179,7 @@ class Registry:
             for item in items:
                 current = old.get(item.name)
                 keep = (current is not None and current.status == AVAILABLE and item.entry is not None
-                        and current.entry is not None and current.fingerprint == dataset_fingerprint(item.entry)
+                        and current.entry is not None and current.fingerprint == dataset_fingerprint(item.entry, login_key(item.entry, self.connections))
                         and current.entry.raw == item.entry.raw)
                 plan.append((item, current if keep else None))
             kept = {id(ws) for _, ws in plan if ws is not None}

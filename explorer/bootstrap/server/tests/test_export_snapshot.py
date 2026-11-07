@@ -39,7 +39,7 @@ async def test_export_writes_the_snapshot_checked_before_a_concurrent_edit(tmp_p
              '[currency]\ncode = "USD"\nsymbol = "$"\n', "notes_md": "Reviewed notes", "glossary_md": "Terms"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         if settings_mode:
-            response = await client.post("/api/connect", json={"dsn_env": "TEST_DATABASE_URL"})
+            response = await client.post("/api/connect", json={"connection": "test"})
             assert response.status_code == 200
         state = app.app.state.bootstrap
         state.draft = new_draft({"schemas": ["fixture", "other"], "objects": []},

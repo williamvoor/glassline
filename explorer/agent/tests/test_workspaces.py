@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -16,6 +17,7 @@ import pytest
 from explorer_agent.__main__ import EXPLORER_ROOT, _workspace_builder
 from explorer_agent.config import (
     ConfigError,
+    parse_connections,
     WorkspaceUnavailable,
     data_dir,
     load_workspace_list,
@@ -27,16 +29,23 @@ from tests.test_server import CAPS, EXT_URI, final_parts
 
 REPO = EXPLORER_ROOT.parent
 DATASET = "explorer/agent/tests/fixtures/austender"
+CONNS = parse_connections('[[connection]]\nname = "a"\nurl_env = "A_DATABASE_URL"\n'
+                          '[[connection]]\nname = "b"\nurl_env = "B_DATABASE_URL"\n')
 BASE = "http://127.0.0.1:10002"
 ORIGIN = "http://127.0.0.1:5173"
 
 
 def write_list(data: Path, text_: str) -> None:
+    """The Workspace list, plus a Connection `x` -> `X_DATABASE_URL` for each Connection it names."""
     (data / "workspaces.toml").write_text(text_, encoding="utf-8")
+    names = sorted(set(re.findall(r'^connection = "([a-z0-9_-]+)"$', text_, re.M)))
+    (data / "connections.toml").write_text("".join(
+        f'[[connection]]\nname = "{n}"\nurl_env = "{n.upper()}_DATABASE_URL"\n' for n in names), encoding="utf-8")
 
 
-def entry(name: str, dsn_env: str = "A_DATABASE_URL", **extra) -> str:
-    lines = [f'name = "{name}"', f'dataset_dir = "{DATASET}"', f'dsn_env = "{dsn_env}"']
+def entry(name: str, url_env: str = "A_DATABASE_URL", **extra) -> str:
+    connection = url_env.removesuffix("_DATABASE_URL").lower()
+    lines = [f'name = "{name}"', f'dataset_dir = "{DATASET}"', f'connection = "{connection}"']
     lines += [f"{k} = {json.dumps(v)}" for k, v in extra.items()]
     return "[[workspace]]\n" + "\n".join(lines) + "\n"
 
@@ -80,19 +89,19 @@ def test_w2_overrides_and_the_prompt_cache_key_apply(data):
     write_list(data, entry("a", sql_row_cap=7, model="meta/muse-wonder-1.0") + entry("b"))
     a, b = (i.entry for i in load_workspace_list(data / "workspaces.toml", REPO))
     env = {"A_DATABASE_URL": "postgresql://u:p@127.0.0.1:1/x", "SQL_ROW_CAP": "99"}
-    sa, sb = workspace_settings(env, a, EXPLORER_ROOT), workspace_settings(env, b, EXPLORER_ROOT)
+    sa, sb = workspace_settings(env, a, EXPLORER_ROOT, CONNS), workspace_settings(env, b, EXPLORER_ROOT, CONNS)
     assert (sa.sql_row_cap, sa.model, sa.prompt_cache_key) == (7, "meta/muse-wonder-1.0", "explorer-a")
     assert (sb.sql_row_cap, sb.prompt_cache_key) == (99, "explorer-b")
-    assert workspace_settings({**env, "PROMPT_CACHE_KEY": "k"}, b, EXPLORER_ROOT).prompt_cache_key == "k-b"
+    assert workspace_settings({**env, "PROMPT_CACHE_KEY": "k"}, b, EXPLORER_ROOT, CONNS).prompt_cache_key == "k-b"
 
 
 def test_w5_reasons_never_hold_the_dsn(data):
     write_list(data, entry("a"))
     a = load_workspace_list(data / "workspaces.toml", REPO)[0].entry
     with pytest.raises(WorkspaceUnavailable, match=r"^`A_DATABASE_URL` not set$"):
-        workspace_settings({}, a, EXPLORER_ROOT)
+        workspace_settings({}, a, EXPLORER_ROOT, CONNS)
     with pytest.raises(WorkspaceUnavailable) as e:
-        workspace_settings({"A_DATABASE_URL": "not a dsn secret=hunter2"}, a, EXPLORER_ROOT)
+        workspace_settings({"A_DATABASE_URL": "not a dsn secret=hunter2"}, a, EXPLORER_ROOT, CONNS)
     assert str(e.value) == "`A_DATABASE_URL` is malformed" and "hunter2" not in str(e.value)
 
 
@@ -193,7 +202,7 @@ async def test_w6_a_changed_dataset_file_rebuilds_on_reload(data, tmp_path):
     copy = tmp_path / "ds"
     shutil.copytree(REPO / DATASET, copy, ignore=shutil.ignore_patterns(".*"))
     fake = Fake()
-    write_list(data, f'[[workspace]]\nname = "c"\ndataset_dir = "{copy}"\ndsn_env = "A_DATABASE_URL"\n')
+    write_list(data, f'[[workspace]]\nname = "c"\ndataset_dir = "{copy}"\nconnection = "a"\n')
     registry = Registry(data, REPO, EXPLORER_ROOT, ENV, fake, BASE)
     await registry.start()
     await registry.reload()
@@ -368,7 +377,7 @@ async def test_w5_an_allowed_schema_with_no_visible_tables_is_not_called_a_writi
     text_ = (copy / "dataset.toml").read_text()
     (copy / "dataset.toml").write_text(text_.replace('allowed_schemas = ["mart"]', 'allowed_schemas = ["mart", "nothing_here"]'))
     assert "nothing_here" in (copy / "dataset.toml").read_text()
-    write_list(data, f'[[workspace]]\nname = "e"\ndataset_dir = "{copy}"\ndsn_env = "A_DATABASE_URL"\n')
+    write_list(data, f'[[workspace]]\nname = "e"\ndataset_dir = "{copy}"\nconnection = "a"\n')
     registry = Registry(data, REPO, EXPLORER_ROOT, {"A_DATABASE_URL": pg.ro_dsn}, stub_builder({}), BASE)
     await registry.start()
     try:
@@ -428,3 +437,24 @@ def test_w3_a_relative_data_directory_is_refused():
     """Refuter (phase 2) F9: the agent and the bootstrap server run from different directories."""
     with pytest.raises(ConfigError, match="absolute"):
         data_dir("data/explorer", REPO)
+
+
+async def test_a2_a_connection_whose_variable_changes_rebuilds_its_workspaces(data):
+    """Refuter: the Workspace entry is unchanged, but its Connection now names another login."""
+    fake = Fake()
+    env = {"A_DATABASE_URL": ENV["A_DATABASE_URL"], "NEW_DATABASE_URL": ENV["A_DATABASE_URL"]}
+    write_list(data, entry("one"))
+    registry = Registry(data, REPO, EXPLORER_ROOT, env, fake, BASE)
+    await registry.start()
+    async with client(registry) as c:
+        (data / "connections.toml").write_text('[[connection]]\nname = "a"\nurl_env = "NEW_DATABASE_URL"\n')
+        r = await c.post("/workspaces/reload", json={})
+        assert [(w["name"], w["status"]) for w in r.json()] == [("one", AVAILABLE)]
+        assert fake.built == ["one", "one"]  # rebuilt with the new login
+        (data / "connections.toml").write_text('[[connection]]\nname = "a"\nurl_env = "GONE_DATABASE_URL"\n')
+        r = await c.post("/workspaces/reload", json={})
+        assert [(w["name"], w["status"], w.get("reason")) for w in r.json()] == [
+            ("one", UNAVAILABLE, "`GONE_DATABASE_URL` not set")]
+        r = await c.post("/workspaces/reload", json={})  # nothing changed: not rebuilt again
+        assert fake.built == ["one", "one"]
+    await registry.close()

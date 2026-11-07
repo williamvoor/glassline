@@ -6,6 +6,7 @@ It wraps the phase 2b functions. Claim results only ever come from the server's 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import json
 import logging
@@ -55,8 +56,11 @@ from explorer_bootstrap.registry import (
     kind_of,
     read_entries,
     reload_agent,
-    declared_connections,
-    unused_connections,
+    claim_connection,
+    connection_choices,
+    delete_connection,
+    migrate,
+    set_label,
     workspace_dir,
     write_entries,
 )
@@ -214,8 +218,11 @@ class _Conn:
 
     pool: AsyncConnectionPool | None
     database: dict[str, str]
-    dsn_env: str | None = None
+    connection: str | None = None  # the chosen Connection's name; never its URL
 
+
+MIGRATION_RELOAD_TRIES = 60
+MIGRATION_RELOAD_DELAY_S = 2.0
 
 OpenPool = Callable[[str], Awaitable[tuple[AsyncConnectionPool, dict[str, str]]]]
 
@@ -516,7 +523,7 @@ def build_app(
         # Capture together before the first await: edits and checks must describe one export.
         draft = copy.deepcopy(state.draft)
         board_snapshot = copy.deepcopy(state.boards)
-        dsn_env, regenerating, export_pool = conn.dsn_env, regen["name"], conn.pool
+        connection, regenerating, export_pool = conn.connection, regen["name"], conn.pool
         boards, board_problems = None, []
         if board_snapshot is not None:
             async with boards_lock:
@@ -534,7 +541,7 @@ def build_app(
                 board_problems = [*board_snapshot["set_problems"],
                                   *(p for ps in board_snapshot["problems"].values() for p in ps)]
         if settings_mode:
-            return await settings_export(body, draft, boards, board_problems, dsn_env, regenerating)
+            return await settings_export(body, draft, boards, board_problems, connection, regenerating)
         try:
             result = export_dataset(draft, str(body.get("name") or ""), str(body.get("target") or ""),
                                     datasets_root, force=force, boards=boards, board_problems=board_problems)
@@ -650,7 +657,7 @@ def build_app(
         """E7: what the server holds, so a reloaded page can resume. Names only, never a DSN."""
         run = state.run
         return JSONResponse({
-            "dsn_env": conn.dsn_env, "report": state.report, "regenerating": regen["name"],
+            "connection": conn.connection, "report": state.report, "regenerating": regen["name"],
             "draft": state.draft is not None, "boards": state.boards is not None,
             "run": {"id": run.id, "kind": run.kind} if run is not None and not run.done else None,
         })
@@ -706,38 +713,42 @@ def build_app(
         return None
 
     async def connections(_request: Request) -> JSONResponse:
+        """C5: the Connections, then the bare variables. Names and labels only, never a URL."""
         assert data_dir is not None
         try:
-            names = unused_connections(env, data_dir)
+            choices = connection_choices(env, data_dir)
         except RegistryError as e:
             return _err(str(e), e.status)
-        return JSONResponse({"connections": names, "current": conn.dsn_env,
-                             "declared": bool(declared_connections(env))})
+        return JSONResponse({"connections": choices, "current": conn.connection})
 
     async def connect(request: Request) -> JSONResponse:
         assert data_dir is not None
         if state.running:
             return _err("a draft is running; wait for it to finish", 409)
-        name = ((await _body(request)) or {}).get("dsn_env")
-        try:
-            allowed = unused_connections(env, data_dir)
-        except RegistryError as e:
-            return _err(str(e), e.status)
-        if not isinstance(name, str) or name not in allowed:
-            return _err("choose one of the connections Settings lists")
+        name = ((await _body(request)) or {}).get("connection")
         regen["name"] = None
         return await use_connection(name)
 
-    async def use_connection(name: str) -> JSONResponse:
+    async def use_connection(name: object) -> JSONResponse:
+        """Checks and opens a Connection (or a bare variable, which is then written as one)."""
+        assert data_dir is not None
+        try:
+            choice = next((c for c in connection_choices(env, data_dir) if c["name"] == name), None)
+        except RegistryError as e:
+            return _err(str(e), e.status)
+        if choice is None:
+            return _err("choose one of the Connections Settings lists")
+        if not choice["ready"]:
+            return _err(f"{choice['url_env']} is not set", 400)
         opener = open_pool or default_open
         try:
-            new_pool, label = await opener(env.get(name, "").strip())
+            new_pool, label = await opener(env.get(choice["url_env"], "").strip())
         except (ValueError, PoolTimeout, psycopg.Error):
-            return _err(f"cannot connect with {name} (check it and that the database is running)", 502)
+            return _err(f"cannot connect with {choice['url_env']} (check it and that the database is running)", 502)
         regen["name"] = None  # a new login is never the regenerate target's until regenerate says so
         kept["boards"] = []
         old = conn.pool
-        conn.pool = conn.dsn_env = None
+        conn.pool = conn.connection = None
         state.report = state.draft = state.boards = None
         if old is not None and old is not pool:
             await old.close()
@@ -750,8 +761,15 @@ def build_app(
         if problem:
             await new_pool.close()
             return _err(problem, 403)
-        conn.pool, conn.database, conn.dsn_env = new_pool, label, name  # only a checked login (refuter F6)
-        return JSONResponse({**label, "dsn_env": name, "schemas": visible})
+        if not choice["listed"]:
+            try:
+                claim_connection(data_dir, choice)  # C5: choosing a bare variable writes its Connection
+            except RegistryError as e:
+                await new_pool.close()
+                return _err(str(e), e.status)
+        conn.pool, conn.database, conn.connection = new_pool, label, choice["name"]  # only a checked login (refuter F6)
+        return JSONResponse({**label, "connection": choice["name"], "connection_label": choice["label"],
+                             "schemas": visible})
 
     async def default_open(dsn: str) -> tuple[AsyncConnectionPool, dict[str, str]]:
         p = open_report_pool(dsn, timeout_ms)
@@ -765,8 +783,29 @@ def build_app(
 
     def listing() -> list[dict[str, Any]]:
         assert data_dir is not None
-        return [{"name": e.get("name"), "dsn_env": e.get("dsn_env"), "kind": kind_of(e, data_dir, repo_root)}
+        return [{"name": e.get("name"), "connection": e.get("connection"), "kind": kind_of(e, data_dir, repo_root)}
                 for e in read_entries(data_dir)]
+
+    async def relabel_connection(request: Request) -> JSONResponse:
+        assert data_dir is not None
+        label = ((await _body(request)) or {}).get("label")
+        if not isinstance(label, str):
+            return _err("label must be a string")
+        try:
+            set_label(data_dir, request.path_params["name"], label)
+            return JSONResponse({"connections": connection_choices(env, data_dir)})
+        except RegistryError as e:
+            return _err(str(e), e.status)
+
+    async def remove_connection(request: Request) -> JSONResponse:
+        assert data_dir is not None
+        if request.path_params["name"] == conn.connection:  # its export would name a missing Connection
+            return _err("New Workspace is connected with this Connection; choose another one there first", 409)
+        try:
+            delete_connection(data_dir, request.path_params["name"])
+            return JSONResponse({"connections": connection_choices(env, data_dir)})
+        except RegistryError as e:
+            return _err(str(e), e.status)
 
     async def workspaces(_request: Request) -> JSONResponse:
         try:
@@ -812,10 +851,7 @@ def build_app(
             return _err("no such Workspace", 404)
         if kind_of(entry, data_dir, repo_root) != "data":
             return _err("a repo Dataset is regenerated with regen_dataset.sh, not from Settings", 400)
-        dsn_env = str(entry.get("dsn_env") or "")
-        if not env.get(dsn_env, "").strip():
-            return _err(f"{dsn_env} is not set", 400)
-        connected = await use_connection(dsn_env)
+        connected = await use_connection(entry.get("connection"))
         if connected.status_code != 200:
             return connected
         try:
@@ -836,7 +872,7 @@ def build_app(
         return JSONResponse(state.report)
 
     async def settings_export(body: dict[str, Any], draft: dict[str, Any], boards: list[dict[str, Any]] | None,
-                              board_problems: list[str], dsn_env: str | None, regenerating: str | None) -> JSONResponse:
+                              board_problems: list[str], connection: str | None, regenerating: str | None) -> JSONResponse:
         """D3: the draft becomes a Workspace in the data directory, then the agent reloads."""
         assert data_dir is not None and state.draft is not None
         name = regenerating or str(body.get("name") or "")
@@ -860,7 +896,7 @@ def build_app(
             return JSONResponse({"reasons": e.reasons}, status_code=422)
         if regenerating is None:
             write_entries(data_dir, [*entries, {"name": name, "dataset_dir": str(result.dest.resolve()),
-                                                "dsn_env": dsn_env}])
+                                                "connection": connection}])
         status, _ = await reload_now()
         log.info("workspace exported: %s regenerate=%s reload=%s", name, regen["name"] is not None, status)
         regen["name"] = None
@@ -909,6 +945,8 @@ def build_app(
         routes += [
             Route("/api/connections", connections),
             Route("/api/connect", connect, methods=["POST"]),
+            Route("/api/connections/{name}/label", relabel_connection, methods=["POST"]),
+            Route("/api/connections/{name}/delete", remove_connection, methods=["POST"]),
             Route("/api/workspaces", workspaces),
             Route("/api/workspaces/{name}/delete", delete_workspace, methods=["POST"]),
             Route("/api/workspaces/{name}/regenerate", regenerate, methods=["POST"]),
@@ -920,7 +958,36 @@ def build_app(
         log.warning("request failed: %s", type(exc).__name__)  # the class only: messages may quote SQL
         return _err(f"unexpected {type(exc).__name__}", 500)
 
-    app = Starlette(routes=routes, exception_handlers={Exception: server_error})
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: Starlette):
+        """C6: migrate `dsn_env` Workspaces before serving, then reload the agent once it answers."""
+        task = None
+        if data_dir is not None:
+            try:
+                migrated = migrate(data_dir)
+            except (RegistryError, OSError) as e:
+                log.error("workspace migration failed: %s", e)
+                migrated = []
+            if migrated:
+                log.info("workspaces migrated to Connections: %s", ", ".join(migrated))
+                task = asyncio.create_task(reload_until_ok())
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+
+    async def reload_until_ok() -> None:
+        """The agent starts beside this server and may not answer yet; it may also have read
+        the old list. Retry its reload until it takes (or give up after MIGRATION_RELOAD_TRIES)."""
+        for _ in range(MIGRATION_RELOAD_TRIES):
+            status, _body_ = await reload_now()
+            if status == 200:
+                return
+            await asyncio.sleep(MIGRATION_RELOAD_DELAY_S)
+        log.warning("the agent did not reload after the migration; restart it to pick up the new list")
+
+    app = Starlette(routes=routes, exception_handlers={Exception: server_error}, lifespan=lifespan)
     app.state.bootstrap = state
     guarded: ASGIApp = _Guard(app, port)
     if client_origin:  # D7: the explorer client calls this server directly; outside the guard

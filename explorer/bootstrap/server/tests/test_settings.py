@@ -9,7 +9,14 @@ import pytest
 from explorer_agent.__main__ import EXPLORER_ROOT, _workspace_builder
 from explorer_agent.workspaces import AVAILABLE, Registry
 
-from explorer_bootstrap.registry import read_entries, render, unused_connections, write_entries
+from explorer_bootstrap.registry import (
+    connection_choices,
+    read_connections,
+    read_entries,
+    render,
+    write_connections,
+    write_entries,
+)
 from explorer_bootstrap.server import build_app
 from explorer_bootstrap.stats import open_report_pool
 
@@ -60,21 +67,36 @@ def _client(app):
 # --- S1 ------------------------------------------------------------------------------------------
 
 
-def test_s1_lists_only_declared_unused_names_never_a_value(tmp_path):
+def test_c5_lists_connections_by_label_then_bare_variables_never_a_value(tmp_path):
     data = tmp_path / "data"
     data.mkdir()
-    write_entries(data, [{"name": "aus", "dataset_dir": "/x", "dsn_env": "AUS_DATABASE_URL"}])
+    write_connections(data, [{"name": "zed", "label": "Alpha", "url_env": "AUS_DATABASE_URL"},
+                             {"name": "unset", "url_env": "GONE_DATABASE_URL"}])
     env = {"AUS_DATABASE_URL": "postgresql://a:secret@h/d", "VIC_DATABASE_URL": "postgresql://v:secret@h/d",
            "EMPTY_DATABASE_URL": " ", "DATABASE_URL": "postgresql://x", "OTHER": "postgresql://y",
            "lower_DATABASE_URL": "postgresql://z", "BOOTSTRAP_DATABASE_URL": "postgresql://cli"}
-    assert unused_connections(env, data) == ["VIC_DATABASE_URL"]  # BOOTSTRAP_ is the CLI's login (D2)
+    assert connection_choices(env, data) == [  # BOOTSTRAP_ is the CLI's login (D2)
+        {"name": "zed", "label": "Alpha", "url_env": "AUS_DATABASE_URL", "listed": True, "ready": True},
+        {"name": "unset", "label": "unset", "url_env": "GONE_DATABASE_URL", "listed": True, "ready": False},
+        {"name": "vic", "label": "vic", "url_env": "VIC_DATABASE_URL", "listed": False, "ready": True},
+    ]
+    assert "secret" not in repr(connection_choices(env, data))
 
 
-async def test_s1_the_connections_route_says_whether_any_login_is_declared(tmp_path):
-    """None declared and all in use are different fixes, so Settings must tell them apart."""
+def test_c5_a_bare_variable_gets_a_free_name(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    write_connections(data, [{"name": "vic", "url_env": "OTHER_DATABASE_URL"}])
+    env = {"OTHER_DATABASE_URL": "postgresql://h/d", "VIC_DATABASE_URL": "postgresql://h/d",
+           "MY_DATA_DATABASE_URL": "postgresql://h/d"}
+    assert [(c["name"], c["url_env"]) for c in connection_choices(env, data)] == [
+        ("vic", "OTHER_DATABASE_URL"), ("my_data", "MY_DATA_DATABASE_URL"), ("vic_2", "VIC_DATABASE_URL")]
+
+
+async def test_c5_the_connections_route_is_empty_without_logins(tmp_path):
     app, _ = _settings_app(tmp_path, {"BOOTSTRAP_DATABASE_URL": "postgresql://cli", "DATABASE_URL": "postgresql://x"}, None)
     async with _client(app) as c:
-        assert (await c.get("/api/connections")).json() == {"connections": [], "current": None, "declared": False}
+        assert (await c.get("/api/connections")).json() == {"connections": [], "current": None}
 
 
 async def test_s1_the_connections_route_names_variables_only(tmp_path):
@@ -82,10 +104,11 @@ async def test_s1_the_connections_route_names_variables_only(tmp_path):
     app, _ = _settings_app(tmp_path, env, None)
     async with _client(app) as c:
         r = await c.get("/api/connections")
-        assert r.json() == {"connections": ["VIC_DATABASE_URL"], "current": None, "declared": True}
+        assert r.json() == {"connections": [{"name": "vic", "label": "vic", "url_env": "VIC_DATABASE_URL",
+                                             "listed": False, "ready": True}], "current": None}
         assert "hunter2" not in r.text
         assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 409  # no login yet
-        assert (await c.post("/api/connect", json={"dsn_env": "NOT_DECLARED_DATABASE_URL"})).status_code == 400
+        assert (await c.post("/api/connect", json={"connection": "not_declared"})).status_code == 400
         r = await c.options("/api/connect", headers={"origin": "http://127.0.0.1:5173", "access-control-request-method": "POST"})
         assert r.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
 
@@ -93,7 +116,7 @@ async def test_s1_the_connections_route_names_variables_only(tmp_path):
 def test_the_list_is_written_atomically_and_reads_back(tmp_path):
     data = tmp_path / "data"
     data.mkdir()
-    entries = [{"name": "a", "dataset_dir": '/p/with "quotes"', "dsn_env": "A_DATABASE_URL", "sql_row_cap": 7}]
+    entries = [{"name": "a", "dataset_dir": '/p/with "quotes"', "connection": "a", "sql_row_cap": 7}]
     write_entries(data, entries)
     assert read_entries(data) == entries
     assert not [p for p in data.iterdir() if p.name.startswith(".workspaces-")]
@@ -110,8 +133,8 @@ async def test_s2_a_login_that_can_write_is_refused_before_drafting(pg, tmp_path
     model = _model()
     app, _ = _settings_app(tmp_path, env, None, model)
     async with _client(app) as c:
-        for name in ("W_DATABASE_URL", "SU_DATABASE_URL"):
-            r = await c.post("/api/connect", json={"dsn_env": name})
+        for name in ("w", "su"):
+            r = await c.post("/api/connect", json={"connection": name})
             assert r.status_code == 403 and "read-only" in r.json()["error"], r.text
         assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 409  # still no login
     assert model.calls == []
@@ -142,7 +165,7 @@ async def test_s3_export_goes_to_the_data_directory_and_the_agent_mounts_it(pg, 
     app, data = _settings_app(tmp_path, env, agent, model)
     try:
         async with _client(app) as c:
-            assert (await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})).status_code == 200
+            assert (await c.post("/api/connect", json={"connection": "bs"})).status_code == 200
             r = await _export(c)
             assert r.status_code == 200, r.text
             assert r.json() == {"path": "workspaces/bs_ws/dataset", "workspace": "bs_ws", "overwrote": [],
@@ -150,15 +173,16 @@ async def test_s3_export_goes_to_the_data_directory_and_the_agent_mounts_it(pg, 
             dataset = data / "workspaces" / "bs_ws" / "dataset"
             assert (dataset / "comments.toml").is_file() and not (dataset / "comments.sql").exists()  # target toml
             assert tomllib.loads((data / "workspaces.toml").read_text())["workspace"] == [
-                {"name": "bs_ws", "dataset_dir": str(dataset.resolve()), "dsn_env": "BS_DATABASE_URL"}]
+                {"name": "bs_ws", "dataset_dir": str(dataset.resolve()), "connection": "bs"}]
             assert [(w["name"], w["status"]) for w in agent.registry.listing()] == [("bs_ws", AVAILABLE)]
-            # The variable is used now, so it is no longer offered; a duplicate name is refused.
-            assert (await c.get("/api/connections")).json()["connections"] == []
+            # Choosing the bare variable wrote its Connection, which stays offered (Datasets share it).
+            assert read_connections(data) == [{"name": "bs", "url_env": "BS_DATABASE_URL"}]
+            assert [c["name"] for c in (await c.get("/api/connections")).json()["connections"]] == ["bs"]
             listed = (await c.get("/api/workspaces")).json()["workspaces"]
-            assert listed == [{"name": "bs_ws", "dsn_env": "BS_DATABASE_URL", "kind": "data"}]
+            assert listed == [{"name": "bs_ws", "connection": "bs", "kind": "data"}]
 
             env["BS2_DATABASE_URL"] = pg.ro_dsn
-            assert (await c.post("/api/connect", json={"dsn_env": "BS2_DATABASE_URL"})).status_code == 200
+            assert (await c.post("/api/connect", json={"connection": "bs2"})).status_code == 200
             dup = await _export(c)
             assert dup.status_code == 409 and agent.calls == 1
             bad = await _export(c, "Bad-Name")
@@ -177,7 +201,7 @@ async def test_s3_regenerate_exports_into_the_same_folder_with_a_backup(pg, tmp_
     app, data = _settings_app(tmp_path, env, agent, model)
     try:
         async with _client(app) as c:
-            await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+            await c.post("/api/connect", json={"connection": "bs"})
             assert (await _export(c)).status_code == 200
             model.steps.extend(_model().steps)
             report = await c.post("/api/workspaces/bs_ws/regenerate", json={})
@@ -218,8 +242,8 @@ async def test_s4_delete_removes_a_data_workspace_and_never_a_repo_datasets_file
     (data / "workspaces" / "aus").mkdir(parents=True)
     (data / "workspaces" / "aus" / "conversations.sqlite").write_text("x")
     write_entries(data, [
-        {"name": "mine", "dataset_dir": str(data / "workspaces" / "mine" / "dataset"), "dsn_env": "M_DATABASE_URL"},
-        {"name": "aus", "dataset_dir": "explorer/datasets/demo", "dsn_env": "AUS_DATABASE_URL"},
+        {"name": "mine", "dataset_dir": str(data / "workspaces" / "mine" / "dataset"), "connection": "m"},
+        {"name": "aus", "dataset_dir": "explorer/datasets/demo", "connection": "aus"},
     ])
     async with _client(app_with) as c:
         listed = (await c.get("/api/workspaces")).json()["workspaces"]
@@ -242,7 +266,7 @@ async def test_s4_delete_removes_a_data_workspace_and_never_a_repo_datasets_file
 
 async def test_s4_a_repo_workspace_cannot_be_regenerated(tmp_path):
     app, data = _settings_app(tmp_path, {"AUS_DATABASE_URL": "postgresql://u:p@127.0.0.1:1/x"}, None)
-    write_entries(data, [{"name": "aus", "dataset_dir": "explorer/agent/tests/fixtures/austender", "dsn_env": "AUS_DATABASE_URL"}])
+    write_entries(data, [{"name": "aus", "dataset_dir": "explorer/agent/tests/fixtures/austender", "connection": "aus"}])
     async with _client(app) as c:
         r = await c.post("/api/workspaces/aus/regenerate", json={})
         assert r.status_code == 400 and "regen_dataset.sh" in r.json()["error"]
@@ -266,7 +290,7 @@ async def test_s2_regenerate_with_a_writing_login_is_refused(pg, tmp_path):
     app, data = _settings_app(tmp_path, env, None, _model())
     ds = data / "workspaces" / "w" / "dataset"
     ds.mkdir(parents=True)
-    write_entries(data, [{"name": "w", "dataset_dir": str(ds), "dsn_env": "W_DATABASE_URL"}])
+    write_entries(data, [{"name": "w", "dataset_dir": str(ds), "connection": "w"}])
     async with _client(app) as c:
         r = await c.post("/api/workspaces/w/regenerate", json={})
         assert r.status_code == 403
@@ -283,7 +307,7 @@ async def test_s3_a_failed_reload_keeps_the_export_and_reports_it(pg, tmp_path):
     app, data = _settings_app(tmp_path, env, agent, _model())
     try:
         async with _client(app) as c:
-            await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+            await c.post("/api/connect", json={"connection": "bs"})
             r = await _export(c)
             assert r.status_code == 200 and r.json()["reloaded"] is False
             assert [e["name"] for e in read_entries(data)] == ["bs_ws"]
@@ -307,7 +331,7 @@ async def test_s4_delete_keeps_the_folder_unless_the_agent_reloaded_or_is_down(t
     app = build_app(None, database={}, env={}, port=PORT, timeout_ms=5000, datasets_root=tmp_path, repo_root=tmp_path / "repo",
                     data_dir=data, agent_url="x", reload=reload)
     (data / "workspaces" / "a").mkdir(parents=True)
-    write_entries(data, [{"name": "a", "dataset_dir": str(data / "workspaces" / "a"), "dsn_env": "A_DATABASE_URL"}])
+    write_entries(data, [{"name": "a", "dataset_dir": str(data / "workspaces" / "a"), "connection": "a"}])
     async with _client(app) as c:
         r = await c.post("/api/workspaces/a/delete", json={})
         assert r.status_code == 502 and (data / "workspaces" / "a").exists() and len(read_entries(data)) == 1
@@ -328,12 +352,12 @@ async def test_d5_a_failed_regenerate_clears_the_regenerate_target(pg, tmp_path)
     app, data = _settings_app(tmp_path, env, agent, model)
     try:
         async with _client(app) as c:
-            await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+            await c.post("/api/connect", json={"connection": "bs"})
             assert (await _export(c, "aaa")).status_code == 200
             broken = data / "workspaces" / "bbb" / "dataset"
             broken.mkdir(parents=True)
             entries = read_entries(data)
-            write_entries(data, [*entries, {"name": "bbb", "dataset_dir": str(broken), "dsn_env": "BS2_DATABASE_URL"}])
+            write_entries(data, [*entries, {"name": "bbb", "dataset_dir": str(broken), "connection": "bs2"}])
             assert (await c.post("/api/workspaces/aaa/regenerate", json={})).status_code == 200
             assert (await c.post("/api/workspaces/bbb/regenerate", json={})).status_code == 400  # no dataset.toml
             r = await _export(c, "ccc")
@@ -355,12 +379,12 @@ async def test_n10_session_and_discard(pg, tmp_path):
     app, _ = _settings_app(tmp_path, env, None, _model())
     async with _client(app) as c:
         empty = (await c.get("/api/session")).json()
-        assert empty == {"dsn_env": None, "report": None, "regenerating": None, "draft": False, "boards": False,
+        assert empty == {"connection": None, "report": None, "regenerating": None, "draft": False, "boards": False,
                          "run": None}
-        await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+        await c.post("/api/connect", json={"connection": "bs"})
         assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
         s = await c.get("/api/session")
-        assert s.json()["dsn_env"] == "BS_DATABASE_URL" and s.json()["report"]["schemas"] == ["bs"]
+        assert s.json()["connection"] == "bs" and s.json()["report"]["schemas"] == ["bs"]
         assert pg.ro_dsn not in s.text
         run_id = (await c.post("/api/draft", json={})).json()["run_id"]
         await _wait(c, run_id)
@@ -368,7 +392,7 @@ async def test_n10_session_and_discard(pg, tmp_path):
         r = await c.post("/api/discard", json={})
         assert r.status_code == 200
         after = (await c.get("/api/session")).json()
-        assert after == {"dsn_env": "BS_DATABASE_URL", "report": None, "regenerating": None, "draft": False,
+        assert after == {"connection": "bs", "report": None, "regenerating": None, "draft": False,
                          "boards": False, "run": None}  # the login stays
         assert (await c.get("/api/draft")).status_code == 404
 
@@ -384,7 +408,7 @@ async def test_n10_discard_is_refused_during_a_run_and_the_session_names_the_run
 
     app, _ = _settings_app(tmp_path, env, None, blocked)
     async with _client(app) as c:
-        await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+        await c.post("/api/connect", json={"connection": "bs"})
         await c.post("/api/report", json={"schemas": ["bs"]})
         run_id = (await c.post("/api/draft", json={})).json()["run_id"]
         assert (await c.get("/api/session")).json()["run"] == {"id": run_id, "kind": "draft"}
@@ -396,7 +420,7 @@ async def test_n10_discard_is_refused_during_a_run_and_the_session_names_the_run
 
 async def _regenerated_with_kept_boards(c, data, model):
     """A Workspace exported, regenerated and drafted again, with its current Boards kept."""
-    await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+    await c.post("/api/connect", json={"connection": "bs"})
     assert (await _export(c)).status_code == 200
     boards = data / "workspaces" / "bs_ws" / "dataset" / "boards"
     boards.mkdir()
@@ -442,7 +466,7 @@ async def test_n10_discard_clears_boards_the_regenerate_target_and_the_kept_boar
             await _regenerated_with_kept_boards(c, data, model)
             assert (await c.post("/api/discard", json={})).status_code == 200
             s = (await c.get("/api/session")).json()
-            assert s == {"dsn_env": "BS_DATABASE_URL", "report": None, "regenerating": None, "draft": False,
+            assert s == {"connection": "bs", "report": None, "regenerating": None, "draft": False,
                          "boards": False, "run": None}
             # A new Draft on the same login has nothing to keep: the kept Boards went too.
             assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
@@ -463,7 +487,7 @@ async def test_n6_regenerate_keeps_the_current_boards_checked_against_the_new_dr
     app, data = _settings_app(tmp_path, env, agent, model)
     try:
         async with _client(app) as c:
-            await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})
+            await c.post("/api/connect", json={"connection": "bs"})
             assert (await _export(c)).status_code == 200
             await c.post("/api/workspaces/bs_ws/regenerate", json={})  # no boards/ yet
             model.steps.extend(_model().steps)
