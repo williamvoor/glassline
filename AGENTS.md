@@ -14,7 +14,6 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding har
 | `dataload/` | Loads CSV, Excel and Parquet files into any Postgres as they are, runs SQL transforms, grants a read-only role. CLI only | All Python. Has its own `SPEC.md`. vicprop uses it; the explorer never imports it. |
 | `glimmer-tune/` | Eval harness (and later fine-tuning) for Muse Glimmer 30B generating A2UI Express | Muse Glimmer is used only to generate A2UI. |
 | `docs/adr/` | Architecture decisions | |
-| `docs/issues/` | Old local issue numbers mapped to GitHub | See "Issues" below. |
 
 Each top level directory has its own `AGENTS.md` file. Read them.
 
@@ -55,7 +54,9 @@ public, so an issue never holds secrets, row data or anything from `.env`.
 - **Naming code:** by symbol, not line number, because line numbers go stale.
 - **When it's fixed:** close it with the fix commit (`Fixes #N` in the commit or PR), and name the
   spec amendment or ADR if there is one.
-- Issues filed before 2026-11-07 had local numbers; `docs/issues/README.md` maps them.
+- Issues before 2026-11-07 had local numbers. Open ones moved to GitHub: 1–8 are #13–#20, 10 is
+  #21. The closed ones ("old issue 9", "old issue 11") are in git history:
+  `git show 321fda0:docs/issues/<N>.md`.
 
 ## Commands
 

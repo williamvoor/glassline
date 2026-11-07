@@ -183,7 +183,7 @@ spec amendment or sub-spec and an ADR where a decision is needed. Tests must not
 models or external data services. Keep the shared A2UI SDK pin aligned across Explorer and
 Glimmer, and preserve vendored Apache-2.0 notices.
 
-Issues are on [GitHub](https://github.com/williamvoor/glassline/issues); [`docs/issues/`](docs/issues/README.md) maps the old local numbers.
+Issues are on [GitHub](https://github.com/williamvoor/glassline/issues).
 Use Conventional Commits with the template in [`.gitmessage`](.gitmessage).
 
 ## License and attribution
