@@ -130,7 +130,7 @@ export class ExplorerSettings extends LitElement {
             <tbody>
               ${this.workspaces.map(ws => html`<tr>
                   <td>${ws.name}</td>
-                  <td><code>${ws.dsn_env}</code></td>
+                  <td>${ws.dsn_env ? html`<code>${ws.dsn_env}</code>` : html`<span class="error">missing</span>`}</td>
                   <td>${ws.kind === 'data' ? 'made in Settings' : html`in the repo <span class="muted">(regenerate it with
                     <code>regen_dataset.sh</code>)</span>`}</td>
                   <td class="actions">

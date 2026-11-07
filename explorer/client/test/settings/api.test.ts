@@ -26,7 +26,9 @@ it('validates the selected Settings responses at the API boundary', async () => 
   expect(await response({host: 'h', name: 'd', schemas: [{name: 's', objects: 1, extra: true}]}).connection()).toMatchObject({host: 'h'});
   expect(await response({errors: [], context_chars: null}).validate({dataset_toml: '', notes_md: '', glossary_md: ''}, [])).toEqual({errors: [], context_chars: null});
   expect(await response({workspaces: [{name: 'demo', dsn_env: 'DEMO_DATABASE_URL', kind: 'data', future: 1}]}).workspaces()).toMatchObject({workspaces: [{name: 'demo'}]});
-  await expect(response({workspaces: [{name: 'demo', dsn_env: null, kind: 'data'}]}).workspaces()).rejects.toBeInstanceOf(ApiError);
+  // A registry entry without a login is listed (so it can be deleted), not a broken response.
+  expect(await response({workspaces: [{name: 'demo', dsn_env: null, kind: 'data'}]}).workspaces()).toMatchObject({workspaces: [{name: 'demo', dsn_env: null}]});
+  await expect(response({workspaces: [{name: 'demo', dsn_env: 1, kind: 'data'}]}).workspaces()).rejects.toBeInstanceOf(ApiError);
   await expect(response({errors: 'bad', context_chars: 0}).validate({dataset_toml: '', notes_md: '', glossary_md: ''}, [])).rejects.toBeInstanceOf(ApiError);
   await expect(response({model: 'm', run_ceiling_usd: '0.5'}).estimate('m', 'low')).rejects.toBeInstanceOf(ApiError);
 });

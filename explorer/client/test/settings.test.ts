@@ -62,6 +62,15 @@ describe('N1: Settings is the Workspace list; New Workspace opens the wizard', (
     expect(el.querySelector('.settings-workspaces .connect-var')).toBeNull(); // logins are the wizard's now
     expect(f.calls[0]!.path).toBe('GET /api/workspaces');
     expect(BOOTSTRAP_URL).toBe('http://127.0.0.1:8765');
+  });
+
+  it('lists a Workspace with no login variable as missing, and still offers Delete', async () => {
+    const f = routes({'GET /api/workspaces': () => [200, {workspaces: [{name: 'broken', dsn_env: null, kind: 'data'}]}]});
+    const el = await mountSettings(f);
+    const row = el.querySelector('.settings-workspaces tbody tr')!;
+    expect(row.textContent).toContain('missing');
+    expect(row.textContent).not.toContain('null');
+    expect(row.querySelector('button.delete-workspace')).not.toBeNull();
 
     const views: string[] = [];
     el.addEventListener('settings-view', e => views.push((e as CustomEvent).detail));
