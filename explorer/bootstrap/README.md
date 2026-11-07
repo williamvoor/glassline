@@ -53,6 +53,32 @@ after export.
 The old standalone UI and standalone serving workflow are retired.
 Use `run.sh` for the browser, or the [CLI](server/README.md).
 
+## Add an existing Postgres database
+
+1. **(Optional) Load files.** To build a database from CSV, Excel or Parquet files, load them
+   with [dataload](../../dataload/README.md) first.
+2. **Create a read-only login.** Run `dataload grant` (see its README), or have the owner of the
+   schemas run:
+
+   ```sql
+   CREATE ROLE explorer_ro LOGIN PASSWORD '…';
+   GRANT CONNECT ON DATABASE <db> TO explorer_ro;
+   GRANT USAGE ON SCHEMA <schema> TO explorer_ro;
+   GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO explorer_ro;
+   ALTER DEFAULT PRIVILEGES FOR ROLE <owner> IN SCHEMA <schema> GRANT SELECT ON TABLES TO explorer_ro;
+   ```
+
+   The explorer refuses a login that can write.
+3. **Add the login to the root `.env`** as `<NAME>_DATABASE_URL=postgresql://explorer_ro:<password>@<host>:<port>/<db>`
+   (URL-encode special characters in the password).
+4. **Start the explorer** (`explorer/run.sh`) and open Settings → **New Workspace**. The new
+   variable is offered, marked *new*. Choosing it makes it a **Connection**, which several
+   Workspaces can share. Rename it in the Connections list. Then follow the steps above.
+
+Connections are listed in `EXPLORER_DATA_DIR/connections.toml` (`name`, optional `label`,
+`url_env`). The file names the variable and never holds the login. The CLI uses a Connection
+with `--connection <name>`.
+
 ## Review and export
 
 Review factual claims and proposed comment rewrites. Failed, errored or unchecked claims block

@@ -122,7 +122,8 @@ cp vicprop/.env.example vicprop/.env      # only if you run the VicProp database
 
 Fill in credentials and follow the [Explorer setup](explorer/README.md#run) or the
 [Workspace setup](explorer/bootstrap/README.md#setup-and-browser-workflow). The explorer needs
-`EXPLORER_DATA_DIR` and named database logins (`<NAME>_DATABASE_URL`).
+`EXPLORER_DATA_DIR` and named database logins (`<NAME>_DATABASE_URL`). To use your own database,
+see [Add an existing Postgres database](explorer/bootstrap/README.md#add-an-existing-postgres-database).
 
 ## Ports
 

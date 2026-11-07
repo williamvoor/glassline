@@ -1,10 +1,10 @@
 # The first Workspace list (deploy/README.md), copied into the data volume on the agent's first
 # start (start-agent.sh). After that the volume's copy is the one in use, and Settings edits it.
 # start-agent.sh re-adds this entry on any start where no Workspace is named austender.
-# dataset_dir is relative to the repo root (/app in the image); dsn_env names the read-only login
-# in deploy/.env (compose passes it to the agent and the bootstrap server).
+# dataset_dir is relative to the repo root (/app in the image); connection names a Connection in
+# connections.toml (seeded from deploy/connections.toml the same way).
 
 [[workspace]]
 name = "austender"
 dataset_dir = "datasets/austender"
-dsn_env = "AUSTENDER_DATABASE_URL"
+connection = "austender"
