@@ -24,6 +24,7 @@ from psycopg import sql as psql
 
 from explorer_agent.results import NUMERIC_TYPES, TEMPORAL_TYPES
 from explorer_agent.sql_text import COMMENT_TOKENS, normalise, wrap
+from explorer_agent import trace
 
 log = logging.getLogger(__name__)
 
@@ -211,7 +212,8 @@ async def check_drill(runner: Any, spec: DrillSpec, row: dict[str, Any], timeout
     from explorer_agent.sql import SqlFail
 
     values = spec.values(row)
-    outcome = await runner.run_bound(wrap(spec.sql, "_explorer_drill", " LIMIT 0"), values, timeout_ms=timeout_ms)
+    with trace.source("drill_check"):
+        outcome = await runner.run_bound(wrap(spec.sql, "_explorer_drill", " LIMIT 0"), values, timeout_ms=timeout_ms)
     if isinstance(outcome, SqlFail):
         code = f" ({outcome.sqlstate})" if outcome.sqlstate else ""
         if (outcome.sqlstate or "").startswith(DATA_EXCEPTION):

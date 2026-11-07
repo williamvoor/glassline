@@ -7,6 +7,7 @@ const ConnectionsSchema = z.object({connections: z.array(z.string()), current: z
 const WorkspaceSchema = z.object({name: z.string(), dsn_env: z.string().nullable(), kind: z.enum(['data', 'repo'])}).passthrough();
 const WorkspacesSchema = z.object({workspaces: z.array(WorkspaceSchema)}).passthrough();
 const ErrorSchema = z.object({error: z.string().optional(), reasons: z.array(z.string()).optional()}).passthrough();
+import {traceOn} from '../trace.js';
 
 /** An API error: `message` for one problem, `reasons` when the server lists several. */
 export class ApiError extends Error {
@@ -72,7 +73,7 @@ export class Api {
     return this.call('/api/estimate', { model, effort }, EstimateSchema);
   }
   startDraft(model: string, effort: string) {
-    return this.call<{ run_id: string }>('/api/draft', { model, effort });
+    return this.call<{ run_id: string }>('/api/draft', { model, effort, ...(traceOn() ? { trace: true } : {}) });
   }
   events(runId: string, after: number) {
     return this.call<EventsReply>(`/api/draft/${encodeURIComponent(runId)}/events?after=${after}`);
@@ -93,7 +94,7 @@ export class Api {
     return this.call('/api/boards/estimate', { model, effort }, EstimateSchema);
   }
   startBoards(model: string, effort: string) {
-    return this.call<{ run_id: string }>('/api/boards/draft', { model, effort });
+    return this.call<{ run_id: string }>('/api/boards/draft', { model, effort, ...(traceOn() ? { trace: true } : {}) });
   }
   /** null before any Boards. */
   currentBoards() {

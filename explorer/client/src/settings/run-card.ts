@@ -4,6 +4,7 @@
 import {html, nothing} from 'lit';
 
 import {modelChip, modelName} from '../model-chip.js';
+import {renderTrace, traceOn, type Prompts, type TraceEvent} from '../trace.js';
 import type {DraftEvent, Estimate} from './types.js';
 
 type Totals = {calls: number; prompt_tokens: number; cached_tokens: number; completion_tokens: number; cost_usd: number};
@@ -47,13 +48,28 @@ export interface RunCard {
   what: string; // "Drafting the Dataset"
 }
 
+/** The run's Trace (specs/trace), when the switch is on and the run was traced. */
+function runTrace(events: DraftEvent[]) {
+  if (!traceOn()) return nothing;
+  const prompts: Prompts = {};
+  const traced: TraceEvent[] = [];
+  for (const e of events) {
+    if (e.type !== 'trace') continue;
+    if (e.event.kind === 'prompt') prompts[String(e.event['hash'])] = String(e.event['text'] ?? '');
+    else traced.push(e.event);
+  }
+  return renderTrace(traced, prompts);
+}
+
 export function runCard(c: RunCard) {
   if (!c.running) {
     const t = c.done ?? (c.events.length ? totalsOf(c.events) : null);
     if (!t) return nothing;
     return html`<p class="run-summary" aria-label=${`${modelName(c.model)}: ${summaryLine(t)}`}>${modelChip(c.model)}
-      <span>${summaryLine(t)}</span></p>`;
+      <span>${summaryLine(t)}</span></p>${runTrace(c.events)}`;
   }
+  const trace = runTrace(c.events);
+  c = {...c, events: c.events.filter(e => e.type !== 'trace')};
   const t = totalsOf(c.events);
   const calls = c.events.filter(e => e.type === 'call');
   const widest = Math.max(1, ...calls.map(e => (e.type === 'call' ? e.usage.prompt_tokens + e.usage.completion_tokens : 0)));
@@ -79,12 +95,15 @@ export function runCard(c: RunCard) {
             </li>`
           : e.type === 'sql'
             ? html`<li class="sql">${modelChip(null)}<span>${e.purpose}</span></li>`
-            : html`<li class="rejected">Rejected (${e.problems.length} problems): the model is fixing it</li>`,
+            : e.type === 'trace'
+              ? nothing
+              : html`<li class="rejected">Rejected (${e.problems.length} problems): the model is fixing it</li>`,
       )}
     </ol>
     <div class="meter" role="img" aria-label=${`${usd(t.cost_usd)} spent of at most ${usd(ceiling)}`}>
       <span class="meter-fill" style="width:${fill}%"></span>
     </div>
     <p class="meter-text"><strong>${usd(t.cost_usd)}</strong> of at most ${usd(ceiling)}</p>
+    ${trace}
   </section>`;
 }

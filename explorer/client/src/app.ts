@@ -24,6 +24,7 @@ import type {SettingsView} from './settings/settings.js';
 import {BoardMetadataSchema, InPlaceSchema, LogSchema, ModelSchema, TabSchema} from './metadata.js';
 import {confirmCard} from './cards.js';
 import {modelChip} from './model-chip.js';
+import {renderTrace, setTraceOn, takePrompt, traceOn, type Prompts, type TraceEvent} from './trace.js';
 
 export const LEVEL_KEY = 'explorerLevel';
 export const ACTION_FAILED_KEY = 'explorerActionFailed';
@@ -50,6 +51,7 @@ interface Tab extends TabState {
   log: {tag?: string; text: string}; // the log entry: explorerLogEntry once the reply arrives
   startedAt: number;
   steps: string[]; // the agent's status updates, in order
+  trace?: TraceEvent[]; // its Trace events (specs/trace): live, appended per request, or as saved
   elapsedMs?: number; // set when the reply ends, answered or failed
   error?: string;
   surfaceId?: string;
@@ -154,6 +156,8 @@ export class ExplorerApp extends LitElement {
   @state() private listOpen = false;
   @state() private saved: SavedSummary[] = [];
   @state() private listError?: string;
+  @state() private traceOn = traceOn(); // the Trace switch (specs/trace), remembered per browser
+  private prompts: Prompts = {}; // Trace system prompts by hash
   @state() private settingsOpen = false; // #/settings (Workspaces SPEC phase 2)
   @state() private settingsMounted = false; // once opened, kept (hidden), so a draft survives closing it
   @state() private settingsView: SettingsView = 'list';
@@ -429,7 +433,9 @@ export class ExplorerApp extends LitElement {
       this.patch(key, {
         loading: false, surfaceId, proseHtml: await renderSafeMarkdown(level.prose), dataChanged: level.changed,
         boardChanged: level.board_changed, ...('model' in level ? {model: level.model ?? null} : {}),
+        ...(level.trace ? {trace: level.trace.events} : {}),
       });
+      if (level.trace) Object.assign(this.prompts, level.trace.prompts);
       if (surfaceId && level.board) {
         this.controls.get(key)?.dispose();
         this.attachControls(key, surfaceId, {[BOARD_KEY]: level.board}, processor);
@@ -524,8 +530,10 @@ export class ExplorerApp extends LitElement {
     this.boardOpening = (async () => {
       try {
         const agent = await this.connectionOnce();
+        const traced: TraceEvent[] = []; // the Explorer tab exists only once the reply is in
         for await (const event of agent.act(action, this.contextId)) {
           if (processor !== this.processor) return; // a new conversation replaced this one
+          if (event.kind === 'trace') traced.push(event.event);
           if (event.kind !== 'final') continue;
           const surfaceId = surfaceIdOf(event.a2ui);
           if (event.metadata?.[ACTION_FAILED_KEY] || !surfaceId) {
@@ -535,6 +543,7 @@ export class ExplorerApp extends LitElement {
           this.contextId = event.contextId;
           processor.processMessages(event.a2ui as unknown as A2uiMessage[]);
           this.addExplorer(event, surfaceId);
+          for (const e of traced) this.addTrace(EXPLORER_KEY, e);
           this.attachControls(EXPLORER_KEY, surfaceId, event.metadata, processor);
           this.board = 'shown';
         }
@@ -593,6 +602,7 @@ export class ExplorerApp extends LitElement {
       const agent = await this.connectionOnce();
       for await (const event of agent.act(action, contextId)) {
         if (processor !== this.processor) return;
+        if (event.kind === 'trace') this.addTrace(tabKey, event.event);
         if (event.kind !== 'final') continue;
         const metadata = event.metadata ?? {};
         if (metadata[SUPERSEDED_KEY]) {
@@ -639,7 +649,7 @@ export class ExplorerApp extends LitElement {
 
   private async retry(key: string) {
     if (this.busy) return;
-    this.patch(key, {running: true, steps: [], startedAt: Date.now(), elapsedMs: undefined, error: undefined});
+    this.patch(key, {running: true, steps: [], trace: [], startedAt: Date.now(), elapsedMs: undefined, error: undefined});
     await this.runQuestion(key);
   }
 
@@ -727,7 +737,7 @@ export class ExplorerApp extends LitElement {
   private retryAction(key: string) {
     const tab = this.tab(key);
     if (!tab?.action || this.busy) return;
-    this.patch(key, {action: {...tab.action, timestamp: new Date().toISOString()}, running: true, steps: [],
+    this.patch(key, {action: {...tab.action, timestamp: new Date().toISOString()}, running: true, steps: [], trace: [],
                      startedAt: Date.now(), elapsedMs: undefined, error: undefined});
     void this.sendAction(key);
   }
@@ -764,6 +774,10 @@ export class ExplorerApp extends LitElement {
         if (processor !== this.processor) return; // the user started a new conversation
         if (event.kind === 'status') {
           this.patch(key, {steps: [...(this.tab(key)?.steps ?? []), event.text]});
+          continue;
+        }
+        if (event.kind === 'trace') {
+          this.addTrace(key, event.event);
           continue;
         }
         this.contextId = event.contextId;
@@ -873,6 +887,9 @@ export class ExplorerApp extends LitElement {
     return html`<header class="canvas-head">
       ${this.settingsOpen ? html`<span class="tab-strip-spacer"></span>` : this.renderTabStrip()}
       <div class="head-actions">
+      <button type="button" class=${this.traceOn ? 'trace-toggle selected' : 'trace-toggle'}
+        aria-pressed=${this.traceOn ? 'true' : 'false'} title="Record model calls and SQL for debugging"
+        @click=${this.toggleTrace}>Trace</button>
       <button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
         aria-pressed=${this.settingsOpen ? 'true' : 'false'}
         @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>Settings</button>
@@ -881,6 +898,17 @@ export class ExplorerApp extends LitElement {
       </button>
       </div>
     </header>`;
+  }
+
+  /** One live Trace event for the tab `key`; a system prompt is kept once, by hash. */
+  private addTrace(key: string, event: TraceEvent) {
+    if (takePrompt(event, this.prompts)) return;
+    this.patch(key, {trace: [...(this.tab(key)?.trace ?? []), event]});
+  }
+
+  private toggleTrace() {
+    this.traceOn = !this.traceOn;
+    setTraceOn(this.traceOn);
   }
 
   private renderBanner() {
@@ -1093,6 +1121,7 @@ export class ExplorerApp extends LitElement {
         ${surface ? html`<a2ui-surface .surface=${surface}></a2ui-surface>` : nothing}
       </div>
       ${this.renderMeta(tab)}
+      ${this.traceOn ? renderTrace(tab.trace, this.prompts) : nothing}
     </section>
     ${examples ? this.renderEmpty() : nothing}`;
   }

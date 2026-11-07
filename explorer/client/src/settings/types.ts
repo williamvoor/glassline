@@ -1,5 +1,6 @@
 // Shapes of the bootstrap server's JSON (explorer/bootstrap/SPEC.md, phases 1 and 2b-2c).
 import {z} from 'zod';
+import type {TraceEvent} from '../trace.js';
 
 export const ConnectionSchema = z.object({host: z.string(), name: z.string(),
   schemas: z.array(z.object({name: z.string(), objects: z.number()}).passthrough())}).passthrough();
@@ -112,7 +113,8 @@ export type DraftEvent =
   | { type: 'sql'; purpose: string; sql: string }
   | { type: 'call'; usage: { prompt_tokens: number; cached_tokens: number; completion_tokens: number; cost_usd: number } }
   | { type: 'invalid_draft'; problems: string[] }
-  | { type: 'invalid_boards'; problems: string[] };
+  | { type: 'invalid_boards'; problems: string[] }
+  | { type: 'trace'; event: TraceEvent };
 
 export interface EventsReply {
   events: DraftEvent[];

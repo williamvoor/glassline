@@ -100,8 +100,8 @@ def make(answers=None, runner=None, rows=3, model=None):
     return client, answers, runner, prefetcher
 
 
-async def send_action(client, action, context_id, *, viewing=None) -> list[dict]:
-    metadata = {**CAPS, **({VIEWING_KEY: viewing} if viewing is not None else {})}
+async def send_action(client, action, context_id, *, viewing=None, extra: dict | None = None) -> list[dict]:
+    metadata = {**CAPS, **({VIEWING_KEY: viewing} if viewing is not None else {}), **(extra or {})}
     message = {
         "kind": "message", "role": "user", "messageId": str(uuid.uuid4()), "contextId": context_id,
         "parts": [{"kind": "data", "data": {"version": "v0.9", "action": action},

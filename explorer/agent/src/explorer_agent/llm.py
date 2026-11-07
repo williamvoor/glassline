@@ -20,6 +20,7 @@ from typing import Any
 
 import litellm
 
+from explorer_agent import trace
 from explorer_agent.drill import check_drill
 from explorer_agent.executor import Conversation, StatusFn
 from explorer_agent.saved import result_ids_in
@@ -365,11 +366,18 @@ class LlmLoop:
     async def _call_model(self, conv: Conversation, run: _Run) -> Any:
         for attempt in (1, 2):
             start = self.clock()
+            request = self._request(conv)
             try:
-                response = await self.completion(**self._request(conv))
+                response = await self.completion(**request)
                 message = response.choices[0].message
                 break
             except Exception as e:  # API errors and malformed responses alike
+                # Class and status only, as in the log: a provider's error body can echo the request.
+                await trace.model_event(
+                    self.config.model, request["messages"], reply=None, tokens=None,
+                    latency_ms=round((self.clock() - start) * 1000), attempt=attempt,
+                    error=f"{type(e).__name__} status={getattr(e, 'status_code', '-')}",
+                )
                 if attempt == 1 and _retryable(e) and self._retry_fits(run):
                     log.warning("model call retry: %s status=%s", type(e).__name__, getattr(e, "status_code", "-"))
                     await self.sleep(RETRY_WAIT_S)
@@ -383,6 +391,10 @@ class LlmLoop:
         conv.prompt_tokens += t["prompt"] or 0
         conv.cached_tokens += t["cached"] or 0
         rate = 100 * conv.cached_tokens / conv.prompt_tokens if conv.prompt_tokens else 0.0
+        await trace.model_event(
+            self.config.model, request["messages"], reply=_assistant_message(message), tokens=t,
+            latency_ms=latency_ms, attempt=attempt,
+        )
         log.info(
             "model call: model=%s prompt=%s cached=%s completion=%s reasoning=%s latency_ms=%d cache_rate=%.0f%%",
             self.config.model, _fmt(t["prompt"]), _fmt(t["cached"]), _fmt(t["completion"]),
