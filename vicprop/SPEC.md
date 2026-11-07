@@ -18,8 +18,9 @@ from `land.vic.gov.au`).
 ## 2. Non-negotiables
 
 - **Python only** (3.13, `uv`). No TypeScript, no Node.
-- `openpyxl` for reading the workbook, `psycopg` 3 for Postgres. Plain SQL:
-  migrations are `.sql` files, loading is a thin module of SQL inserts. No ORM, no Alembic.
+- The workbook is loaded with `../dataload` (amended 2026-11-07, ADR 0052): `load.toml` puts it
+  into `staging.houses_raw` as it is, and `transforms/10_mart.sql` refills `mart` from it in the
+  same transaction. Plain SQL: migrations are `.sql` files. No ORM, no Alembic.
 - Tests never touch the network. Database tests use a disposable Postgres 18 (Testcontainers).
 - Never modify anything outside `vicprop/` (the only exception is the new
   `../datasets/vicprop/` config, which this spec also covers).
@@ -50,16 +51,18 @@ vicprop/
     config.py      settings from env
     cli.py         `uv run vicprop <command>`
     db.py          connections and the migration runner
-    loader.py      workbook → mart (pure parse + load)
+    loader.py      load.toml through dataload → staging → transforms → mart
     testing.py     build_test_db(dsn): migrate + load workbook (used by explorer tests)
   tests/
-    test_loader.py   pure parse tests on in-memory workbooks, no DB
-    test_db.py       Testcontainers tests: counts, comments, idempotent load
+    test_loader.py   the load rules on small workbooks with the real layout (Testcontainers)
+    test_db.py       Testcontainers tests: golden mart rows, comments, idempotent load
+  load.toml          dataload manifest (owner login from the .env names)
+  transforms/        SQL that refills mart from staging.houses_raw
 ```
 
 The explorer will add this package as an editable path dev-dependency and call
 `vicprop.testing.build_test_db(dsn)` against its own Testcontainers Postgres. Keep that
-function's signature stable and its dependencies light (`openpyxl`, `psycopg`).
+function's signature stable and its dependencies light (`dataload`, `psycopg`).
 
 CLI commands: `migrate`, `load [--xlsx PATH]`, `stats` (localities, price rows, year range).
 
@@ -87,7 +90,9 @@ Small (~9.5k rows) and already trap-free, so no summary tables beyond the publis
   one row per locality, NULLs where the source says `'NA'`.
 
 `load` refills both tables in one transaction (`DELETE`, not `TRUNCATE`), so readers keep
-seeing the old data until it commits. Loading twice gives identical tables.
+seeing the old data until it commits. Loading twice gives identical tables. The published change
+figures are stored with `trim_scale`, so `5.0` in the source is `5`, as before the dataload port
+(`tests/fixtures/mart_golden.json` holds the pre-port rows, and a test compares them).
 
 ## 6. Comments and speed
 

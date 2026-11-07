@@ -136,6 +136,30 @@ wheels = [
 ]
 
 [[package]]
+name = "dataload"
+version = "0.1.0"
+source = { editable = "../dataload" }
+dependencies = [
+    { name = "openpyxl" },
+    { name = "psycopg", extra = ["binary"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "openpyxl", specifier = ">=3.1,<4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=17" },
+]
+provides-extras = ["parquet"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyarrow", specifier = ">=17" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.9" },
+]
+
+[[package]]
 name = "docker"
 version = "7.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -376,6 +400,7 @@ name = "vicprop"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "dataload" },
     { name = "openpyxl" },
     { name = "psycopg", extra = ["binary"] },
 ]
@@ -388,6 +413,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dataload", editable = "../dataload" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
 ]

@@ -13,18 +13,19 @@ See [SPEC.md](SPEC.md) for the behavioral contract (its header remains marked dr
 
 ```mermaid
 flowchart LR
-    X[Committed Excel workbook] --> P[loader.parse_workbook]
-    P --> L[loader.load: one transaction]
-    L --> PRICE[(mart.suburb_price)]
-    L --> TREND[(mart.suburb_trend)]
+    X[Committed Excel workbook] --> S[(staging.houses_raw)]
+    S --> T[transforms/10_mart.sql]
+    T --> PRICE[(mart.suburb_price)]
+    T --> TREND[(mart.suburb_trend)]
     PRICE --> E[Explorer: explorer_ro]
     TREND --> E
 ```
 
-There is no live ingest client, raw schema, scheduler, or model call. The workbook is the
-source of truth. Parsing is separate from database loading so it can be tested with in-memory
-workbooks. Loading replaces the mart tables using `DELETE` and inserts in one transaction;
-readers continue to see the previous committed data until the new load commits.
+There is no live ingest client, scheduler, or model call. The workbook is the source of truth.
+[dataload](../dataload/README.md) loads it as it is into `staging.houses_raw` (described by
+`load.toml`), and `transforms/10_mart.sql` reshapes it into `mart`, all in one transaction;
+readers continue to see the previous committed data until the new load commits. `staging` is
+visible to the loader only. `uv run dataload --env-file .env load load.toml` does the same load.
 
 ## Prerequisites
 
@@ -110,13 +111,19 @@ VICPROP_DATABASE_URL=postgresql://explorer_ro:<password>@localhost:5435/vicprop
 ```
 
 Then either create the Workspace in Settings (New Workspace), or list the committed Dataset in
-`$EXPLORER_DATA_DIR/workspaces.toml`:
+`$EXPLORER_DATA_DIR/workspaces.toml`, with its Connection in `$EXPLORER_DATA_DIR/connections.toml`:
 
 ```toml
+# workspaces.toml
 [[workspace]]
 name = "vicprop"
 dataset_dir = "datasets/vicprop"
-dsn_env = "VICPROP_DATABASE_URL"
+connection = "vicprop"
+
+# connections.toml
+[[connection]]
+name = "vicprop"
+url_env = "VICPROP_DATABASE_URL"
 ```
 
 Configure `META_API_KEY` and the serving model as described in
@@ -129,7 +136,7 @@ notes, glossary, examples, optional overlays, and Boards live under
 
 The committed workbook is from the Victorian Government ([land.vic.gov.au](https://land.vic.gov.au)),
 licensed under [CC BY 3.0 AU](https://creativecommons.org/licenses/by/3.0/au/); see the root
-[NOTICE](../NOTICE). `loader.py` parses and loads it; `db.py` manages roles and checksum-verified
+[NOTICE](../NOTICE). `loader.py` loads it through dataload; `db.py` manages roles and checksum-verified
 SQL migrations. `ops` stores migration history.
 
 ## Tests and schema changes
@@ -158,6 +165,6 @@ See [AGENTS.md](AGENTS.md) for migration, comment-budget and deterministic parsi
 | Connection/authentication failure | Compose health, port 5435, and credentials matching the existing database roles |
 | Workbook not found | `VICPROP_XLSX` resolves relative to this project; check the override or use an absolute path |
 | Fewer observations for a locality | Missing medians are absent rows, not zeros; preliminary 2026 also has missing values |
-| Explorer shows the wrong Dataset | Check the Workspace's `dataset_dir` and `dsn_env` in `$EXPLORER_DATA_DIR/workspaces.toml`, then reload (Settings) or restart |
+| Explorer shows the wrong Dataset | Check the Workspace's `dataset_dir` and `connection` in `$EXPLORER_DATA_DIR/workspaces.toml`, then reload (Settings) or restart |
 | Migration checksum mismatch | Restore the applied file and express changes in a new migration |
 | Database tests fail before assertions | Docker must be running and able to start Testcontainers |

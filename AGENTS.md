@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding har
 | `a2ui/` | Clone of the upstream A2UI repo (Google), main branch, late Oct 2026. Git-ignored. | **Reference only. Never modify it**, and never make app code depend on paths inside it at runtime. It has its own `AGENTS.md` for upstream contributors. |
 | `explorer/` | Our app: an A2UI data explorer for Postgres | Dataset-agnostic: nothing AusTender-specific in code. |
 | `austender/` | Our AusTender database: ingestion from the AusTender OCDS API, schema, read-only role, test seed | All Python, no TypeScript. Has its own `SPEC.md`. |
+| `dataload/` | Loads CSV, Excel and Parquet files into any Postgres as they are, runs SQL transforms, grants a read-only role. CLI only | All Python. Has its own `SPEC.md`. vicprop uses it; the explorer never imports it. |
 | `glimmer-tune/` | Eval harness (and later fine-tuning) for Muse Glimmer 30B generating A2UI Express | Muse Glimmer is used only to generate A2UI. |
 | `docs/adr/` | Architecture decisions | |
 | `docs/issues/` | Issues, one file each: `<N>.md` | See "Issues" below. |

@@ -2,41 +2,45 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 import psycopg
-from testcontainers.postgres import PostgresContainer
 
-from vicprop import db, loader
-from vicprop.testing import XLSX, build_test_db
+from vicprop import loader
+from vicprop.db import LOADER
+
+GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "mart_golden.json").read_text())
 
 pytestmark = pytest.mark.db
 
 
-@pytest.fixture(scope="module")
-def dsn():
-    with PostgresContainer("postgres:18", username="postgres", password="postgres") as pg:
-        yield pg.get_connection_url().replace("+psycopg2", "")
-
-
-@pytest.fixture(scope="module")
+@pytest.fixture
 def loaded(dsn):
-    build_test_db(dsn)
     return dsn
 
 
-def test_full_workbook_counts_match_parser(loaded):
-    expected = loader.parse_workbook(XLSX)
+def test_t7_mart_matches_the_pre_dataload_loader_row_for_row(loaded):
+    """dataload/SPEC.md T7: the golden snapshot was taken from the old parser before the port."""
     with psycopg.connect(loaded) as conn:
-        localities = conn.execute("SELECT count(*) FROM mart.suburb_trend").fetchone()[0]
-        prices = conn.execute("SELECT count(*) FROM mart.suburb_price").fetchone()[0]
-        ymin, ymax = conn.execute("SELECT min(year), max(year) FROM mart.suburb_price").fetchone()
-        prelims = conn.execute("SELECT count(*) FROM mart.suburb_price WHERE is_prelim").fetchone()[0]
-        flagged = conn.execute("SELECT count(*) FROM mart.suburb_price WHERE flagged").fetchone()[0]
-    assert localities == len(expected.trends) == 797
-    assert prices == len(expected.prices) > 9000
-    assert (ymin, ymax) == (2015, 2026)
-    assert prelims == sum(1 for p in expected.prices if p.is_prelim)
-    assert flagged == sum(1 for p in expected.prices if p.flagged)
+        price = [list(r) for r in conn.execute(
+            "SELECT locality, year::text, median_price::text, is_prelim::text, flagged::text "
+            "FROM mart.suburb_price ORDER BY 1, 2")]
+        trend = [list(r) for r in conn.execute(
+            "SELECT locality, change_24_25_pct::text, growth_15_25_pct::text, growth_pa_pct::text "
+            "FROM mart.suburb_trend ORDER BY 1")]
+    assert len(price) == len(GOLDEN["suburb_price"]) == 9504
+    assert price == GOLDEN["suburb_price"]
+    assert trend == GOLDEN["suburb_trend"]
+
+
+def test_explorer_ro_sees_mart_but_not_staging(loaded):
+    ro = psycopg.conninfo.make_conninfo(loaded, user="explorer_ro", password="explorer_ro")
+    with psycopg.connect(ro) as conn:
+        assert conn.execute("SELECT count(*) FROM mart.suburb_trend").fetchone()[0] == 797
+    with psycopg.connect(ro) as conn, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        conn.execute("SELECT * FROM staging.houses_raw")
 
 
 def test_no_zero_or_null_median_rows(loaded):
@@ -48,12 +52,9 @@ def test_no_zero_or_null_median_rows(loaded):
 
 
 def test_load_is_idempotent(dsn):
-    data = loader.parse_workbook(XLSX)
     with psycopg.connect(dsn, autocommit=True) as conn:
-        before = conn.execute("SELECT count(*) FROM mart.suburb_price").fetchone()[0]
-        loader.load(conn, data)
-        after = conn.execute("SELECT count(*) FROM mart.suburb_price").fetchone()[0]
-    assert before == after
+        loader.load(conn, role=LOADER)
+    test_t7_mart_matches_the_pre_dataload_loader_row_for_row(dsn)  # a second load: still the golden rows
 
 
 def test_every_mart_object_has_a_comment_and_total_stays_small(loaded):

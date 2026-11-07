@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
+
+from dataload import LoadError, ManifestError
 
 from vicprop import db, loader
 from vicprop.config import Settings, load_env_file
@@ -25,9 +28,12 @@ def cmd_migrate(args: argparse.Namespace, settings: Settings) -> int:
 
 def cmd_load(args: argparse.Namespace, settings: Settings) -> int:
     path = args.xlsx or settings.xlsx_file()
-    data = loader.parse_workbook(path)
     with _conn(settings) as conn:
-        stats = loader.load(conn, data)
+        try:
+            stats = loader.load(conn, Path(path))
+        except (LoadError, ManifestError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
     print(f"loaded {stats['price_rows']} price rows for {stats['localities']} localities from {path}")
     return 0
 

@@ -1,0 +1,20 @@
+# How `vicprop load` (and `dataload load vicprop/load.toml`) loads the workbook (dataload/SPEC.md).
+# The workbook goes into staging as it is; transforms/ reshapes it into mart.
+
+staging_schema = "staging"          # migration 0003; only vicprop_loader can see it
+readonly_role  = "explorer_ro"
+grant_schemas  = ["mart"]
+transforms     = ["transforms/*.sql"]
+
+[owner]                             # the existing vicprop/.env names; the password only from there
+host_env     = "POSTGRES_HOST"
+port_env     = "POSTGRES_PORT"
+database_env = "POSTGRES_DB"
+user         = "vicprop_loader"
+password_env = "LOADER_PASSWORD"
+
+[[source]]
+file         = "houses-by-suburb-2015-2025.xlsx"
+table        = "houses_raw"
+header_match = "Locality"           # the header is found by its label, so leading rows may change
+null_values  = ["", "-", "NA"]      # "-": no published median; "NA": no published change figure
