@@ -352,7 +352,7 @@ export class ExplorerWizard extends LitElement {
   async goTo(step: WizardStep) {
     if (this.step === 'boards' && step !== 'boards') {
       const editor = this.querySelector<BsBoards>('bs-boards');
-      if (editor && !(await editor.leave())) return;
+      if (editor && this.boards && !(await editor.leave())) return;
       if (step === 'export' && boardProblems(this.boards).length) return;
     }
     if (this.step === 'review' && step !== 'review') {
