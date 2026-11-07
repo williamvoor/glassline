@@ -454,7 +454,7 @@ async def test_a_drill_down_level_does_not_replace_the_prefetch():
     assert len(runner.calls) == before  # still prefetched after the Drill-down Level
 
 
-# Issue 9: the Drill-down title is an h4 Text, which the client renders as plain text (Lit binds it as
+# Old issue 9: the Drill-down title is an h4 Text, which the client renders as plain text (Lit binds it as
 # text, so a label can't inject markup). Escaping it showed backslashes. It was escaped since the
 # refuter's 2026-11-03 finding, which assumed every Text renders markdown.
 async def test_drill_down_title_shows_the_row_label_as_written_in_a_plain_text_heading():

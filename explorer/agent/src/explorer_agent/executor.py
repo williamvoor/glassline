@@ -714,7 +714,7 @@ class ExplorerExecutor(AgentExecutor):
                 await fail(DRILL_FAILED.format(reason=outcome.sqlstate or "query error"))
                 return
             label = src.spec.labels[resolved.row]
-            # The heading, tab and log are all plain text, so the label is written as is (issue 9).
+            # The heading, tab and log are all plain text, so the label is written as is (old issue 9).
             title = f"{spec.title} · {label}"
             result = conv.store.add(
                 sql=display_sql(spec.sql, values), purpose=title, columns=outcome.columns,
@@ -836,7 +836,7 @@ class ExplorerExecutor(AgentExecutor):
                 await fail(ENTITY_FAILED)
                 return
             label = src.spec.labels[row]
-            title = f"{board.title} · {label}"  # plain text everywhere: shown as written (issue 9)
+            title = f"{board.title} · {label}"  # plain text everywhere: shown as written (old issue 9)
             level = conv.actions.new_level(resolved.level.turn, label)
             results, failed = instance_results(outcomes, conv.store.reserve_id)
             try:

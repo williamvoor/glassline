@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding har
 | `dataload/` | Loads CSV, Excel and Parquet files into any Postgres as they are, runs SQL transforms, grants a read-only role. CLI only | All Python. Has its own `SPEC.md`. vicprop uses it; the explorer never imports it. |
 | `glimmer-tune/` | Eval harness (and later fine-tuning) for Muse Glimmer 30B generating A2UI Express | Muse Glimmer is used only to generate A2UI. |
 | `docs/adr/` | Architecture decisions | |
-| `docs/issues/` | Issues, one file each: `<N>.md` | See "Issues" below. |
+| `docs/issues/` | Old local issue numbers mapped to GitHub | See "Issues" below. |
 
 Each top level directory has its own `AGENTS.md` file. Read them.
 
@@ -47,16 +47,15 @@ The central design idea (ADR 0001): the model never retypes data. It references 
 
 ## Issues
 
-The repo's remote is GitHub (`origin`, `williamvoor/glassline`), but issues stay in the repo, in
-`docs/issues/`: one Markdown file per issue, named
-`<N>.md` with the next free number (`1.md`, `2.md`, …).
-- **Start of the file:** start it with `# <N>. <title>` and a line of
-  `**Status:** open · **Opened:** <YYYY-MM-DD> · **Source:** <where it was found>`.
-- **Body:** **Problem**, **Evidence** (run files, scenario and run, log times), **Options**,
-  and **Unknown** or **Decision needed** where they apply.
+Issues live on GitHub (`williamvoor/glassline`); file them with `gh issue create`. The repo is
+public, so an issue never holds secrets, row data or anything from `.env`.
+- **Title:** what is wrong, in one line.
+- **Body:** **Problem**, **Evidence** (run files, scenario and run, log times), **Options**, and
+  **Unknown** or **Decision needed** where they apply.
 - **Naming code:** by symbol, not line number, because line numbers go stale.
-- **When it's fixed:** set the status to `fixed in <commit>`, and name the spec amendment or
-  ADR if there is one.
+- **When it's fixed:** close it with the fix commit (`Fixes #N` in the commit or PR), and name the
+  spec amendment or ADR if there is one.
+- Issues filed before 2026-11-07 had local numbers; `docs/issues/README.md` maps them.
 
 ## Commands
 
