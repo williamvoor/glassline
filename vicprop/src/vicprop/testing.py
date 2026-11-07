@@ -28,5 +28,4 @@ def build_test_db(
     with psycopg.connect(dsn, autocommit=True) as conn:
         db.ensure_roles(conn, loader_password=loader_password, explorer_ro_password=explorer_ro_password)
         db.migrate(conn)
-        data = loader.parse_workbook(xlsx)
-        loader.load(conn, data)
+        loader.load(conn, xlsx, role=db.LOADER)

@@ -11,7 +11,9 @@ read-only role `explorer_ro`. `ops` holds applied migrations.
 
 | Path | Role |
 |---|---|
-| `src/vicprop/loader.py` | Workbook parse (pure) + `load` into `mart` |
+| `src/vicprop/loader.py` | `load`: runs `load.toml` through `../dataload` (workbook → `staging` → `mart`) |
+| `load.toml`, `transforms/*.sql` | The dataload manifest, and the SQL that refills `mart` from `staging.houses_raw` |
+| `tests/fixtures/mart_golden.json` | The `mart` rows from before the dataload port; a test compares them |
 | `src/vicprop/db.py` | Connections, roles, migration runner |
 | `src/vicprop/cli.py` | `uv run vicprop <command>` entry point |
 | `src/vicprop/config.py` | Settings from `.env` |
@@ -30,15 +32,18 @@ uv run vicprop migrate | load [--xlsx PATH] | stats
 
 ## Hard rules
 
-- **Python only** (3.13, `uv`), `openpyxl` and `psycopg` 3. No ORM, no Alembic, no TypeScript.
+- **Python only** (3.13, `uv`), `dataload` (path dependency) and `psycopg` 3. No ORM, no Alembic, no TypeScript.
 - **Tests never touch the network.** Build test workbooks in memory with `openpyxl`.
 - **Never edit an applied migration.** The runner stores each file's sha256 and refuses to run if a file
   changes. Add a new `NNNN_*.sql` instead.
 - **Secrets:** `.env` is git-ignored. Never print or log passwords or DSNs that contain them. New
   settings go in `.env.example` with placeholders.
 - Don't modify anything outside `vicprop/`, except `../datasets/vicprop/` (the dataset config,
-  covered by SPEC §7).
-- Keep `build_test_db(dsn)`'s signature stable and its dependencies light (`openpyxl`, `psycopg`,
+  covered by SPEC §7). A loading rule that every file source needs belongs in `../dataload`.
+- `transforms/10_mart.sql` names columns by position where the header is empty (`column_3` is
+  2015's flag). If the workbook's layout changes, the golden test fails: fix the SQL, then
+  regenerate the golden file only if the data itself changed.
+- Keep `build_test_db(dsn)`'s signature stable and its dependencies light (`dataload`, `psycopg`,
   `tzdata`-free), because the explorer depends on it.
 - Nothing in `mart` may need PL/pgSQL functions. Use plain tables with indexes, not views.
 
