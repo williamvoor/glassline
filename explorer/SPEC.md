@@ -3297,11 +3297,10 @@ Control-to-chart markers) are out of scope.
 - **Shell.** The top bar is gone. A dark Sidebar (`--shell*` tokens, dark in both schemes)
   holds, top to bottom: the Glassline mark and name; the Workspace picker (one row per
   Workspace with a badge of its initials, from `data-initials` in CSS so the button's text stays
-  the name) with the selected Dataset's description under it; Saved conversations; the
-  investigation log; and the composer as a raised card ("Ask the data", a visible Enter/Shift+
+  the name) with the selected Dataset's description under it; Saved conversations; New
+  conversation; the investigation log; and the composer as a raised card ("Ask the data", a visible Enter/Shift+
   Enter hint that is also the textarea's description). Beside it, a light column holds the
-  Canvas header (the tab strip as a segmented track; Settings and New conversation on the
-  right) over the Canvas or Settings. While Settings is open the Sidebar keeps the brand and
+  Canvas header (the tab strip as a segmented track; Settings on the right) over the Canvas or Settings. While Settings is open the Sidebar keeps the brand and
   picker only, and the header shows no tabs.
 - **One flat look.** Settings loses its colour wash; its panels sit on the plain Canvas.
 - **Type.** A question heading is 34 px, weight 800. A Board's heading (`board_heading`): with
@@ -3331,8 +3330,8 @@ Criteria → tests:
   rules apply on Board tabs only; the Controls rule skips a layout Card; reduced motion covers
   every new animation and transition; the narrow composer keeps its label for screen readers →
   `client/test/index-html.test.ts` (`the §24 redesign`, `Card hierarchy`, `DataGrid share bars`).
-- Picker in the Sidebar with a badge from the name; Settings and New conversation in the Canvas
-  header; while Settings is open, only the brand and picker in the Sidebar and no tabs; the
+- Picker in the Sidebar with a badge from the name; Settings in the Canvas header and New
+  conversation in the Sidebar between Saved conversations and the investigation log; while Settings is open, only the brand and picker in the Sidebar and no tabs; the
   composer hint as the textarea's description → `client/test/workspaces.test.ts`.
 - Brand and Dataset description in the Sidebar; `.board` on Board tabs only →
   `client/test/app.test.ts`.

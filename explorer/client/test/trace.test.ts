@@ -129,15 +129,19 @@ describe('the app', () => {
     }
   }
 
-  it('toggles from the Canvas header and shows the tab\'s Trace with its system prompt', async () => {
+  it('toggles from Settings, Preferences, and shows the tab\'s Trace with its system prompt', async () => {
     window.history.replaceState(null, '', window.location.pathname);
     const app = document.createElement('explorer-app') as ExplorerApp;
     app.workspaceApi = oneWorkspace();
     app.connector = async () => connection;
     document.body.appendChild(app);
     await settle(app);
-    const toggle = app.querySelector('.head-actions .trace-toggle') as HTMLButtonElement;
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    (app.querySelector('.settings-toggle') as HTMLButtonElement).click();
+    await settle(app);
+    const toggle = app.querySelector('explorer-settings .settings-preferences input.trace-switch') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    (app.querySelector('.settings-toggle') as HTMLButtonElement).click(); // back to the investigation
+    await settle(app);
 
     const input = app.querySelector('textarea') as HTMLTextAreaElement;
     input.value = 'q';
@@ -149,7 +153,7 @@ describe('the app', () => {
     toggle.click();
     await settle(app);
     expect(globalThis.localStorage.getItem(TRACE_STORAGE_KEY)).toBe('1');
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle.checked).toBe(true);
     const pane = app.querySelector('.canvas .trace') as HTMLElement;
     expect(pane.textContent).toContain('THE SYSTEM PROMPT');
     expect(pane.textContent).toContain(SQL_EVENT.sql);

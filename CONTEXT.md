@@ -68,7 +68,7 @@ The client's dark left column: the brand, the Workspace picker, saved Conversati
 _Avoid_: Nav, history
 
 **Canvas header**:
-The bar above the Canvas: the tab strip, Settings and New conversation.
+The bar above the Canvas: the tab strip and Settings.
 _Avoid_: Top bar, toolbar
 
 **Canvas**:

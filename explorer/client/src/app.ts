@@ -24,6 +24,7 @@ import type {SettingsView} from './settings/settings.js';
 import {BoardMetadataSchema, InPlaceSchema, LogSchema, ModelSchema, TabSchema} from './metadata.js';
 import {confirmCard} from './cards.js';
 import {modelChip} from './model-chip.js';
+import {arrowIcon, boardIcon, chatIcon, chevronIcon, plusIcon, settingsIcon} from './icons.js';
 import {renderTrace, setTraceOn, takePrompt, traceOn, type Prompts, type TraceEvent} from './trace.js';
 
 export const LEVEL_KEY = 'explorerLevel';
@@ -856,7 +857,7 @@ export class ExplorerApp extends LitElement {
   private renderSaved() {
     if (!this.workspace) return nothing;
     return html`<button type="button" class="saved-toggle" aria-expanded=${this.listOpen ? 'true' : 'false'}
-        @click=${() => void this.toggleList()}>Saved conversations</button>
+        @click=${() => void this.toggleList()}>${chatIcon()}<span>Saved conversations</span>${chevronIcon()}</button>
       ${this.listOpen
         ? html`<div class="saved-list">
             ${this.listError ? html`<p class="error" role="alert">${this.listError}</p>` : nothing}
@@ -882,20 +883,14 @@ export class ExplorerApp extends LitElement {
         : nothing}`;
   }
 
-  /** The Canvas header (SPEC §24): the tab strip, then Settings and New conversation. */
+  /** The Canvas header (SPEC §24): the tab strip, then Settings. */
   private renderHeader() {
     return html`<header class="canvas-head">
       ${this.settingsOpen ? html`<span class="tab-strip-spacer"></span>` : this.renderTabStrip()}
       <div class="head-actions">
-      <button type="button" class=${this.traceOn ? 'trace-toggle selected' : 'trace-toggle'}
-        aria-pressed=${this.traceOn ? 'true' : 'false'} title="Record model calls and SQL for debugging"
-        @click=${this.toggleTrace}>Trace</button>
       <button type="button" class=${this.settingsOpen ? 'settings-toggle selected' : 'settings-toggle'}
         aria-pressed=${this.settingsOpen ? 'true' : 'false'}
-        @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>Settings</button>
-      <button class="new-conversation" type="button" @click=${this.newConversation} ?disabled=${!this.tabs.some(t => !t.fixed)}>
-        New conversation
-      </button>
+        @click=${() => (this.settingsOpen ? this.closeSettings() : this.openSettings('list'))}>${settingsIcon()}Settings</button>
       </div>
     </header>`;
   }
@@ -906,9 +901,10 @@ export class ExplorerApp extends LitElement {
     this.patch(key, {trace: [...(this.tab(key)?.trace ?? []), event]});
   }
 
-  private toggleTrace() {
-    this.traceOn = !this.traceOn;
-    setTraceOn(this.traceOn);
+  /** The Trace switch lives in Settings, under Preferences. */
+  private setTrace(on: boolean) {
+    this.traceOn = on;
+    setTraceOn(on);
   }
 
   private renderBanner() {
@@ -1001,6 +997,10 @@ export class ExplorerApp extends LitElement {
         ${this.renderPicker()}
         <div class="investigation" ?hidden=${this.settingsOpen}>
           ${this.renderSaved()}
+          ${this.workspace
+            ? html`<button class="new-conversation" type="button" @click=${this.newConversation}
+                ?disabled=${!this.tabs.some(t => !t.fixed)}>${plusIcon()}New conversation</button>`
+            : nothing}
           ${this.renderLog()}
         </div>
       </div>
@@ -1016,7 +1016,7 @@ export class ExplorerApp extends LitElement {
         ></textarea>
         <div class="composer-foot">
           <span class="hint" id="composer-hint"><span aria-hidden="true">↵ send · ⇧↵ new line</span><span class="sr-only">Enter to send, Shift+Enter for a new line</span></span>
-          <button type="submit" ?disabled=${this.busy || this.noWorkspace}>${this.busy ? 'Working…' : 'Ask'}</button>
+          <button type="submit" ?disabled=${this.busy || this.noWorkspace}>${this.busy ? 'Working…' : html`Ask${arrowIcon()}`}</button>
         </div>
       </form>
     </aside>`;
@@ -1030,10 +1030,10 @@ export class ExplorerApp extends LitElement {
     return html`<nav class="tab-strip" role="tablist" aria-label="Tabs">
       ${open.map(t => {
         const selected = t.key === this.selected;
-        return html`<div class=${selected ? 'tab selected' : 'tab'}>
+        return html`<div class=${['tab', selected ? 'selected' : '', t.fixed ? 'fixed' : ''].filter(Boolean).join(' ')}>
           <button type="button" class="tab-select" role="tab" aria-selected=${selected ? 'true' : 'false'} title=${t.title}
             @click=${() => this.select(t.key)}>
-            ${t.running ? html`<span class="spinner" aria-hidden="true"></span>` : nothing}
+            ${t.running ? html`<span class="spinner" aria-hidden="true"></span>` : t.fixed ? boardIcon() : nothing}
             <span class="tab-title">${t.title}</span>
             ${t.isNew ? html`<span class="new-tag">NEW</span>` : nothing}
           </button>
@@ -1129,7 +1129,8 @@ export class ExplorerApp extends LitElement {
   override render() {
     const settings = this.settingsMounted
       ? html`<main class="settings-page" ?hidden=${!this.settingsOpen}>
-          <explorer-settings ?hidden=${!this.settingsOpen} .view=${this.settingsView}
+          <explorer-settings ?hidden=${!this.settingsOpen} .view=${this.settingsView} .traceOn=${this.traceOn}
+            @trace-change=${(e: CustomEvent<boolean>) => this.setTrace(e.detail)}
             @workspaces-changed=${() => void this.workspacesChanged()}
             @settings-view=${(e: CustomEvent<SettingsView>) => this.onSettingsView(e.detail)}
             @open-workspace=${(e: CustomEvent<string>) => void this.openNewWorkspace(e.detail)}></explorer-settings>

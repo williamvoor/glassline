@@ -20,6 +20,8 @@ export class ExplorerSettings extends LitElement {
   /** Milliseconds between progress polls while drafting; tests set 0. */
   @property({type: Number}) pollMs = 500;
   @property() view: SettingsView = 'list';
+  /** The Trace switch's state; the app owns it and stores it per browser. */
+  @property({type: Boolean}) traceOn = false;
 
   @state() workspaces: SettingsWorkspace[] = [];
   @state() deleting = ''; // the Workspace whose Delete card is open
@@ -224,9 +226,29 @@ export class ExplorerSettings extends LitElement {
     </section>`;
   }
 
+  /** Preferences: per-browser switches, Trace first. Each fires an event the app acts on. */
+  private renderPreferences() {
+    return html`<section class="settings-preferences glass" ?hidden=${this.view !== 'list'}>
+      <h2>Preferences</h2>
+      <p class="muted">Kept in this browser.</p>
+      <ul class="toggles">
+        <li>
+          <label class="toggle">
+            <input type="checkbox" role="switch" class="trace-switch" .checked=${this.traceOn}
+              @change=${(e: Event) => this.dispatchEvent(new CustomEvent('trace-change', {
+                detail: (e.target as HTMLInputElement).checked, bubbles: true, composed: true}))} />
+            <span class="toggle-text"><span class="toggle-name">Trace</span>
+              <span class="muted">Record model calls and SQL for debugging, shown under each tab.</span></span>
+          </label>
+        </li>
+      </ul>
+    </section>`;
+  }
+
   override render() {
     return html`<div class="settings">
       ${this.renderList()}
+      ${this.renderPreferences()}
       <explorer-wizard ?hidden=${this.view !== 'wizard'} .api=${this.api} .pollMs=${this.pollMs}
         @wizard-close=${() => this.show('list')}
         @workspaces-changed=${() => void this.load()}></explorer-wizard>

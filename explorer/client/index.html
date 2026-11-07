@@ -71,6 +71,7 @@
       button:disabled { cursor: default; opacity: 0.55; }
       code, pre, kbd { font-family: var(--mono); }
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .icon { flex: none; display: block; }
       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       .label {
         font: 500 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
@@ -117,11 +118,11 @@
       /* Saved Conversations and the investigation log (SPEC §18): one entry per tab, in the order they opened */
       explorer-app .investigation { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
       explorer-app .saved-toggle {
-        display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 8px; border: 0; border-radius: 10px;
+        display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px;
         background: none; color: var(--on-shell); font-size: 14px; text-align: left;
       }
-      explorer-app .saved-toggle::after { content: '›'; margin-left: auto; color: var(--shell-muted); transition: transform .15s; }
-      explorer-app .saved-toggle[aria-expanded='true']::after { transform: rotate(90deg); }
+      explorer-app .saved-toggle .icon:last-child { margin-left: auto; color: var(--shell-muted); transition: transform .15s; }
+      explorer-app .saved-toggle[aria-expanded='true'] .icon:last-child { transform: rotate(90deg); }
       explorer-app .saved-toggle:hover { background: var(--shell-soft); }
       explorer-app .saved-list { padding: 8px; border: 1px solid var(--shell-line); border-radius: 10px; background: var(--shell-raised); max-height: 40vh; overflow: auto; font-size: 13px; }
       explorer-app .saved-list ol { list-style: none; margin: 0 0 8px; padding: 0; }
@@ -131,6 +132,14 @@
       explorer-app .saved-date, explorer-app .saved-empty { color: var(--shell-muted); font-size: 12px; }
       explorer-app .saved-empty { margin: 0; }
       explorer-app .sidebar .confirm-card { color: var(--fg); }
+      explorer-app .sidebar .new-conversation {
+        display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 10px;
+        border: 1px solid var(--shell-line); border-radius: 10px; background: var(--shell); color: var(--on-shell); font-size: 14px; text-align: left;
+      }
+      explorer-app .sidebar .new-conversation .icon { color: var(--shell-accent); }
+      explorer-app .sidebar .new-conversation:hover:not(:disabled) { background: var(--shell-soft); }
+      explorer-app .sidebar .new-conversation:disabled { color: var(--shell-muted); cursor: default; }
+      explorer-app .sidebar .new-conversation:disabled .icon { color: var(--shell-muted); }
       explorer-app .log-head {
         display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 6px; text-align: left;
         border: 0; background: none; cursor: default;
@@ -139,14 +148,22 @@
       explorer-app .log-head .count { padding: 1px 8px; border-radius: 999px; background: var(--shell-soft); color: var(--on-shell); letter-spacing: 0; }
       explorer-app .log { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
       explorer-app .log-entry {
-        display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 10px 12px; text-align: left;
+        position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 12px 12px 32px; text-align: left;
         background: transparent; color: var(--on-shell); border: 1px solid var(--shell-line); border-radius: 12px;
-        transition: background-color .15s, border-color .15s;
+        transition: background-color .15s, border-color .15s; animation: view-in .3s ease-out;
       }
+      explorer-app .log-entry::before { /* the mock-up's status dot; lit with a halo on the selected entry */
+        content: ''; position: absolute; left: 12px; top: 18px; width: 8px; height: 8px; border-radius: 999px; background: var(--shell-line);
+      }
+      explorer-app .log-entry.selected::before { background: var(--shell-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--shell-accent) 18%, transparent); }
       explorer-app .log-entry:hover { background: var(--shell-soft); }
       explorer-app .log-entry.selected { background: var(--shell-accent-soft); border-color: var(--shell-accent-line); }
-      explorer-app .log-tag { font: 500 10px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--shell-muted); }
-      explorer-app .log-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+      explorer-app .log-tag {
+        order: 2; align-self: flex-start; padding: 1px 6px; border: 1px solid var(--shell-line); border-radius: 6px;
+        font: 500 10.5px/1.4 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--shell-muted);
+      }
+      explorer-app .entry-state { order: 3; }
+      explorer-app .log-text { order: 1; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; overflow-wrap: anywhere; }
       explorer-app .entry-state { display: flex; align-items: center; gap: 6px; min-height: 1em; font: 12px/1.3 var(--mono); color: var(--shell-muted); }
       explorer-app .entry-state:empty { display: none; }
 
@@ -166,7 +183,8 @@
       explorer-app .composer-foot { display: flex; align-items: center; gap: 8px; }
       explorer-app .composer .hint { flex: 1; min-width: 0; font: 11px/1.35 var(--mono); color: var(--shell-muted); }
       explorer-app .composer button {
-        flex: none; min-height: 40px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 600;
+        flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px;
+        background: var(--accent); color: var(--on-accent); font-weight: 600;
       }
       explorer-app .composer button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--on-shell)); }
 
@@ -179,17 +197,13 @@
       explorer-app .tab-strip-spacer { flex: 1; }
       explorer-app .head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
       explorer-app .head-actions button {
-        min-height: 40px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 10px;
+        display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 10px;
         background: var(--panel); color: var(--fg); font-weight: 500;
       }
       explorer-app .head-actions button:hover:not(:disabled) { border-color: var(--fg); }
-      explorer-app .head-actions .new-conversation { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 600; }
-      explorer-app .head-actions .new-conversation:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 88%, var(--canvas)); }
       /* Settings open: its button inverted, like a selected tab. */
       explorer-app .head-actions .settings-toggle[aria-pressed=true],
-      explorer-app .head-actions .settings-toggle[aria-pressed=true]:hover:not(:disabled),
-      explorer-app .head-actions .trace-toggle[aria-pressed=true],
-      explorer-app .head-actions .trace-toggle[aria-pressed=true]:hover:not(:disabled) {
+      explorer-app .head-actions .settings-toggle[aria-pressed=true]:hover:not(:disabled) {
         background: var(--primary); color: var(--on-primary); border-color: var(--primary);
       }
 
@@ -218,6 +232,20 @@
       explorer-settings .lede { margin: 0 0 14px; max-width: 68ch; color: var(--muted); }
       explorer-settings .list-head, explorer-settings .wizard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
       explorer-settings .list-head p, explorer-settings .wizard-head p { margin: 0; }
+      explorer-settings .toggles { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+      explorer-settings .toggle { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+      explorer-settings .toggle input {
+        appearance: none; flex: none; position: relative; width: 38px; height: 22px; margin: 1px 0 0; border-radius: 999px;
+        background: var(--line-strong); cursor: pointer; transition: background-color .15s;
+      }
+      explorer-settings .toggle input::after {
+        content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+        background: var(--panel); transition: transform .15s;
+      }
+      explorer-settings .toggle input:checked { background: var(--accent); }
+      explorer-settings .toggle input:checked::after { transform: translateX(16px); }
+      explorer-settings .toggle-text { display: flex; flex-direction: column; gap: 2px; }
+      explorer-settings .toggle-name { font-weight: 600; }
       explorer-settings .actions { white-space: nowrap; text-align: right; }
 
       /* The step rail: numbered, because the steps are a sequence; each says what does the work. */
@@ -333,7 +361,7 @@
         explorer-settings .glass { padding: 16px; }
       }
       @media (prefers-reduced-motion: reduce) {
-        explorer-settings *, explorer-settings *::before, .model-chip .dot, .confirm-card {
+        explorer-settings *, explorer-settings *::before, explorer-settings *::after, .model-chip .dot, .confirm-card {
           animation: none !important; transition: none !important;
         }
       }
@@ -599,7 +627,7 @@
       }
       @media (prefers-reduced-motion: reduce) {
         explorer-app .tab-view, explorer-app .tab, explorer-app .log-entry, explorer-app .examples button,
-        explorer-app .saved-toggle::after, details.sql-details summary { animation: none; transition: none; }
+        explorer-app .saved-toggle .icon, details.sql-details summary { animation: none; transition: none; }
       }
     </style>
   </head>

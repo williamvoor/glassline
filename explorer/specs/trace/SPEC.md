@@ -4,7 +4,7 @@
 
 ## Behaviour
 
-A **Trace** switch in the Canvas header (one per browser, remembered in `localStorage`) turns on
+A **Trace** switch in Settings, under Preferences (one per browser, remembered in `localStorage`) turns on
 a Trace for the requests sent while it's on: Conversation requests to the agent and Draft and
 Boards runs in Settings. With it off, nothing is recorded and nothing extra is sent.
 
@@ -45,7 +45,7 @@ carry the run_sql row previews the model saw while live; the saved form replaces
 
 ### Client
 
-- The Trace switch sits in `.head-actions`; its state is read and written in `try/catch`.
+- The Trace switch sits in Settings' Preferences section (`.settings-preferences`); its state is read and written in `try/catch`.
 - Live events are kept on the Tab being answered; a reopened Level gets its saved Trace.
 - With the switch on, each Tab shows a "Trace" `<details>` of its events, oldest first. A Tab is
   one Level, so the Tab strip and log give the Turn → Level grouping; a Board Tab collects its
