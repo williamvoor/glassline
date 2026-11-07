@@ -132,6 +132,30 @@ describe('bs-review (U2)', () => {
     expect(bad.el.querySelector('.error')!.textContent).toContain('unexpected OSError');
   });
 
+  it('leave() saves the newest edit when a later edit supersedes the queued save', async () => {
+    const sent: string[] = [];
+    let resolveFirst: (v: Response) => void = () => {};
+    const fetchFn = (_input: string, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init!.body)).files.notes_md);
+      if (sent.length === 1) return new Promise<Response>((ok) => (resolveFirst = ok)); // a running save
+      return Promise.resolve(new Response(JSON.stringify(OK), { status: 200 }));
+    };
+    const el = mount<BsReview>('bs-review', { api: new Api(fetchFn), draft: makeDraft([claim('verified')]), validation: OK, validateDelay: 0 });
+    await settle(el);
+    const edit = (text: string) => (el.files = { ...el.files, notes_md: text });
+    edit('first');
+    const running = el.validate();
+    while (sent.length < 1) await new Promise((ok) => setTimeout(ok, 0)); // the save is running
+    edit('queued');
+    const leaving = el.leave(); // queues 'queued' behind the running save
+    edit('newest');
+    void el.validate(); // the newest edit's debounce fires and supersedes the queued save
+    resolveFirst(new Response(JSON.stringify(OK), { status: 200 }));
+    await running;
+    expect(await leaving).toBe(true);
+    expect(sent.at(-1)).toBe('newest');
+  });
+
   it('exportPayload() carries the edited comments and the dismissed claims', async () => {
     const { el } = setup([claim('verified'), claim('error', { dismissed: true })]);
     await settle(el);

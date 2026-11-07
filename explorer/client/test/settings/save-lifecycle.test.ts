@@ -177,3 +177,39 @@ it('flushes edits before Export while a Board entry recheck runs', async () => {
   expect(wizard.step).toBe('export');
   expect(editor.isConnected).toBe(false);
 });
+
+it('leaves Boards when a later edit supersedes the save queued by leaving', async () => {
+  const {wizard, editor, edit} = await mount();
+  const requests: string[] = [];
+  let resolve!: (value: ReturnType<typeof state>) => void;
+  editor.api.validateBoards = async boards => {
+    requests.push(boards[0].toml);
+    if (requests.length === 1) return new Promise(ok => {resolve = ok;});
+    return state();
+  };
+  edit('first');
+  await vi.advanceTimersByTimeAsync(400); // a save is running
+  edit('queued');
+  const navigation = wizard.goTo('review'); // queues 'queued' behind it
+  await Promise.resolve();
+  edit('newest'); // supersedes the queued save before it starts
+  resolve(state());
+  await navigation;
+  await wizard.updateComplete;
+  expect(requests).toEqual(['first', 'newest']);
+  expect(wizard.step).toBe('review');
+});
+
+it.each([
+  ['before any Boards are drafted', {boards: null}],
+  ['while Boards are being drafted', {boardsRunning: true}],
+])('Back leaves the Boards step %s without saving', async (_label, over) => {
+  const {wizard, f} = await mount();
+  f.calls.length = 0;
+  Object.assign(wizard, over);
+  await wizard.updateComplete;
+  wizard.api.validateBoards = async () => { throw new Error('no Boards yet'); }; // what the server says (404/409)
+  await wizard.goTo('review');
+  await wizard.updateComplete;
+  expect(wizard.step).toBe('review');
+});
