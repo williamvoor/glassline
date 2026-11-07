@@ -244,7 +244,11 @@ def _static_arguments(name: str, args: Mapping[str, Any]) -> None:
         raise MacroError(problem)
     if name == "DataTable":
         _format_pairs(args.get("format", ""))
-    elif name in ("BarChart", "LineChart", "Treemap", "Timeline", "Metric"):
+    elif name in ("BarChart", "LineChart"):
+        fmt = _format_name(args.get("format", "auto"))
+        if fmt != "auto" and fmt not in _AXIS:
+            raise MacroError(f"format {fmt!r} does not apply to a chart value; use one of: {', '.join(_AXIS)}")
+    elif name in ("Treemap", "Timeline", "Metric"):
         _format_name(args.get("format") or "auto")
     if name == "Metric":
         row = args.get("row", 0)
