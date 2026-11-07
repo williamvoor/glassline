@@ -4,7 +4,7 @@ status: deprecated
 
 # Spark writes a Brief and Glimmer writes the Surface, behind a setting
 
-**Stopped 2026-11-05 (user).** The Glimmer server smoke test measured 31–117 s to the first token on the serverless training sampler (issue 11), against §19's assumption of 3–5 s per call. The split is stopped. Spark keeps writing the Surface. The partial code (`explorer/glimmer/`, the Glimmer server) is kept, unused by the agent. This ADR was never accepted. It stays as the record of the design.
+**Stopped 2026-11-05 (user).** The Glimmer server smoke test measured 31–117 s to the first token on the serverless training sampler (old issue 11, closed; `docs/issues/11.md` in git history), against §19's assumption of 3–5 s per call. The split is stopped. Spark keeps writing the Surface. The partial code (`explorer/glimmer/`, the Glimmer server) is kept, unused by the agent. This ADR was never accepted. It stays as the record of the design.
 
 Today Muse Spark writes the SQL, the prose and the Surface in one tool loop. We will add a second mode, `SURFACE_MODEL=glimmer`. In that mode Spark's final reply carries a Brief instead of the Surface, and Muse Glimmer writes the Surface from the Brief plus the Result schemas (ADR 0014). Spark keeps every piece of SQL, including the Drill queries (ADR 0027), and every word a user reads as prose, including the FollowUp questions. Code moves the Drill queries and FollowUps from the Brief into the Surface. So Glimmer only lays out Macros over Result IDs and columns, which keeps ADR 0001 and Glimmer's one job (A2UI only).
 

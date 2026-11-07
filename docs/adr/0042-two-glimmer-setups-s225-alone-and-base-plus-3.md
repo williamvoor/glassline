@@ -4,7 +4,7 @@ status: deprecated
 
 # Two Glimmer setups are measured as Surface writers: s225 alone, and base + 3 + grammar
 
-**Stopped 2026-11-05 (user).** The Glimmer server smoke test measured 31–117 s to the first token on the serverless training sampler (issue 11), against §19's assumption of 3–5 s per call. The split is stopped. Spark keeps writing the Surface. The partial code (`explorer/glimmer/`, the Glimmer server) is kept, unused by the agent.
+**Stopped 2026-11-05 (user).** The Glimmer server smoke test measured 31–117 s to the first token on the serverless training sampler (old issue 11, closed; `docs/issues/11.md` in git history), against §19's assumption of 3–5 s per call. The split is stopped. Spark keeps writing the Surface. The partial code (`explorer/glimmer/`, the Glimmer server) is kept, unused by the agent.
 
 The explorer's Glimmer mode (ADR 0031) offers two setups, chosen by settings (user, 2026-11-05).
 - **s225 alone:** run 2's tuned adapter, with no examples and no grammar.

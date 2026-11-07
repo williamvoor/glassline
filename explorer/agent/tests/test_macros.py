@@ -824,7 +824,7 @@ def test_treemap_drill_links_work_as_for_bar_charts():
     assert c.drills[0].names == ("name",) and c.drills[0].source == action["source"]
 
 
-# --- issue 9: escape filled values only where the text renders as markdown ---------------------
+# --- old issue 9: escape filled values only where the text renders as markdown ---------------------
 # web_core renders h1–h5 and caption Text (and Tabs titles) as plain text, so escaping there shows
 # backslashes. Body Text, Cite, prose and FollowUp labels render markdown and keep escaping.
 

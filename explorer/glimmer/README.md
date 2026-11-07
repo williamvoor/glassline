@@ -1,6 +1,6 @@
 # Glimmer server
 
-**Stopped (2026-11-05).** The explorer split was stopped after this server measured 31–117 s to the first token on the training sampler (`../../docs/issues/11.md`). The sidecar code is retained; nothing in the agent calls it.
+**Stopped (2026-11-05).** The explorer split was stopped after this server measured 31–117 s to the first token on the training sampler (old issue 11, closed; `docs/issues/11.md` in git history). The sidecar code is retained; nothing in the agent calls it.
 
 A local sidecar that samples Muse Glimmer on Fireworks' serverless training sampler. It was built for the proposed Surface-generation split (SPEC §19). Spec: `../specs/glimmer-server/SPEC.md`.
 

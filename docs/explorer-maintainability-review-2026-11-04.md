@@ -93,7 +93,7 @@ The original distinctions between generic library mechanics and application poli
 hold for the SQL guard, model loop, Board cache/prefetch, formatting/charts, DataGrid,
 tabs/actions, Markdown, native HTTP/CLI and filesystem operations. These are design judgments,
 not assertions that those areas are defect-free or that alternative libraries were benchmarked.
-Existing issues 5, 6, 7 and 10 remain marked open; their individual reproductions were not rerun.
+Existing issues 5, 6, 7 and 10 (now [#17](https://github.com/williamvoor/glassline/issues/17), [#18](https://github.com/williamvoor/glassline/issues/18), [#19](https://github.com/williamvoor/glassline/issues/19) and [#21](https://github.com/williamvoor/glassline/issues/21)) remain marked open; their individual reproductions were not rerun.
 
 Primary documentation was rechecked for [JSON Schema validation](https://python-jsonschema.readthedocs.io/en/stable/validate/),
 [Psycopg composition](https://www.psycopg.org/psycopg3/docs/api/sql.html),
@@ -198,7 +198,7 @@ These are design recommendations, not additional defect findings.
 | Later | Separate domain state from transport orchestration | `llm.py` imports `Conversation` and `StatusFn` from the A2A executor. Put these contracts in a transport-independent module. Split Board parsing/Controls from rendering/cache at those existing responsibility boundaries; do not split files merely by size. |
 | Next, alongside shared rendering | Return panel outcomes as structured metadata | Bootstrap `visual_verdicts` infers failed/empty status from rendered Text, including fixed English messages; the Board CLI also counts fixed fallback text. Explicit panel outcomes would let display wording and layout evolve without changing diagnostic classification. |
 
-An incremental order is preferable: add the missing behavioral checks, fix the six findings, then extract the shared operations and interfaces while preserving those checks. Existing issues [5](issues/5.md), [6](issues/6.md), [7](issues/7.md) and [10](issues/10.md) also intersect Macro metadata, Result lifetime, model outcomes and display bounds. They remain existing issues and are not counted as new findings here.
+An incremental order is preferable: add the missing behavioral checks, fix the six findings, then extract the shared operations and interfaces while preserving those checks. Existing issues [#17](https://github.com/williamvoor/glassline/issues/17), [#18](https://github.com/williamvoor/glassline/issues/18), [#19](https://github.com/williamvoor/glassline/issues/19) and [#21](https://github.com/williamvoor/glassline/issues/21) also intersect Macro metadata, Result lifetime, model outcomes and display bounds. They remain existing issues and are not counted as new findings here.
 
 ## Verification and limits
 

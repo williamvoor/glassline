@@ -1,4 +1,4 @@
-// Pins web_core's markdown rule that the agent copies (issue 9): h1–h5 and caption Text, and Tabs
+// Pins web_core's markdown rule that the agent copies (old issue 9): h1–h5 and caption Text, and Tabs
 // titles, render as plain text; body Text renders markdown. The agent escapes filled database
 // values only for markdown (`macros.PLAIN_TEXT_VARIANTS`), so if an SDK bump changes this rule,
 // titles would show backslashes or render markdown. This test fails first.

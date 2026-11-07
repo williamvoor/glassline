@@ -390,7 +390,7 @@ Steps 1–3 run in parallel with the database build in `../austender/`.
   text (Lit escaping), and `Cite` escapes markdown before inserting into `Text`. Chart data goes in
   `data.values` only. Filled values are markdown-escaped only where the text renders as markdown
   (body Text, `Cite`, prose, `FollowUp` labels). `h1`–`h5` and `caption` Text and `Tabs` titles are
-  plain text, bound as text by Lit, so they take values as written (amended 2026-11-04, issue 9).
+  plain text, bound as text by Lit, so they take values as written (amended 2026-11-04, old issue 9).
 - Database comments go into the prompt (layer 3). They are written by us in the dataset's
   migrations, so they are trusted configuration, not data. The same holds for the Comment
   overlay (section 13), which is committed with the dataset.
@@ -1043,7 +1043,7 @@ Decisions made while building, where the text above was silent or had to change:
   back as its SQLSTATE and a fixed message; other messages and hints have the bound values masked
   (`<value>`). The same text is what gets logged.
 - **The row label in a Drill-down's title is written as is.** The title is an `h4` Text, which
-  the client renders as plain text, as are the tab title and the log (amended 2026-11-04, issue 9;
+  the client renders as plain text, as are the tab title and the log (amended 2026-11-04, old issue 9;
   it was markdown-escaped, which showed backslashes).
 - **Retry counts as the confirmation**: the user confirmed that Ask, and Retry is an explicit
   click on it.
@@ -1893,7 +1893,7 @@ too, so a Control change discards them.
 5. The server puts the heading first, then the Controls Card, then the layout. The title and row
    label are shown as written, not markdown-escaped, because the client renders `h1`–`h5` and
    `caption` Text as plain text (amended 2026-11-03). Visual and Drill-down titles follow the
-   same rule since 2026-11-04 (issue 9).
+   same rule since 2026-11-04 (old issue 9).
 6. A query that fails replaces its Visuals with an error Card ("This panel couldn't load:
    <SQLSTATE>", with no values), and the rest of the Board still shows.
 
@@ -2444,7 +2444,7 @@ Every finding was taken unless noted:
     `drill_sql` can't fail yet.
   - Showing a question typed before the Board arrives at once. It waits for the Board's reply,
     without feedback.
-- **Found, outside 1a:** issue 9. §15 Drill-down and chart titles escape markdown in `h4`
+- **Found, outside 1a:** old issue 9. §15 Drill-down and chart titles escape markdown in `h4`
   Text, which renders as plain text, so backslashes show.
 - **Screenshots** (stub app, light and dark, 1440 and 390 px): no console errors and no
   horizontal overflow. On a wide screen, the cards in a layout `Row` keep their own width
@@ -2456,7 +2456,7 @@ Every finding was taken unless noted:
   - **Major:** a Drill-down's tab title and log text showed `_fill`'s markdown escapes as
     backslashes (`Smith \(Pty\) Ltd\.`, `\$1\.5M`). They are now unescaped
     (`macros.unescape_markdown`, the exact inverse of `escape_markdown`), with a regression test.
-    The Surface keeps its escaping, which is issue 9's.
+    The Surface keeps its escaping, which is old issue 9's.
   - `drill_title` placeholders are checked at startup, as `title` is. A bad one blanked the panel.
   - Tests added: a failed question opens no tab; a passing bar Drill query at startup; a list
     value dropping a Board drill; a running tab keeping its spinner while another is selected.
@@ -2579,9 +2579,9 @@ amendment), a fresh agent per run, against the real database, with no model call
   - The answer kept the Board's state: its caption says "limited procurement method only", and
     its numbers are the Board's (`$464.5B`, 472,103 contracts). It answered from the pinned
     Board Results, so it saved a model call and a query.
-  - It charted the Board's 162-row `share` Result as a `BarChart` with every bar: issue 10.
+  - It charted the Board's 162-row `share` Result as a `BarChart` with every bar: issue [#21](https://github.com/williamvoor/glassline/issues/21).
 - **Part B's manual checks (2026-11-04)** passed. They led to the card-width fix (`ef7e60b`), the
-  Entity Board click choice (§20, a draft), issue 10, and the fix below.
+  Entity Board click choice (§20, a draft), issue [#21](https://github.com/williamvoor/glassline/issues/21), and the fix below.
 
 ### Fix, manual check 5 (2026-11-04)
 
@@ -2593,7 +2593,7 @@ amendment), a fresh agent per run, against the real database, with no model call
   `drill_sql`"). After the example, Spark still wrote `drill_sql` that was ignored. One live
   rerun wrote none.
 
-### Fix, issue 9 (2026-11-04)
+### Fix, old issue 9 (2026-11-04)
 
 - `macros._fill` takes a required `markdown` flag, so each call site states where its text goes.
   Visual titles, `drill_title`, `Metric` labels and no-rows headings are plain. `Cite`, prose and
@@ -2616,7 +2616,7 @@ Status: **draft, not approved. Nothing is built yet.** Decision: ADR 0031 (propo
 §2 (request flow), §5 (where `drill_sql` comes from), §6 (prompt layers) and §7 (settings).
 New term in `../CONTEXT.md`: **Glimmer server**. **Brief** is already defined there (ADR 0014).
 
-**Stopped 2026-11-05 (user).** The Glimmer server smoke test measured 31–117 s to the first token on the serverless training sampler (issue 11), against §19's assumption of 3–5 s per call. The split is stopped. Spark keeps writing the Surface. The partial code (`explorer/glimmer/`, the Glimmer server) is kept, unused by the agent.
+**Stopped 2026-11-05 (user).** The Glimmer server smoke test measured 31–117 s to the first token on the serverless training sampler (old issue 11, closed; `docs/issues/11.md` in git history), against §19's assumption of 3–5 s per call. The split is stopped. Spark keeps writing the Surface. The partial code (`explorer/glimmer/`, the Glimmer server) is kept, unused by the agent.
 
 **Update 2026-11-05 (earlier).** The user chose two Glimmer setups, **s225 alone** (macros from the prompt alone) and **base + 3 + grammar** (ADR 0042, accepted). A2 therefore has three arms. The Glimmer server is being built as the first A1 slice (`specs/glimmer-server/SPEC.md`). Stage 0 has not been run.
 
