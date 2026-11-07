@@ -13,6 +13,7 @@ async function mount() {
   vi.useFakeTimers();
   let saved = 'old', exported = '';
   const f = fakeFetch({
+    'POST /api/validate': () => [200, {errors: [], context_chars: 1}],
     'POST /api/boards/estimate': () => [200, {}],
     'POST /api/boards/validate': b => { saved = b.boards[0].toml; return [200, state()]; },
     'POST /api/export': () => { exported = saved; return [200, {workspace: 'demo', reloaded: true}]; },
@@ -96,4 +97,83 @@ it('stays on Boards when flushing discovers invalid edits', async () => {
   await wizard.goTo('export');
   await wizard.updateComplete;
   expect(editor.isConnected).toBe(true);
+});
+
+async function enterBoardsWithRecheck() {
+  const {wizard} = await mount();
+  await wizard.goTo('review');
+  await wizard.updateComplete;
+  const requests: string[] = [];
+  let saved = 'old';
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const recheck = new Promise<void>((ok, fail) => { resolve = ok; reject = fail; });
+  wizard.api.validateBoards = async boards => {
+    const toml = boards[0].toml;
+    requests.push(toml);
+    if (requests.length === 1) await recheck;
+    saved = toml;
+    return {...state(), boards};
+  };
+  const entry = wizard.goTo('boards');
+  await vi.advanceTimersByTimeAsync(0);
+  const editor = wizard.querySelector('bs-boards') as BsBoards;
+  await editor.updateComplete;
+  expect(requests).toEqual(['old']);
+  const area = editor.querySelector('textarea')!;
+  const edit = (toml: string) => {
+    area.value = toml;
+    area.dispatchEvent(new Event('input'));
+  };
+  return {wizard, editor, area, edit, requests, resolve, reject, entry, saved: () => saved};
+}
+
+it.each([false, true])('preserves edits made during the Board entry recheck (debounce finishes first=%s)', async debounceFirst => {
+  const {wizard, editor, area, edit, requests, resolve, entry, saved} = await enterBoardsWithRecheck();
+  edit('latest');
+  if (debounceFirst) await vi.advanceTimersByTimeAsync(400);
+  expect(requests).toEqual(['old']); // the recheck and edit share one save queue
+  resolve();
+  await entry;
+  await wizard.updateComplete;
+  await editor.updateComplete;
+  expect(area.value).toBe('latest');
+  await vi.advanceTimersByTimeAsync(400);
+  expect(requests).toEqual(['old', 'latest']);
+  expect(saved()).toBe('latest');
+  expect(wizard.boards!.boards[0].toml).toBe('latest');
+  expect(area.value).toBe('latest');
+});
+
+it('preserves edits and permits retry after a Board entry recheck fails', async () => {
+  const {wizard, editor, area, edit, reject, entry, saved} = await enterBoardsWithRecheck();
+  reject(new Error('recheck failed'));
+  await entry;
+  await editor.updateComplete;
+  expect(area.value).toBe('old');
+  expect(editor.querySelector('[role=alert]')!.textContent).toContain('recheck failed');
+  edit('latest');
+  await vi.advanceTimersByTimeAsync(400);
+  await wizard.updateComplete;
+  await editor.updateComplete;
+  expect(saved()).toBe('latest');
+  expect(area.value).toBe('latest');
+  expect(editor.querySelector('[role=alert]')).toBeNull();
+});
+
+it('flushes edits before Export while a Board entry recheck runs', async () => {
+  const {wizard, editor, edit, requests, resolve, entry, saved} = await enterBoardsWithRecheck();
+  edit('latest');
+  const leaving = wizard.goTo('export');
+  await vi.advanceTimersByTimeAsync(0);
+  expect(editor.isConnected).toBe(true);
+  expect(requests).toEqual(['old']);
+  resolve();
+  await entry;
+  await leaving;
+  await wizard.updateComplete;
+  expect(requests).toEqual(['old', 'latest']);
+  expect(saved()).toBe('latest');
+  expect(wizard.step).toBe('export');
+  expect(editor.isConnected).toBe(false);
 });

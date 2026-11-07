@@ -361,10 +361,14 @@ export class ExplorerWizard extends LitElement {
     }
     this.go(step);
     if (step === 'boards' && this.boards && !this.boardsRunning) {
-      const files = this.boards.boards;
-      await this.guard(async () => {
-        this.boards = await this.api.validateBoards(files);
-      });
+      // The arrival recheck also saves: share the editor's queue so a delayed reply cannot
+      // replace newer text or persist older files after the user's edit has been saved.
+      await this.updateComplete;
+      const editor = this.querySelector<BsBoards>('bs-boards');
+      if (editor) {
+        await editor.updateComplete;
+        await editor.validate();
+      }
     }
   }
 

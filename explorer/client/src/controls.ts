@@ -79,6 +79,7 @@ export class BoardControls {
   private readonly timers: Timers;
   private readonly subscription: {unsubscribe(): void};
   private lastSent: WireValues;
+  private lastSentFailed = false; // a failed request cannot suppress retained slider intent
   private lastSeen: WireValues; // the values at the previous notification
   private displayedRaw: Record<string, unknown>;
   private displayedSeq = 0;
@@ -120,7 +121,7 @@ export class BoardControls {
     // toggle flipped while a slider's send is pending goes at once, taking the slider with it.
     const now = this.controls.filter(c => !same(values[c.name], this.lastSeen[c.name]));
     this.lastSeen = values;
-    if (same(values, this.lastSent)) {
+    if (!this.lastSentFailed && same(values, this.lastSent)) {
       this.cancelTimer(); // a slider dragged back to where it was
       return;
     }
@@ -138,13 +139,14 @@ export class BoardControls {
     this.timer = undefined;
   }
 
-  /** Sends the full values now, if they differ from the last sent. */
+  /** Sends the full values now, if changed or the last request failed. */
   flush() {
     this.cancelTimer();
     const raw = this.raw();
     const values = wireValues(this.controls, raw);
-    if (same(values, this.lastSent)) return;
+    if (!this.lastSentFailed && same(values, this.lastSent)) return;
     this.lastSent = values;
+    this.lastSentFailed = false;
     this.sentRaw.set(++this.seq, raw);
     this.inflight.add(this.seq);
     this.notify();
@@ -168,11 +170,13 @@ export class BoardControls {
   /** A failed request cannot roll back a newer request or an unsent slider edit. */
   revert(seq: number) {
     this.sentRaw.delete(seq);
+    if (seq === this.seq) this.lastSentFailed = true;
     if (seq > this.displayedSeq && !this.hasNewerIntent(seq)) this.restoreDisplayed();
   }
 
   private restoreDisplayed() {
     this.lastSent = wireValues(this.controls, this.displayedRaw); // first, so the writes send nothing
+    this.lastSentFailed = false;
     this.lastSeen = this.lastSent;
     this.writing = true;
     try {
