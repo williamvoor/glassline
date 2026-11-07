@@ -167,4 +167,59 @@ describe('BoardControls', () => {
       ctrl.dispose();
     }
   });
+
+  it.each([false, true])('resends failed Control values when a pending slider returns to them (accept=%s)', accept => {
+    const {model, ctrl, timers, sent} = setup();
+    model.set('/controls/hide', true);
+    model.set('/controls/min', 1);
+    ctrl.revert(1);
+    ctrl.settled(1);
+    model.set('/controls/min', 0);
+    timers.fire();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual({seq: 2, values: sent[0].values});
+    if (accept) expect(ctrl.applied(2)).toBe(true);
+    else ctrl.revert(2);
+    ctrl.settled(2);
+    expect(model.get('/controls')).toEqual({...INITIAL, hide: accept});
+    expect(ctrl.pending).toBe(false);
+    expect(timers.count).toBe(0);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('flushes intent equal to failed Control values', () => {
+    const {model, ctrl, timers, sent} = setup();
+    model.set('/controls/hide', true);
+    model.set('/controls/min', 1);
+    ctrl.revert(1);
+    ctrl.settled(1);
+    model.set('/controls/min', 0);
+    ctrl.flush();
+    expect(sent).toHaveLength(2);
+    expect(sent[1].values).toEqual(sent[0].values);
+    expect(timers.count).toBe(0);
+    ctrl.flush();
+    timers.fire();
+    expect(sent).toHaveLength(2);
+  });
+
+  it.each([false, true])('does not resend accepted or outstanding Control values when a slider returns (accept=%s)', accept => {
+    const {model, ctrl, timers, sent} = setup();
+    model.set('/controls/hide', true);
+    model.set('/controls/min', 1);
+    if (accept) {
+      expect(ctrl.applied(1)).toBe(true);
+      ctrl.settled(1);
+    }
+    model.set('/controls/min', 0);
+    ctrl.flush();
+    timers.fire();
+    expect(timers.count).toBe(0);
+    expect(sent).toHaveLength(1);
+    if (!accept) {
+      expect(ctrl.applied(1)).toBe(true);
+      ctrl.settled(1);
+    }
+    expect(model.get('/controls')).toEqual({...INITIAL, hide: true});
+  });
 });
