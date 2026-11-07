@@ -81,7 +81,7 @@ VM's data later, re-ingest locally, redo this dump and the restore. The VM can't
 
 ## 3. Copy the code and the dump to the VM (your machine)
 
-The repo has no remote, so copy the files it needs (the paths the Dockerfile uses):
+The VM doesn't clone the repo, so copy the files it needs (the paths the Dockerfile uses):
 
 ```bash
 HOST=ubuntu@<elastic-ip>

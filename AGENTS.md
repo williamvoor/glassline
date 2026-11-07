@@ -47,7 +47,8 @@ The central design idea (ADR 0001): the model never retypes data. It references 
 
 ## Issues
 
-The repo has no remote, so issues live in `docs/issues/`, one Markdown file per issue, named
+The repo's remote is GitHub (`origin`, `williamvoor/glassline`), but issues stay in the repo, in
+`docs/issues/`: one Markdown file per issue, named
 `<N>.md` with the next free number (`1.md`, `2.md`, …).
 - **Start of the file:** start it with `# <N>. <title>` and a line of
   `**Status:** open · **Opened:** <YYYY-MM-DD> · **Source:** <where it was found>`.

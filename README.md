@@ -183,7 +183,7 @@ spec amendment or sub-spec and an ADR where a decision is needed. Tests must not
 models or external data services. Keep the shared A2UI SDK pin aligned across Explorer and
 Glimmer, and preserve vendored Apache-2.0 notices.
 
-Issues live in [`docs/issues/`](docs/issues/), since the repository has no remote issue tracker.
+Issues live in [`docs/issues/`](docs/issues/), kept with the code rather than in GitHub's tracker.
 Use Conventional Commits with the template in [`.gitmessage`](.gitmessage).
 
 ## License and attribution
