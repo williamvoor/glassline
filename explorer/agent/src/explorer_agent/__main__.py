@@ -31,6 +31,7 @@ from explorer_agent.boards import (
     BOARD_COLD_TARGET_S,
     BoardError,
     BoardRenderer,
+    OptionsError,
     build_board,
     check_board,
     instance_results,
@@ -123,7 +124,12 @@ async def _boards_check(settings: Settings, target_s: float = BOARD_COLD_TARGET_
                 print(f"skip {board.name}: an Entity Board renders per row; not timed")
                 continue
             start = time.perf_counter()
-            options, state, bound = await renderer.defaults(board, fresh=True)
+            try:
+                options, state, bound = await renderer.defaults(board, fresh=True)
+            except OptionsError as e:  # a Control's option query failed when rendered
+                slow.append(board.name)
+                print(f"FAIL {board.name}: {time.perf_counter() - start:.2f} s cold, failed queries: {e}")
+                continue
             outcomes = await renderer.outcomes(board, bound, fresh=True)
             results, failed_states = instance_results(outcomes, iter(f"r{i}" for i in range(1, 10_000)).__next__)
             ui = build_board(board, results, failed_states, pipeline, "turn-0-1-check", options=options, state=state)

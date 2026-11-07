@@ -39,6 +39,8 @@ class Runner:
     'DataTable("totals", "Count", format="n:typo")',
     'DataTable("totals", "Count", format="n")',
     'BarChart("totals", "n", "n", "Count", format="typo")',
+    'BarChart("totals", "n", "n", "Count", format="text")',
+    'LineChart("totals", "n", "n", "Count", format="date")',
     'Cite("Count {totals[0].n|typo}")',
 ])
 async def test_startup_rejects_static_macro_errors(macro):
@@ -68,6 +70,33 @@ default = 5
                         row_cap=20, ttl_s=30, max_cache=10))
     assert await main._boards_check(settings, target_s=60) == 0
     assert capsys.readouterr().out.startswith("ok explorer:")
+    pool.close.assert_awaited_once()
+
+
+async def test_cli_reports_a_failed_options_query_and_checks_the_other_boards(monkeypatch, capsys):
+    from explorer_agent.boards import OptionsError
+    first = parse_board(BOARD, Path("boards/first.toml"), ALLOWED)
+    second = parse_board(BOARD, Path("boards/second.toml"), ALLOWED)
+    settings = SimpleNamespace(dataset=SimpleNamespace(boards={first.name: first, second.name: second},
+                                                       allowed_schemas=ALLOWED),
+                               sql_timeout_ms=1000, sql_row_cap=20)
+    pool = SimpleNamespace(close=AsyncMock())
+    monkeypatch.setattr(main, "_open_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(main, "SqlRunner", lambda *a: Runner())
+    monkeypatch.setattr(main.UiPipeline, "from_settings", lambda _: UiPipeline(allowed_schemas=ALLOWED))
+
+    class Renderer(BoardRenderer):
+        async def defaults(self, board, fresh=False):
+            if board.name == first.name:
+                raise OptionsError("options.agency")
+            return await super().defaults(board, fresh=fresh)
+
+    monkeypatch.setattr(main, "_renderer", lambda s, r: Renderer(s.dataset.boards, r, concurrency=2,
+                        row_cap=20, ttl_s=30, max_cache=10))
+    assert await main._boards_check(settings, target_s=60) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith(f"FAIL {first.name}:") and out[0].endswith("failed queries: options.agency")
+    assert out[1].startswith(f"ok {second.name}:")
     pool.close.assert_awaited_once()
 
 
