@@ -79,6 +79,10 @@ _Avoid_: Page, panel, window
 One thing done in the investigation, listed in the Sidebar: a question, opening a Board, a Drill-down, an Ask, or the Control changes made on one Tab in a row. Selecting a Log entry shows its Tab.
 _Avoid_: Step (a step is a status-line step of a model run), cycle, event
 
+**Trace**:
+A record, for debugging, of everything the Explorer did behind a Conversation: each call to and from a model and each SQL query run against the Dataset. It is made of **Trace events**. A Trace is recorded only while the user has it switched on, and never holds data rows. A Conversation's Trace is grouped by Turn, then by Level; a New Workspace or Regenerate run has its own Trace, kept with its Workspace. A Trace is not the investigation log: Log entries are what the user did, and Trace events are what the Explorer did.
+_Avoid_: Debug log, log (taken by Log entry), audit
+
 ### Interaction
 
 **Action**:

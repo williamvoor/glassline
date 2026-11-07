@@ -1,5 +1,6 @@
 // Workspaces and saved Conversations (specs/workspaces/SPEC.md phase 1): the agent's REST routes
 // and the hash routes. The explorer has one mode (ADR 0048): this is always on.
+import type {Prompts, TraceEvent} from './trace.js';
 
 export interface WorkspaceInfo {
   name: string;
@@ -54,6 +55,8 @@ export interface SavedLevel {
   tab: {id: string; kind: string; title: string};
   /** The model that answered (null: none, database only); absent for Levels saved before E10. */
   model?: string | null;
+  /** The Level's saved Trace (specs/trace), when it was recorded. */
+  trace?: {events: TraceEvent[]; prompts: Prompts};
 }
 
 export const DATA_CHANGED = 'The data has changed since this answer; its wording may be out of date.';

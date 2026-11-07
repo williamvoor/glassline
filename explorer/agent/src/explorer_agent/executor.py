@@ -29,6 +29,7 @@ from a2a.utils import new_task
 from a2ui.a2a import create_a2ui_part, get_a2ui_datapart, try_activate_a2ui_extension
 from a2ui.constants import A2UI_CLIENT_CAPABILITIES_KEY
 
+from explorer_agent import trace
 from explorer_agent.actions import (
     MAX_ACTION_SOURCES,
     MAX_PENDING_PAIRS,
@@ -73,6 +74,7 @@ from explorer_agent.saved import (
     SavedResult,
     SavedStore,
     Snapshot,
+    omit_rows,
     result_ids_in,
     row_hash,
     title_of,
@@ -114,6 +116,8 @@ BOARD_BUILD_FAILED = "The Explorer couldn't be shown. You can still ask a questi
 ENTITY_FAILED = "The Board couldn't be shown. You can retry, or ask the agent instead."
 KEYED_BOARD = "This Board opens from a row."
 MAX_BOARD_INSTANCES = 10
+TRACE_KEY = "explorerTrace"  # request metadata: true records a Trace; final metadata: {level} (specs/trace)
+TRACE_EVENT_KEY = "explorerTraceEvent"  # status-update metadata: one Trace event, live
 VIEW_KEY = "explorerView"  # request metadata: {closed: [tab IDs], selected: tab ID} (Workspaces B12)
 GAVE_UP = "This answer couldn't be completed when it was asked."
 REBUILD_FAILED = "This answer couldn't be shown again."
@@ -188,6 +192,7 @@ class Conversation:
     restore_results: Callable[[list[str]], Awaitable[None]] | None = field(default=None, repr=False)  # B9
     unsaved: list[StoredResult] = field(default_factory=list)  # named by a reply, outside the store (pinned)
     deleted: bool = False  # deleted from the store: never written again
+    trace_prompts: dict[str, str] = field(default_factory=dict)  # system prompts of saved Traces, by hash
 
     def __post_init__(self) -> None:
         self.actions = ActionState(self.surface_tag, self.max_action_sources, self.max_pending_pairs)
@@ -348,6 +353,7 @@ def restore(loaded: Loaded, limits: Mapping[str, Any]) -> Conversation:
     conv.records = dict(st["records"])
     conv.log = list(st["log"])
     conv.view = dict(st["view"])
+    conv.trace_prompts = dict(st.get("trace_prompts") or {})
     conv.board_counter = st["board_counter"]
     conv.board_opened = st["board_opened"]
     conv.store.next_number = st["store_next"]
@@ -482,6 +488,12 @@ class ExplorerExecutor(AgentExecutor):
             conv = await self._conversations.get_or_load(task.context_id)
             viewing = (metadata or {}).get(VIEWING_KEY)
             self._note_view(conv, (metadata or {}).get(VIEW_KEY))
+            recorder: trace.Recorder | None = None
+            if (metadata or {}).get(TRACE_KEY) is True:
+                async def live(event: dict[str, Any]) -> None:
+                    await updater.update_status(TaskState.working, message=text_message("", {TRACE_EVENT_KEY: event}))
+
+                recorder = trace.Recorder(live, known_prompts=set(conv.trace_prompts))
 
             async def status(text: str) -> None:
                 await updater.update_status(TaskState.working, message=text_message(text))
@@ -505,10 +517,14 @@ class ExplorerExecutor(AgentExecutor):
                 meta[LOG_KEY] = {"kind": tab.kind, "tag": tag, "text": tab.text}
                 if board is not None:
                     meta[BOARD_KEY] = {"id": board.id, "controls": [{"name": c.name, "kind": c.kind} for c in board.board.controls]}
+                if recorder is not None:
+                    recorder.close()  # a prefetch started after this records nothing
+                    meta[TRACE_KEY] = {"level": level_id(level)}
                 if self._saved is not None:
                     if record is not None and MODEL_KEY in meta:
                         record = {**record, "model": meta[MODEL_KEY]}  # Workspaces SPEC E10: the chip on reopen
                     self._record(conv, level, meta[TAB_KEY], meta[LOG_KEY], record, board)
+                    self._keep_trace(conv, level_id(level), recorder)
                 await updater.complete(updater.new_agent_message(parts, metadata=meta))
                 self._save(conv)  # after the reply is sent (B13)
 
@@ -517,12 +533,16 @@ class ExplorerExecutor(AgentExecutor):
                 parts = [Part(root=TextPart(text=""))]
                 if ui_on:
                     parts += [create_a2ui_part(m) for m in messages or []]
+                if recorder is not None:
+                    recorder.close()
                 await updater.complete(updater.new_agent_message(parts, metadata=metadata))
                 if LOG_KEY in metadata and self._saved is not None:  # a Control change: its in-place Log entry
                     board_id = metadata[IN_PLACE_KEY]["board"]
                     lid = next((k for k, v in conv.board_levels.items() if v == board_id), None)
                     tab = conv.records[lid]["tab"]["id"] if lid in conv.records else None
                     conv.log.append({"in_place": board_id, "on_tab": tab, **metadata[LOG_KEY]})
+                    if lid is not None:
+                        self._keep_trace(conv, lid, recorder)
                     self._save(conv)
 
             async def fail(text: str, **extra: Any) -> None:
@@ -530,32 +550,47 @@ class ExplorerExecutor(AgentExecutor):
 
             action = action_of(context.message)
             is_action = action is not _NOT_AN_ACTION
-            if not (isinstance(action, dict) and action.get("name") == OPEN_BOARD):
-                conv.persist = True  # anything beyond opening the Explorer is worth saving (B13)
-            if not is_action:
-                await self._question(conv, context.get_user_input(), viewing, status, send, text_message, updater)
-                return
-            if isinstance(action, dict) and action.get("name") == OPEN_BOARD:
-                await self._open_board(conv, action, send, fail)
-                return
-            if isinstance(action, dict) and action.get("name") == CONTROLS:
-                await self._controls(conv, action, reply, fail)
-                return
-            try:
-                resolved = conv.actions.resolve(action, {sid: s for b in conv.boards.values() for sid, s in b.sources.items()})
-            except ActionError as e:
-                log.info("action rejected: %s", e)
-                await fail(str(e))
-                return
-            if resolved.kind == "board":
-                await self._open_entity(conv, resolved, send, fail)
-            elif resolved.name == "drill":
-                await self._drill(conv, resolved, send, fail)
-            else:
-                await self._ask(conv, resolved, viewing, status, send, text_message, updater)
+            with trace.recording(recorder):
+                await self._dispatch(context, conv, action, viewing, status, send, reply, fail, text_message, updater)
         except Exception:
             log.exception("answering failed")
             await updater.complete(text_message(GENERIC_ERROR, {ACTION_FAILED_KEY: True} if is_action else None))
+
+    async def _dispatch(self, context, conv, action, viewing, status, send, reply, fail, text_message, updater) -> None:
+        """Routes one request: a typed question or an Action."""
+        if not (isinstance(action, dict) and action.get("name") == OPEN_BOARD):
+            conv.persist = True  # anything beyond opening the Explorer is worth saving (B13)
+        if action is _NOT_AN_ACTION:
+            await self._question(conv, context.get_user_input(), viewing, status, send, text_message, updater)
+            return
+        if isinstance(action, dict) and action.get("name") == OPEN_BOARD:
+            await self._open_board(conv, action, send, fail)
+            return
+        if isinstance(action, dict) and action.get("name") == CONTROLS:
+            await self._controls(conv, action, reply, fail)
+            return
+        try:
+            resolved = conv.actions.resolve(action, {sid: s for b in conv.boards.values() for sid, s in b.sources.items()})
+        except ActionError as e:
+            log.info("action rejected: %s", e)
+            await fail(str(e))
+            return
+        if resolved.kind == "board":
+            await self._open_entity(conv, resolved, send, fail)
+        elif resolved.name == "drill":
+            await self._drill(conv, resolved, send, fail)
+        else:
+            await self._ask(conv, resolved, viewing, status, send, text_message, updater)
+
+    def _keep_trace(self, conv: Conversation, lid: str, recorder: trace.Recorder | None) -> None:
+        """Saves the request's Trace events on Level `lid` (appended: a Control change adds to its
+        Board's Level) and any new system prompt once, by hash (specs/trace)."""
+        if recorder is None or lid not in conv.records or not recorder.events:
+            return
+        for e in recorder.events:
+            if e.get("kind") == "prompt":
+                conv.trace_prompts[e["hash"]] = e["text"]
+        conv.records[lid].setdefault("trace", []).extend(trace.saved_form(recorder.events, omit_rows))
 
     # model runs -----------------------------------------------------------------------------
 
@@ -672,7 +707,8 @@ class ExplorerExecutor(AgentExecutor):
                 outcome = await self._drills.prefetcher.take(conv.id, src.id, resolved.row)
             prefetched = outcome is not None
             if outcome is None:
-                outcome = await self._drills.runner.run_bound(spec.sql, values)
+                with trace.source("drill"):
+                    outcome = await self._drills.runner.run_bound(spec.sql, values)
             if isinstance(outcome, SqlFail):
                 log.warning("drill-down failed: source=%s row=%d sqlstate=%s", src.id, resolved.row, outcome.sqlstate)
                 await fail(DRILL_FAILED.format(reason=outcome.sqlstate or "query error"))
@@ -969,6 +1005,8 @@ class ExplorerExecutor(AgentExecutor):
             "board_opened": conv.board_opened, "records": copy.deepcopy(conv.records),
             "log": [dict(e) for e in conv.log], "view": copy.deepcopy(conv.view),
         }
+        if conv.trace_prompts:
+            state["trace_prompts"] = dict(conv.trace_prompts)
         title = conv.title or next((r["tab"]["title"] for r in conv.records.values() if r["kind"] != "board"), "")
         title = title_of(title or next((r["tab"]["title"] for r in conv.records.values()), "") or "Conversation")
         return Snapshot(conv.id, title, conv.created_at, _now(), a.turns, state, list(conv.history), list(new.values()))
@@ -1025,7 +1063,8 @@ class ExplorerExecutor(AgentExecutor):
                 if saved is None:
                     was_changed, failure = False, ("the result is no longer available", "")
                 else:
-                    outcome = await self._saved.runner.run(saved.sql)
+                    with trace.source("rerun"):
+                        outcome = await self._saved.runner.run(saved.sql)
                     if isinstance(outcome, SqlFail):
                         log.warning("saved result re-run failed: sqlstate=%s", outcome.sqlstate)
                         was_changed, failure = False, (outcome.message, saved.sql)
@@ -1065,6 +1104,10 @@ class ExplorerExecutor(AgentExecutor):
                                    "board_changed": False, "board": None, "tab": dict(rec["tab"])}
             if "model" in rec:  # E10: Levels saved before it have no key, so no chip
                 out["model"] = rec["model"]
+            if rec.get("trace"):  # specs/trace: the saved events and the prompts they name
+                hashes = {e.get("prompt_hash") for e in rec["trace"]}
+                out["trace"] = {"events": rec["trace"],
+                                "prompts": {h: t for h, t in conv.trace_prompts.items() if h in hashes}}
             kind = rec["kind"]
             if kind == "board":
                 await self._rebuild_board(conv, lid, rec, level, out, defaults)

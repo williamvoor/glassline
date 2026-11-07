@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import logging
 import re
 import shutil
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -26,6 +28,8 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from explorer_agent import trace
+from explorer_agent.saved import ROWS_OMITTED, omit_rows
 from explorer_agent.config import SCHEMA_NAME, ConfigError, Dataset, load_dataset
 from explorer_agent.schema import SchemaCatalog
 from explorer_agent.sql import NO_TABLES_PREFIX, SqlRunner, StartupError
@@ -59,6 +63,7 @@ from explorer_bootstrap.registry import (
 from explorer_bootstrap.stats import open_report_pool, visible_schemas
 
 log = logging.getLogger(__name__)
+TRACES_KEPT = 3  # run Traces kept per directory (specs/trace)
 
 
 @dataclass
@@ -69,6 +74,7 @@ class _Run:
     error: str | None = None
     task: asyncio.Task | None = None
     kind: str = "draft"  # or "boards" (phase 3): one run at a time across both loops
+    recorder: trace.Recorder | None = None  # specs/trace: set when the run was started with "trace": true
 
 
 @dataclass
@@ -158,6 +164,21 @@ async def _body(request: Request) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def _omit_run_rows(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The saved history's omission, plus the bootstrap run_sql result's `rows` list."""
+    out = []
+    for m in omit_rows(messages):
+        if m.get("role") == "tool" and isinstance(m.get("content"), str):
+            try:
+                body = json.loads(m["content"])
+            except ValueError:
+                body = None
+            if isinstance(body, dict) and "rows" in body:
+                m = {**m, "content": json.dumps({**body, "rows": dict(ROWS_OMITTED)}, ensure_ascii=False)}
+        out.append(m)
+    return out
+
+
 def _files_ok(files: Any) -> bool:
     return isinstance(files, dict) and all(isinstance(files.get(k), str) for k in FILE_NAMES)
 
@@ -222,6 +243,51 @@ def build_app(
     settings_mode = data_dir is not None
     regen: dict[str, str | None] = {"name": None}  # D5: the next export goes back into this Workspace
     kept: dict[str, list[dict[str, str]]] = {"boards": []}  # E6: the regenerated Workspace's Boards
+
+    def traces_dir() -> Path | None:
+        """Where this session's run Traces go: the regenerated Workspace's, or New Workspace's."""
+        if data_dir is None:
+            return None
+        return (workspace_dir(data_dir, regen["name"]) if regen["name"] else data_dir) / "traces"
+
+    async def start_trace(request: Request, run: _Run) -> None:
+        body = await _body(request) or {}
+        if body.get("trace") is True:
+            async def live(event: dict[str, Any]) -> None:
+                run.events.append({"type": "trace", "event": event})
+
+            run.recorder = trace.Recorder(live)
+
+    def save_trace(run: _Run) -> None:
+        """Writes a traced run's Trace (saved form) and keeps the newest TRACES_KEPT files."""
+        target = traces_dir()
+        if run.recorder is None or target is None or not run.recorder.events:
+            return
+        try:
+            target.mkdir(parents=True, exist_ok=True, mode=0o700)
+            events = run.recorder.events
+            body = {"run_id": run.id, "kind": run.kind, "at": events[0]["at"],
+                    # Hashes only: the bootstrap prompt embeds the report's pg_stats common values.
+                    "prompts": {e["hash"]: None for e in events if e.get("kind") == "prompt"},
+                    "events": trace.saved_form(events, _omit_run_rows)}
+            path = target / f"{time.time_ns()}-{run.id}.json"  # names sort oldest first
+            path.write_text(json.dumps(body, ensure_ascii=False, default=str))
+            path.chmod(0o600)
+            for old in sorted(target.glob("*.json"), reverse=True)[TRACES_KEPT:]:
+                old.unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("saving a run trace failed: %s", type(e).__name__)
+
+    async def saved_traces(_request: Request) -> JSONResponse:
+        target = traces_dir()
+        out: list[Any] = []
+        if target is not None and target.is_dir():
+            for f in sorted(target.glob("*.json"), reverse=True)[:TRACES_KEPT]:
+                try:
+                    out.append(json.loads(f.read_text()))
+                except (OSError, ValueError):
+                    continue
+        return JSONResponse({"runs": out})
 
     async def reload_now() -> tuple[int, Any]:
         return await (reload() if reload is not None else reload_agent(agent_url))
@@ -350,6 +416,7 @@ def build_app(
                 return _err(problem, 403)
         run = _Run(id=uuid.uuid4().hex[:12])
         report_now = state.report
+        await start_trace(request, run)
 
         async def go() -> None:
             try:
@@ -366,10 +433,11 @@ def build_app(
                 log.warning("draft run failed: %s", type(e).__name__)
                 run.error = f"the draft failed unexpectedly ({type(e).__name__})"
             finally:
+                save_trace(run)
                 run.done = True
 
         state.run = run
-        run.task = asyncio.create_task(go())
+        run.task = asyncio.create_task(go(), context=trace.context_for(run.recorder))
         return JSONResponse({"run_id": run.id})
 
     async def draft_events(request: Request) -> JSONResponse:
@@ -530,6 +598,7 @@ def build_app(
             return _err("a draft is already running", 409)
         run = _Run(id=uuid.uuid4().hex[:12], kind="boards")
         draft_now = copy.deepcopy(state.draft)  # review edits during the run don't change its input
+        await start_trace(request, run)
 
         async def go() -> None:
             try:
@@ -545,10 +614,11 @@ def build_app(
                 log.warning("boards run failed: %s", type(e).__name__)
                 run.error = f"the Boards draft failed unexpectedly ({type(e).__name__})"
             finally:
+                save_trace(run)
                 run.done = True
 
         state.run = run
-        run.task = asyncio.create_task(go())
+        run.task = asyncio.create_task(go(), context=trace.context_for(run.recorder))
         return JSONResponse({"run_id": run.id})
 
     async def current_boards(_request: Request) -> JSONResponse:
@@ -823,6 +893,7 @@ def build_app(
         Route("/api/draft", needs_login(start_draft), methods=["POST"]),
         Route("/api/draft", current_draft, methods=["GET"]),
         Route("/api/draft/{run_id}/events", draft_events),
+        Route("/api/traces", saved_traces),
         Route("/api/claims/verify", needs_login(verify), methods=["POST"]),
         Route("/api/validate", validate, methods=["POST"]),
         Route("/api/export", needs_login(export), methods=["POST"]),

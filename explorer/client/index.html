@@ -187,7 +187,9 @@
       explorer-app .head-actions .new-conversation:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 88%, var(--canvas)); }
       /* Settings open: its button inverted, like a selected tab. */
       explorer-app .head-actions .settings-toggle[aria-pressed=true],
-      explorer-app .head-actions .settings-toggle[aria-pressed=true]:hover:not(:disabled) {
+      explorer-app .head-actions .settings-toggle[aria-pressed=true]:hover:not(:disabled),
+      explorer-app .head-actions .trace-toggle[aria-pressed=true],
+      explorer-app .head-actions .trace-toggle[aria-pressed=true]:hover:not(:disabled) {
         background: var(--primary); color: var(--on-primary); border-color: var(--primary);
       }
 
@@ -427,6 +429,16 @@
       explorer-app .meta { margin-top: 16px; color: var(--muted); font: 12px/1.5 var(--mono); }
       explorer-app .meta summary { cursor: pointer; }
       explorer-app .steps { margin: 6px 0 0; padding-left: 20px; }
+
+      /* Trace (specs/trace): plain text, scrolls inside itself */
+      .trace { margin-top: 12px; color: var(--muted); font: 12px/1.5 var(--mono); }
+      .trace summary { cursor: pointer; }
+      .trace-events { margin: 6px 0 0; padding-left: 20px; }
+      .trace-events li { margin: 4px 0; }
+      .trace-events li.failed > details > summary { color: var(--error); }
+      .trace pre { margin: 4px 0; padding: 8px; max-height: 320px; overflow: auto; white-space: pre-wrap;
+        overflow-wrap: anywhere; border-radius: 6px; background: var(--panel); color: inherit; }
+      .trace-label { margin: 6px 0 0; font-weight: 600; }
 
       /* Actions (SPEC §15) */
       explorer-app .confirm {

@@ -33,6 +33,7 @@ from explorer_agent.drill import DrillSpec, DrillSqlError, check_output, display
 from explorer_agent.macros import VISUAL_MACROS, check_columns, placeholders, static_drill
 from explorer_agent.results import NUMERIC_TYPES, StoredResult
 from explorer_agent.sql import GuardError, SqlFail, guard
+from explorer_agent import trace
 
 if TYPE_CHECKING:  # ui imports prompt, which imports config, which imports this module
     from explorer_agent.actions import ActionSource, IdAllocator, Level
@@ -1157,10 +1158,11 @@ class BoardRenderer:
         async with self._semaphore.permit(low=low):
             start = time.perf_counter()
             wrapped = wrap(sql, BOARD_ALIAS, f" LIMIT {self._row_cap + 1}")
-            if timeout_ms is not None:  # a prefetch: its own, shorter timeout
-                outcome = await self._runner.run_bound(wrapped, values, timeout_ms=timeout_ms)
-            else:
-                outcome = await (self._runner.run_bound(wrapped, values) if values else self._runner.run(wrapped))
+            with trace.source("board"):
+                if timeout_ms is not None:  # a prefetch: its own, shorter timeout
+                    outcome = await self._runner.run_bound(wrapped, values, timeout_ms=timeout_ms)
+                else:
+                    outcome = await (self._runner.run_bound(wrapped, values) if values else self._runner.run(wrapped))
             ms = round((time.perf_counter() - start) * 1000)
         # Logs name the Board and query only, never Control values (SPEC §18).
         if isinstance(outcome, SqlFail):

@@ -1,6 +1,7 @@
 // A2A client wrapper: one streamed task per question or Action (explorer SPEC §2, §15, ADR 0007).
 import {A2AClient} from '@a2a-js/sdk/client';
 import type {Message, Part} from '@a2a-js/sdk';
+import {TRACE_EVENT_KEY, TRACE_KEY, traceOn, type TraceEvent} from './trace.js';
 
 export const A2UI_EXTENSION_URI = 'https://a2ui.org/a2a-extension/a2ui/v0.9';
 // v0.9 parts carry the deprecated type; newer agents send the spec's one. Accept both.
@@ -8,6 +9,7 @@ export const A2UI_MIME_TYPES = new Set(['application/a2ui+json', 'application/js
 
 export type AskEvent =
   | {kind: 'status'; text: string}
+  | {kind: 'trace'; event: TraceEvent}
   | {kind: 'final'; contextId: string; prose: string; a2ui: Record<string, unknown>[]; metadata?: Record<string, unknown>};
 
 /** An A2UI v0.9 action as dispatched by a surface (references only, SPEC §15). */
@@ -92,6 +94,7 @@ export async function connect(
         a2uiClientCapabilities: capabilities,
         ...(viewing ? {[VIEWING_KEY]: viewing} : {}),
         ...(view?.() ? {[VIEW_KEY]: view()} : {}),
+        ...(traceOn() ? {[TRACE_KEY]: true} : {}),
       },
       ...(contextId ? {contextId} : {}),
     };
@@ -102,6 +105,11 @@ export async function connect(
         const metadata = event.status.message?.metadata as Record<string, unknown> | undefined;
         yield {kind: 'final', contextId: event.contextId, prose: textOf(parts), a2ui: a2uiOf(parts), metadata} as AskEvent;
         return;
+      }
+      const traced = (event.status.message?.metadata as Record<string, unknown> | undefined)?.[TRACE_EVENT_KEY];
+      if (traced && typeof traced === 'object') {
+        yield {kind: 'trace', event: traced as TraceEvent} as AskEvent;
+        continue;
       }
       const statusText = textOf(parts);
       if (statusText) yield {kind: 'status', text: statusText} as AskEvent;

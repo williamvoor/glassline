@@ -22,6 +22,7 @@ from pglast import ast, parse_sql
 from pglast.parser import ParseError
 from psycopg_pool import AsyncConnectionPool
 
+from explorer_agent import trace
 from explorer_agent.results import to_json_safe
 
 log = logging.getLogger(__name__)
@@ -283,6 +284,16 @@ class SqlRunner:
         return await self._run(sql, list(params), self.timeout_ms if timeout_ms is None else int(timeout_ms))
 
     async def _run(self, sql: str, params: list[Any] | None, timeout_ms: int) -> SqlOk | SqlFail:
+        log.debug("sql: %s", sql)  # the text only, never rows (specs/trace)
+        outcome = await self._execute(sql, params, timeout_ms)
+        if isinstance(outcome, SqlOk):
+            await trace.sql_event(sql, params, ok=True, row_count=len(outcome.rows), truncated=outcome.truncated,
+                                  elapsed_ms=outcome.elapsed_ms)
+        else:
+            await trace.sql_event(sql, params, ok=False, sqlstate=outcome.sqlstate, error=outcome.message)
+        return outcome
+
+    async def _execute(self, sql: str, params: list[Any] | None, timeout_ms: int) -> SqlOk | SqlFail:
         if self.guard_enabled:
             try:
                 guard(sql, self.allowed_schemas)

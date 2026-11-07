@@ -18,6 +18,7 @@ from typing import Any
 
 import explorer_agent  # noqa: F401  (sets LiteLLM's env defaults before litellm is imported)
 import litellm
+from explorer_agent import trace
 from explorer_agent.results import to_json_safe
 from explorer_agent.sql import SqlFail, SqlRunner
 
@@ -98,7 +99,8 @@ def _assistant_message(message: Any) -> dict[str, Any]:
 async def _run_sql(runner: SqlRunner, args: Any, rows_to_model: int) -> dict[str, Any]:
     if not isinstance(args, dict) or not isinstance(args.get("sql"), str) or not args["sql"].strip():
         return {"error": {"message": "run_sql needs a 'sql' string"}}
-    outcome = await runner.run(args["sql"])
+    with trace.source("run_sql"):
+        outcome = await runner.run(args["sql"])
     if isinstance(outcome, SqlFail):
         return {"error": {"sqlstate": outcome.sqlstate, "message": outcome.message}}
     rows = [{k: to_json_safe(v) for k, v in r.items()} for r in outcome.rows[:rows_to_model]]
@@ -149,8 +151,13 @@ async def tool_loop(
             async with asyncio.timeout(settings.call_timeout_s):
                 response = await completion(messages=messages, **request)
         except TimeoutError:
+            await trace.model_event(settings.model, messages, reply=None, tokens=None,
+                                    latency_ms=int((time.monotonic() - started) * 1000), error="timeout")
             raise DraftError(f"the model call took longer than {settings.call_timeout_s}s") from None
         except Exception as e:
+            await trace.model_event(settings.model, messages, reply=None, tokens=None,
+                                    latency_ms=int((time.monotonic() - started) * 1000),
+                                    error=f"{type(e).__name__} status={getattr(e, 'status_code', '-')}")
             raise DraftError(f"model call failed: {type(e).__name__}: {_scrub(str(e))}") from None
         call = usage.add(response, int((time.monotonic() - started) * 1000), settings)
         log.info(
@@ -160,6 +167,8 @@ async def tool_loop(
         )
         emit({"type": "call", "usage": call})
         message = response.choices[0].message
+        await trace.model_event(settings.model, messages, reply=_assistant_message(message), tokens=call,
+                                latency_ms=call["latency_ms"])
         tool_calls = list(message.tool_calls or [])
         if not tool_calls:
             messages.append({"role": "assistant", "content": message.content or ""})

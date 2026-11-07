@@ -10,6 +10,7 @@ import difflib
 import logging
 from typing import Any
 
+from explorer_agent import trace
 from explorer_agent.results import ResultStore
 from explorer_agent.schema import SchemaCatalog, TableInfo
 from explorer_agent.sql import SqlFail, SqlRunner
@@ -141,7 +142,8 @@ class ToolBox:
 
     async def run_sql(self, sql: str, purpose: str) -> dict[str, Any]:
         log.info("run_sql (%s): %s", purpose, sql)
-        outcome = await self.runner.run(sql)
+        with trace.source("run_sql"):
+            outcome = await self.runner.run(sql)
         if isinstance(outcome, SqlFail):
             log.info("run_sql failed: %s %s", outcome.sqlstate, outcome.message)
             return {"error": {"sqlstate": outcome.sqlstate, "message": outcome.message, "hint": outcome.hint}}
