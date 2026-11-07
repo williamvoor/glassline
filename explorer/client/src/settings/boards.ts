@@ -100,7 +100,8 @@ export class BsBoards extends LitElement {
     let files: BoardFile[];
     do {
       files = this.files;
-      if (!(await this.validate())) return false;
+      const saved = await this.validate();
+      if (!saved && files === this.files) return false;
     } while (files !== this.files);
     return true;
   }
