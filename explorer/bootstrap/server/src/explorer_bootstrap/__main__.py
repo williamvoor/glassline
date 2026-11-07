@@ -35,6 +35,7 @@ DATASETS_ROOT = Path.home() / ".glassline"  # outside the repo; export creates i
 COMPLETION: Completion | None = None
 URL_VAR = "BOOTSTRAP_DATABASE_URL"
 CONNECT_TIMEOUT_S = 10.0
+CONNECTION_HELP = f"a Connection in EXPLORER_DATA_DIR/connections.toml (default: the login in {URL_VAR})"
 
 EXIT_OK, EXIT_CHECK_FAILED, EXIT_USAGE = 0, 1, 2
 
@@ -52,6 +53,7 @@ def _parser() -> argparse.ArgumentParser:
     which.add_argument("--schemas", help="comma-separated schema names, for a database with no dataset yet")
     r.add_argument("--json", type=Path, dest="json_out", help="also write the full report as JSON here")
     r.add_argument("--no-minmax", action="store_true", help="skip min/max queries")
+    r.add_argument("--connection", help=CONNECTION_HELP)
     r.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
     r.add_argument("--check", action="store_true", help="exit 1 if a comment is missing or the context is over target")
 
@@ -62,10 +64,12 @@ def _parser() -> argparse.ArgumentParser:
     d.add_argument("--out", type=Path, required=True, help="where to write draft.json")
     d.add_argument("--model", help="meta/muse-wonder-1.0 (default) or meta/muse-spark-1.3")
     d.add_argument("--effort", help="reasoning effort (default low)")
+    d.add_argument("--connection", help=CONNECTION_HELP)
     d.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
 
     v = sub.add_parser("verify", help="rerun every claim in a draft and rewrite it")
     v.add_argument("--draft", type=Path, required=True)
+    v.add_argument("--connection", help=CONNECTION_HELP)
     v.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
 
     b = sub.add_parser("boards", help="draft, check and preview Boards for a draft (phase 3)")
@@ -73,11 +77,13 @@ def _parser() -> argparse.ArgumentParser:
     b.add_argument("--out", type=Path, required=True, help="where to write boards.json")
     b.add_argument("--model", help="meta/muse-wonder-1.0 (default) or meta/muse-spark-1.3")
     b.add_argument("--effort", help="reasoning effort (default low)")
+    b.add_argument("--connection", help=CONNECTION_HELP)
     b.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per query (default 5000)")
 
     e = sub.add_parser("export", help="write a reviewed draft to a dataset directory")
     e.add_argument("--draft", type=Path, required=True)
     e.add_argument("--boards", type=Path, help="boards.json from `boards`: re-checked, then written to boards/")
+    e.add_argument("--connection", help=CONNECTION_HELP)
     e.add_argument("--timeout-ms", type=int, default=5000, help="statement_timeout per Board check query (default 5000)")
     e.add_argument("--name", required=True, help="the dataset directory's name")
     e.add_argument("--target", required=True, choices=("toml", "sql"), help="comments.toml (overlay) or comments.sql")
@@ -119,10 +125,31 @@ def _selection(args: argparse.Namespace):
     return None, _schemas(args.schemas)
 
 
-async def _open(env: Mapping[str, str], timeout_ms: int):
-    dsn = env.get(URL_VAR, "").strip()
+def _login_var(env: Mapping[str, str], connection: str | None) -> str:
+    """C7: the variable holding the login, from `--connection NAME` or else BOOTSTRAP_DATABASE_URL."""
+    if connection is None:
+        return URL_VAR
+    from explorer_agent.config import CONNECTIONS_FILE, ConfigError as AgentConfigError, data_dir, load_connections
+    from explorer_agent.config import WorkspaceUnavailable
+
+    raw = env.get("EXPLORER_DATA_DIR", "").strip()
+    if not raw:
+        raise _Fatal("--connection needs EXPLORER_DATA_DIR (where connections.toml is)")
+    try:
+        listed = load_connections(data_dir(raw, REPO_ROOT) / CONNECTIONS_FILE)
+        return listed.resolve(connection).url_env
+    except AgentConfigError as e:
+        raise _Fatal(str(e)) from None
+    except WorkspaceUnavailable as e:
+        known = ", ".join(sorted(listed.connections)) or "none"
+        raise _Fatal(f"{e} (known: {known})") from None
+
+
+async def _open(env: Mapping[str, str], timeout_ms: int, connection: str | None = None):
+    var = _login_var(env, connection)
+    dsn = env.get(var, "").strip()
     if not dsn:
-        raise _Fatal(f"{URL_VAR} is not set (put it in {ENV_FILE} or the environment)")
+        raise _Fatal(f"{var} is not set (put it in {ENV_FILE} or the environment)")
     try:
         pool = open_report_pool(dsn, timeout_ms)
         database = _database_label(dsn)
@@ -132,7 +159,7 @@ async def _open(env: Mapping[str, str], timeout_ms: int):
         await pool.open(wait=True, timeout=CONNECT_TIMEOUT_S)
     except PoolTimeout:
         await pool.close()
-        raise _Fatal(f"cannot connect to the database (check {URL_VAR} and that the database is running)") from None
+        raise _Fatal(f"cannot connect to the database (check {var} and that the database is running)") from None
     return pool, database
 
 
@@ -157,7 +184,7 @@ async def _build(pool, schemas, database, dataset, timeout_ms: int, minmax: bool
 
 async def _report(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     dataset, schemas = _selection(args)
-    pool, database = await _open(env, args.timeout_ms)
+    pool, database = await _open(env, args.timeout_ms, args.connection)
     try:
         report = await _build(pool, schemas, database, dataset, args.timeout_ms, not args.no_minmax)
     finally:
@@ -221,7 +248,7 @@ async def _draft(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     except SettingsError as e:
         raise _Fatal(str(e)) from None
     dataset, schemas = _selection(args)
-    pool, database = await _open(env, args.timeout_ms)
+    pool, database = await _open(env, args.timeout_ms, args.connection)
     try:
         report = (await _build(pool, schemas, database, dataset, args.timeout_ms, True)).to_dict()
         runner = SqlRunner(pool, schemas, args.timeout_ms, settings.sql_row_cap)
@@ -260,7 +287,7 @@ async def _verify(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         row_cap = load_draft_settings(env).sql_row_cap
     except SettingsError as e:
         raise _Fatal(str(e)) from None
-    pool, _ = await _open(env, args.timeout_ms)
+    pool, _ = await _open(env, args.timeout_ms, args.connection)
     try:
         runner = SqlRunner(pool, draft["report"]["schemas"], args.timeout_ms, row_cap)
         draft["claims"] = await verify_claims(runner, draft["claims"])
@@ -319,7 +346,7 @@ async def _boards(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         dataset = draft_dataset(draft)
     except DraftFileError as e:
         raise _Fatal(f"the draft's files don't validate: {e}") from None
-    pool, _ = await _open(env, args.timeout_ms)
+    pool, _ = await _open(env, args.timeout_ms, args.connection)
     try:
         runner = boards_runner(pool, dataset, args.timeout_ms, settings.sql_row_cap)
         sys.stdout.write(f"Drafting Boards with {settings.model} (effort {settings.effort})\n")
@@ -355,7 +382,7 @@ async def _export(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         except DraftFileError:
             dataset = None  # export_dataset refuses with the files' own errors
         if dataset is not None:
-            pool, _ = await _open(env, args.timeout_ms)
+            pool, _ = await _open(env, args.timeout_ms, args.connection)
             try:
                 runner = boards_runner(pool, dataset, args.timeout_ms, settings.sql_row_cap)
                 board_problems = (await check_boards(boards, dataset, runner, settings.max_entity_boards)).flat()

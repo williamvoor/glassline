@@ -10,7 +10,9 @@ from `explorer/bootstrap/server/`.
 uv sync --locked
 ```
 
-Set `BOOTSTRAP_DATABASE_URL` to a read-only login in the root `.env` or environment.
+Set `BOOTSTRAP_DATABASE_URL` to a read-only login in the root `.env` or environment, or pass
+`--connection <name>` to `report`, `draft`, `verify`, `boards` or `export` to use a Connection from
+`EXPLORER_DATA_DIR/connections.toml` instead.
 Model commands also require `META_API_KEY`. `BOOTSTRAP_ENV_FILE` selects another settings
 file; existing environment values win. See [the settings example](../../.env.example).
 `draft` and `boards` call the model immediately, without an interactive confirmation.
@@ -76,8 +78,9 @@ of `toml` to export comments for a database owner to apply.
 - **Comment target:** `--target toml` writes `comments.toml` and points `dataset.toml` at it
   (use it when the login can't add comments). `--target sql` writes `comments.sql`: apply it as
   the objects' owner (`psql -f comments.sql`), then start the explorer. The tool never runs it.
-- **Before the explorer can use a new dataset**, a database admin creates its read-only role and
-  grants (`USAGE` on the schemas, `SELECT` on the tables). That's a manual step.
+- **Before the explorer can use a new dataset**, it needs a read-only role with grants (`USAGE`
+  on the schemas, `SELECT` on the tables): see
+  [Add an existing Postgres database](../README.md#add-an-existing-postgres-database).
 - Settings (env): `BOOTSTRAP_MODEL` (`meta/muse-wonder-1.0` or `meta/muse-spark-1.3` only),
   `BOOTSTRAP_REASONING_EFFORT` (`low`), `BOOTSTRAP_MAX_TOOL_ITERATIONS` (12),
   `BOOTSTRAP_MAX_TOKENS` (32000), `BOOTSTRAP_CALL_TIMEOUT_S` (300), `BOOTSTRAP_SQL_ROW_CAP` (200),

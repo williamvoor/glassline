@@ -49,7 +49,7 @@ async def test_traced_runs_are_saved_without_rows_and_only_the_newest_three_kept
         model.steps.extend(_model().steps)
     app, data = _settings_app(tmp_path, env, None, model)
     async with _client(app) as c:
-        assert (await c.post("/api/connect", json={"dsn_env": "BS_DATABASE_URL"})).status_code == 200
+        assert (await c.post("/api/connect", json={"connection": "bs"})).status_code == 200
         assert (await c.post("/api/report", json={"schemas": ["bs"]})).status_code == 200
         ids = []
         for _ in range(4):

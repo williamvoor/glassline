@@ -357,10 +357,117 @@ def load_settings(env: Mapping[str, str], dataset_dir: Path, database_url: str) 
 
 WORKSPACE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")  # fullmatch; the URL segment
 ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]*")
-WORKSPACE_KEYS = frozenset({"name", "dataset_dir", "dsn_env", "model", "reasoning_effort", "sql_timeout_ms", "sql_row_cap"})
+WORKSPACE_KEYS = frozenset({"name", "dataset_dir", "connection", "model", "reasoning_effort", "sql_timeout_ms",
+                            "sql_row_cap"})
+LEGACY_LOGIN_KEY = "dsn_env"  # the old form (ADR 0051): read only so Settings can migrate it
 # B3: a Workspace's `model` override, per the repo's model rules.
 WORKSPACE_MODELS = ("meta/muse-spark-1.3", "meta/muse-wonder-1.0")
 WORKSPACES_FILE = "workspaces.toml"
+NEEDS_MIGRATION = "needs migration: Settings rewrites dsn_env as a Connection when it starts"
+
+
+# --- Connections (specs/connections/SPEC.md, ADR 0051) -------------------------------------------
+
+CONNECTIONS_FILE = "connections.toml"
+CONNECTION_KEYS = frozenset({"name", "label", "url_env"})
+CONNECTION_URL_ENV = re.compile(r"[A-Z][A-Z0-9_]*_DATABASE_URL")  # fullmatch
+CLI_URL_ENV = "BOOTSTRAP_DATABASE_URL"  # the bootstrap CLI's own login, never a Connection's
+MAX_LABEL = 80
+
+
+@dataclass(frozen=True)
+class Connection:
+    """One named read-only login. `url_env` names the variable; the URL itself is never kept."""
+
+    name: str
+    label: str
+    url_env: str
+
+
+@dataclass(frozen=True)
+class ConnectionList:
+    """`connections.toml` as read: the valid Connections, the reason each bad one fails, and a
+    whole-file error (bad TOML) that makes every Connection unusable."""
+
+    connections: Mapping[str, Connection] = field(default_factory=dict)
+    errors: Mapping[str, str] = field(default_factory=dict)
+    file_error: str | None = None
+
+    def resolve(self, name: str) -> Connection:
+        """The Connection called `name`, or WorkspaceUnavailable with the reason."""
+        if self.file_error:
+            raise WorkspaceUnavailable(f"{CONNECTIONS_FILE}: {self.file_error}")
+        if name in self.errors:
+            raise WorkspaceUnavailable(f"Connection {name!r} is invalid: {self.errors[name]}")
+        if name not in self.connections:
+            raise WorkspaceUnavailable(f"no Connection named {name!r}")
+        return self.connections[name]
+
+
+def connection_entry(item: object) -> Connection:
+    """One `[[connection]]` table, checked (A1). Raises ConfigError with the reason."""
+    if not isinstance(item, dict):
+        raise ConfigError("an entry must be a table")
+    for value in item.values():
+        if isinstance(value, str) and "://" in value:
+            raise ConfigError("logins go in .env, not in the file")
+    unknown = sorted(set(item) - CONNECTION_KEYS)
+    if unknown:
+        raise ConfigError(f"unknown key {unknown[0]}")
+    name = item.get("name")
+    if not isinstance(name, str) or not WORKSPACE_NAME.fullmatch(name):
+        raise ConfigError("name must match [a-z0-9][a-z0-9_-]*")
+    url_env = item.get("url_env")
+    if not isinstance(url_env, str) or not CONNECTION_URL_ENV.fullmatch(url_env):
+        raise ConfigError("url_env must be a variable named <NAME>_DATABASE_URL")
+    if url_env == CLI_URL_ENV:
+        raise ConfigError(f"url_env can't be {CLI_URL_ENV} (the bootstrap CLI's login)")
+    label = item.get("label", name)
+    if not isinstance(label, str) or not label.strip() or len(label.strip()) > MAX_LABEL or "\n" in label:
+        raise ConfigError(f"label must be one line of 1-{MAX_LABEL} characters")
+    return Connection(name, label.strip(), url_env)
+
+
+def parse_connections(text: str) -> ConnectionList:
+    """Parse the list. Duplicate names or variables fail both entries' later twin (A1)."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        return ConnectionList(file_error=f"not valid TOML: {e}")
+    extra = sorted(set(data) - {"connection"})
+    if extra:
+        return ConnectionList(file_error=f"unknown key {extra[0]}")
+    items = data.get("connection", [])
+    if not isinstance(items, list):
+        return ConnectionList(file_error="connection must be an array of tables ([[connection]])")
+    good: dict[str, Connection] = {}
+    errors: dict[str, str] = {}
+    used_vars: dict[str, str] = {}
+    for i, item in enumerate(items, 1):
+        written = item.get("name") if isinstance(item, dict) else None
+        key = written if isinstance(written, str) and written else f"#{i}"
+        try:
+            conn = connection_entry(item)
+        except ConfigError as e:
+            errors.setdefault(key, str(e))
+            continue
+        if conn.name in good or conn.name in errors:
+            errors[conn.name] = "duplicate name"
+            good.pop(conn.name, None)
+            continue
+        if conn.url_env in used_vars:
+            errors[conn.name] = f"{conn.url_env} is already Connection {used_vars[conn.url_env]!r}"
+            continue
+        used_vars[conn.url_env] = conn.name
+        good[conn.name] = conn
+    return ConnectionList(good, errors)
+
+
+def load_connections(path: Path) -> ConnectionList:
+    """The Connection list beside the Workspace list. A missing file is an empty list."""
+    if not path.is_file():
+        return ConnectionList()
+    return parse_connections(_read_text(path, "connection list"))
 
 
 class WorkspaceUnavailable(Exception):
@@ -373,7 +480,7 @@ class WorkspaceEntry:
 
     name: str
     dataset_dir: Path
-    dsn_env: str
+    connection: str | None  # None: an old `dsn_env` entry that needs migration
     overrides: Mapping[str, str]
     raw: Mapping[str, object]  # the entry as written, for change detection on reload
 
@@ -425,7 +532,7 @@ def _override(entry: Mapping[str, object], key: str) -> str | None:
 def _workspace_entry(item: object, repo_root: Path) -> WorkspaceEntry:
     if not isinstance(item, dict):
         raise ConfigError("an entry must be a table")
-    unknown = sorted(set(item) - WORKSPACE_KEYS)
+    unknown = sorted(set(item) - WORKSPACE_KEYS - {LEGACY_LOGIN_KEY})
     if unknown:
         raise ConfigError(f"unknown key {unknown[0]}")
     name = item.get("name")
@@ -434,9 +541,16 @@ def _workspace_entry(item: object, repo_root: Path) -> WorkspaceEntry:
     dataset = item.get("dataset_dir")
     if not isinstance(dataset, str) or not dataset.strip():
         raise ConfigError("dataset_dir is required")
-    dsn_env = item.get("dsn_env")
-    if not isinstance(dsn_env, str) or not ENV_NAME.fullmatch(dsn_env):
-        raise ConfigError("dsn_env must be an environment variable name")
+    if "connection" in item and LEGACY_LOGIN_KEY in item:
+        raise ConfigError("connection and dsn_env can't both be set")
+    connection: str | None = None
+    if LEGACY_LOGIN_KEY in item:
+        if not isinstance(item[LEGACY_LOGIN_KEY], str) or not ENV_NAME.fullmatch(item[LEGACY_LOGIN_KEY]):
+            raise ConfigError("dsn_env must be an environment variable name")
+    else:
+        connection = item.get("connection")
+        if not isinstance(connection, str) or not WORKSPACE_NAME.fullmatch(connection):
+            raise ConfigError("connection must name a Connection ([a-z0-9][a-z0-9_-]*)")
     path = Path(dataset).expanduser()
     overrides = {}
     for key, env_key in (("model", "MODEL"), ("reasoning_effort", "REASONING_EFFORT"),
@@ -444,8 +558,8 @@ def _workspace_entry(item: object, repo_root: Path) -> WorkspaceEntry:
         value = _override(item, key)
         if value is not None:
             overrides[env_key] = value
-    return WorkspaceEntry(name, (path if path.is_absolute() else repo_root / path).resolve(), dsn_env, overrides,
-                          dict(item))
+    return WorkspaceEntry(name, (path if path.is_absolute() else repo_root / path).resolve(), connection,
+                          overrides, dict(item))
 
 
 def load_workspace_list(path: Path, repo_root: Path) -> list[WorkspaceListing]:
@@ -481,16 +595,30 @@ def load_workspace_list(path: Path, repo_root: Path) -> list[WorkspaceListing]:
     return out
 
 
-def workspace_settings(env: Mapping[str, str], entry: WorkspaceEntry, explorer_root: Path) -> Settings:
-    """A Workspace's Settings (B2): the process environment, with its login from `dsn_env`, its
-    Dataset path, its overrides and its own `prompt_cache_key`. Raises WorkspaceUnavailable."""
-    dsn = env.get(entry.dsn_env, "").strip()
+def connection_url_env(entry: WorkspaceEntry, connections: ConnectionList) -> str:
+    """The variable holding the Workspace's login, through its Connection. Raises
+    WorkspaceUnavailable: needs migration, or the Connection is missing or invalid."""
+    if entry.connection is None:
+        var = str(entry.raw.get(LEGACY_LOGIN_KEY, ""))
+        if not CONNECTION_URL_ENV.fullmatch(var) or var == CLI_URL_ENV:  # Settings' migration skips these
+            raise WorkspaceUnavailable(f"needs migration: {var} can't be a Connection's login; rename it to "
+                                       "<NAME>_DATABASE_URL in .env and in workspaces.toml, then restart")
+        raise WorkspaceUnavailable(NEEDS_MIGRATION)
+    return connections.resolve(entry.connection).url_env
+
+
+def workspace_settings(env: Mapping[str, str], entry: WorkspaceEntry, explorer_root: Path,
+                       connections: ConnectionList) -> Settings:
+    """A Workspace's Settings (B2): the process environment, with its login from its Connection,
+    its Dataset path, its overrides and its own `prompt_cache_key`. Raises WorkspaceUnavailable."""
+    url_env = connection_url_env(entry, connections)
+    dsn = env.get(url_env, "").strip()
     if not dsn:
-        raise WorkspaceUnavailable(f"`{entry.dsn_env}` not set")
+        raise WorkspaceUnavailable(f"`{url_env}` not set")
     try:
         check_dsn(dsn)
     except ValueError:
-        raise WorkspaceUnavailable(f"`{entry.dsn_env}` is malformed") from None
+        raise WorkspaceUnavailable(f"`{url_env}` is malformed") from None
     base = env.get("PROMPT_CACHE_KEY", "").strip()
     local = {**env, **entry.overrides,
              "PROMPT_CACHE_KEY": f"{base}-{entry.name}" if base else f"explorer-{entry.name}"}
@@ -511,14 +639,16 @@ def required_data_dir(env: Mapping[str, str], repo_root: Path) -> Path:
 def named_workspace_settings(env: Mapping[str, str], name: str, repo_root: Path, explorer_root: Path) -> Settings:
     """The Settings of the Workspace called `name` in `EXPLORER_DATA_DIR`, for the dev tools
     (`boards`, `scripts/scenarios.py`). Raises ConfigError naming it when it's missing or unusable."""
-    path = required_data_dir(env, repo_root) / WORKSPACES_FILE
+    root = required_data_dir(env, repo_root)
+    path = root / WORKSPACES_FILE
+    connections = load_connections(root / CONNECTIONS_FILE)
     for item in load_workspace_list(path, repo_root):
         if item.name != name:
             continue
         if item.entry is None:
             raise ConfigError(f"Workspace {name!r}: {item.error}")
         try:
-            return workspace_settings(env, item.entry, explorer_root)
+            return workspace_settings(env, item.entry, explorer_root, connections)
         except WorkspaceUnavailable as e:
             raise ConfigError(f"Workspace {name!r}: {e}") from None
     raise ConfigError(f"no Workspace named {name!r} in {path}")

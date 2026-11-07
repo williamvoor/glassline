@@ -32,7 +32,8 @@ def workspace_data(tmp_path, dataset=FIXTURE, name="aus"):
     data = tmp_path / "data"
     data.mkdir(exist_ok=True)
     (data / "workspaces.toml").write_text(
-        f'[[workspace]]\nname = "{name}"\ndataset_dir = "{dataset}"\ndsn_env = "A_DATABASE_URL"\n', encoding="utf-8")
+        f'[[workspace]]\nname = "{name}"\ndataset_dir = "{dataset}"\nconnection = "a"\n', encoding="utf-8")
+    (data / "connections.toml").write_text('[[connection]]\nname = "a"\nurl_env = "A_DATABASE_URL"\n', encoding="utf-8")
     return str(data)
 
 
