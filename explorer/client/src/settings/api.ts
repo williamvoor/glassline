@@ -4,7 +4,7 @@ import {z} from 'zod';
 
 const ModelsSchema = z.object({models: z.array(z.string()), default: z.string()}).passthrough();
 const ConnectionsSchema = z.object({connections: z.array(z.string()), current: z.string().nullable(), declared: z.boolean().optional()}).passthrough();
-const WorkspaceSchema = z.object({name: z.string(), dsn_env: z.string(), kind: z.enum(['data', 'repo'])}).passthrough();
+const WorkspaceSchema = z.object({name: z.string(), dsn_env: z.string().nullable(), kind: z.enum(['data', 'repo'])}).passthrough();
 const WorkspacesSchema = z.object({workspaces: z.array(WorkspaceSchema)}).passthrough();
 const ErrorSchema = z.object({error: z.string().optional(), reasons: z.array(z.string()).optional()}).passthrough();
 
